@@ -63,7 +63,9 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       request_id: data.request_id,
-      model: endpoint,
+      // Submit may go to a sub-path (e.g. /edit), but fal's queue keys
+      // status/result/cancel by the BASE app id — so poll falModel.
+      model: model.falModel,
       modelId: model.id,
       category: model.category,
     })
