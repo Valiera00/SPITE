@@ -230,6 +230,23 @@ function CanvasInner({ projectId }: { projectId: string }) {
     loadData()
   }, [projectId, setNodes, setEdges])
 
+  // Batch-generation nodes (image/video) ask the canvas to add edges that
+  // mirror the original node's connections onto the spawned duplicates.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail
+      if (detail?.edges?.length) {
+        setEdges(es => {
+          const existing = new Set(es.map(ed => ed.id))
+          const toAdd = detail.edges.filter((ed: Edge) => !existing.has(ed.id))
+          return [...es, ...toAdd]
+        })
+      }
+    }
+    window.addEventListener('frame-add-edges', handler as EventListener)
+    return () => window.removeEventListener('frame-add-edges', handler as EventListener)
+  }, [setEdges])
+
   // Save project name when it changes (debounced)
   const saveProjectNameRef = useRef<NodeJS.Timeout | null>(null)
   const handleProjectNameChange = (newName: string) => {
