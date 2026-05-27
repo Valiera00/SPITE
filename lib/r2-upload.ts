@@ -41,6 +41,52 @@ export async function uploadToR2(
   return `https://${process.env.R2_PUBLIC_URL}/${key}`
 }
 
+function extFromContentType(contentType: string, fallbackUrl: string): string {
+  const map: Record<string, string> = {
+    'image/png': 'png',
+    'image/jpeg': 'jpg',
+    'image/webp': 'webp',
+    'image/gif': 'gif',
+    'video/mp4': 'mp4',
+    'video/webm': 'webm',
+    'audio/mpeg': 'mp3',
+    'audio/wav': 'wav',
+  }
+  const base = contentType.split(';')[0].trim().toLowerCase()
+  if (map[base]) return map[base]
+  // Fall back to the extension in the source URL, else a sane default.
+  const urlExt = fallbackUrl.split('?')[0].split('.').pop()
+  if (urlExt && urlExt.length <= 4) return urlExt.toLowerCase()
+  return base.startsWith('video') ? 'mp4' : 'png'
+}
+
+// Download a (temporary) source URL — e.g. a fal.media output — and store it
+// permanently in our R2 bucket. Returns the private proxy URL to use as the
+// asset's r2_url so the file is truly owned and never expires.
+export async function rehostToR2(sourceUrl: string): Promise<string> {
+  const res = await fetch(sourceUrl)
+  if (!res.ok) {
+    throw new Error(`Failed to fetch source for re-host: ${res.status}`)
+  }
+  const contentType = res.headers.get('content-type') || 'application/octet-stream'
+  const buffer = Buffer.from(await res.arrayBuffer())
+  const ext = extFromContentType(contentType, sourceUrl)
+  const key = `generations/${Date.now()}-${Math.random().toString(36).slice(2, 10)}.${ext}`
+
+  const r2Client = getR2Client()
+  await r2Client.send(
+    new PutObjectCommand({
+      Bucket: process.env.R2_BUCKET_NAME!,
+      Key: key,
+      Body: buffer,
+      ContentType: contentType,
+    })
+  )
+
+  // Served privately through the existing R2 proxy route.
+  return `/api/r2-image/${key}`
+}
+
 export async function recordAsset(
   type: 'image' | 'video',
   model: string,

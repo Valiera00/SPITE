@@ -57,6 +57,43 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       throw txError
     }
 
+    // Reconcile asset protection: anything referenced by a node on the canvas
+    // is "protected" (never auto-deleted); anything previously protected in
+    // this project but no longer on the canvas gets a fresh 30-day window.
+    try {
+      const urls = new Set<string>()
+      const ids = new Set<string>()
+      for (const node of nodes) {
+        const d = (node && node.data) || {}
+        if (typeof d.outputUrl === 'string' && d.outputUrl) urls.add(d.outputUrl)
+        if (typeof d.thumbnail === 'string' && d.thumbnail) urls.add(d.thumbnail)
+        if (typeof d.assetId === 'string' && d.assetId) ids.add(d.assetId)
+      }
+      const urlArr = Array.from(urls)
+      const idArr = Array.from(ids)
+
+      if (urlArr.length || idArr.length) {
+        await sql`
+          UPDATE generation_history
+          SET used_in_canvas = true, expires_at = NULL
+          WHERE project_id = ${projectId}
+            AND (r2_url = ANY(${urlArr}::text[]) OR id = ANY(${idArr}::text[]))
+        `
+      }
+
+      const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+      await sql`
+        UPDATE generation_history
+        SET used_in_canvas = false, expires_at = ${expiresAt}
+        WHERE project_id = ${projectId}
+          AND used_in_canvas = true
+          AND NOT (r2_url = ANY(${urlArr}::text[]) OR id = ANY(${idArr}::text[]))
+      `
+    } catch (reconcileErr) {
+      // Never fail the save because of reconciliation.
+      console.error('[canvas] Protection reconcile failed:', reconcileErr)
+    }
+
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error('[v0] Error saving canvas:', error)
