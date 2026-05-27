@@ -11,7 +11,7 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  const { modelId, prompt, referenceImageUrl, endImageUrl, settings } = await request.json()
+  const { modelId, prompt, referenceImageUrl, endImageUrl, referenceImageUrls, settings } = await request.json()
 
   if (!modelId || !prompt) {
     return NextResponse.json({ error: 'modelId and prompt are required' }, { status: 400 })
@@ -29,16 +29,37 @@ export async function POST(request: NextRequest) {
   const baseUrl = host ? `${proto}://${host}` : ''
   const referenceImageSigned = toFalFetchableUrl(referenceImageUrl, baseUrl)
   const endImageSigned = toFalFetchableUrl(endImageUrl, baseUrl)
+  const refsSigned: string[] = Array.isArray(referenceImageUrls)
+    ? referenceImageUrls.map((u: string) => toFalFetchableUrl(u, baseUrl)).filter(Boolean) as string[]
+    : []
+
+  // Reference images use a different endpoint/param per model. Some (Seedance
+  // 2.0, Kling o1/1.6) have a separate reference endpoint that does NOT take
+  // first/end frames; others (Kling v3) carry refs as `elements` on the same
+  // image-to-video endpoint alongside frames.
+  const hasRefs = refsSigned.length > 0 && !!model.referenceParam
+  const usesSeparateRefEndpoint = hasRefs && !!model.referenceModel
+  const hasFrame = !!(referenceImageUrl || endImageUrl) && model.inputTypes.includes('image')
+
+  // fal only uses references the prompt cites (@Image1 / @Element1). Auto-append
+  // citations if the user didn't write any.
+  let finalPrompt: string = prompt
+  if (hasRefs && model.referenceCite && !/@(image|element)\d/i.test(prompt)) {
+    const cites = refsSigned.map((_, i) => `${model.referenceCite}${i + 1}`).join(' ')
+    finalPrompt = `${prompt} ${cites}`.trim()
+  }
 
   // Build the input using model-specific parameter mapping
-  const input = buildModelInput(model, prompt, {
+  const input = buildModelInput(model, finalPrompt, {
     aspectRatio: settings?.aspectRatio,
     duration: settings?.duration,
     resolution: settings?.resolution,
     enableAudio: settings?.enableAudio,
     enableLoop: settings?.enableLoop,
-    imageUrl: referenceImageSigned || undefined,
-    endImageUrl: endImageSigned || undefined,
+    // Separate reference endpoints don't accept first/end frame inputs.
+    imageUrl: usesSeparateRefEndpoint ? undefined : (referenceImageSigned || undefined),
+    endImageUrl: usesSeparateRefEndpoint ? undefined : (endImageSigned || undefined),
+    referenceImageUrls: hasRefs ? refsSigned : undefined,
   })
 
   // Batch image count — image models only (video models produce one clip).
@@ -52,10 +73,14 @@ export async function POST(request: NextRequest) {
     input.video_url = toFalFetchableUrl(settings.videoUrl, baseUrl)
   }
 
-  // When a reference image is supplied and the model has a dedicated edit /
-  // image-to-video endpoint, submit there instead of the text endpoint.
-  const hasReferenceImage = !!(referenceImageUrl || endImageUrl) && model.inputTypes.includes('image')
-  const endpoint = hasReferenceImage && model.editModel ? model.editModel : model.falModel
+  // Pick the endpoint: separate reference endpoint > image-to-video (frames or
+  // elements-style refs) > text-to-video.
+  let endpoint = model.falModel
+  if (usesSeparateRefEndpoint) {
+    endpoint = model.referenceModel!
+  } else if ((hasRefs || hasFrame) && model.editModel) {
+    endpoint = model.editModel
+  }
 
   console.log(`[fal.ai] Submitting: model=${endpoint}`, JSON.stringify(input))
 

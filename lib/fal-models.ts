@@ -10,6 +10,10 @@ export interface ModelConfig {
   falModel: string
   editModel?: string            // fal endpoint to use when a reference image is supplied
   imageParam?: 'image_url' | 'image_urls' | 'start_image_url'  // how the reference image is passed (default image_url)
+  // Reference-image support (subject/style refs, distinct from first/end frame):
+  referenceParam?: 'image_urls' | 'elements' | 'input_image_urls' | 'subject_reference_image_url'
+  referenceModel?: string       // separate endpoint for references (omit if refs ride the editModel, e.g. Kling v3 elements)
+  referenceCite?: '@Image' | '@Element'  // prompt citation token the model needs (auto-appended)
   category: ModelCategory
   inputTypes: InputType[]
   aspectRatios: string[]
@@ -124,6 +128,9 @@ export const FAL_MODELS: ModelConfig[] = [
     name: 'Seedance 2.0',
     falModel: 'bytedance/seedance-2.0/text-to-video',
     editModel: 'bytedance/seedance-2.0/image-to-video',
+    referenceModel: 'bytedance/seedance-2.0/reference-to-video',
+    referenceParam: 'image_urls',
+    referenceCite: '@Image',
     category: 'video',
     inputTypes: ['text', 'image'],
     aspectRatios: ['auto', '21:9', '16:9', '4:3', '1:1', '3:4', '9:16'],
@@ -171,6 +178,9 @@ export const FAL_MODELS: ModelConfig[] = [
     name: 'Kling 1.6',
     falModel: 'fal-ai/kling-video/v1.6/standard/text-to-video',
     editModel: 'fal-ai/kling-video/v1.6/standard/image-to-video',
+    referenceModel: 'fal-ai/kling-video/v1.6/pro/elements',
+    referenceParam: 'input_image_urls',
+    referenceCite: '@Element',
     category: 'video',
     inputTypes: ['text', 'image'],
     aspectRatios: ['16:9', '9:16', '1:1'],
@@ -187,6 +197,8 @@ export const FAL_MODELS: ModelConfig[] = [
     falModel: 'fal-ai/kling-video/v3/standard/text-to-video',
     editModel: 'fal-ai/kling-video/v3/standard/image-to-video',
     imageParam: 'start_image_url',
+    referenceParam: 'elements',
+    referenceCite: '@Element',
     category: 'video',
     inputTypes: ['text', 'image'],
     aspectRatios: ['16:9', '9:16', '1:1'],
@@ -203,6 +215,8 @@ export const FAL_MODELS: ModelConfig[] = [
     falModel: 'fal-ai/kling-video/v3/pro/text-to-video',
     editModel: 'fal-ai/kling-video/v3/pro/image-to-video',
     imageParam: 'start_image_url',
+    referenceParam: 'elements',
+    referenceCite: '@Element',
     category: 'video',
     inputTypes: ['text', 'image'],
     aspectRatios: ['16:9', '9:16', '1:1'],
@@ -237,6 +251,9 @@ export const FAL_MODELS: ModelConfig[] = [
     falModel: 'fal-ai/kling-video/o1/text-to-video',
     editModel: 'fal-ai/kling-video/o1/image-to-video',
     imageParam: 'start_image_url',
+    referenceModel: 'fal-ai/kling-video/o1/reference-to-video',
+    referenceParam: 'image_urls',
+    referenceCite: '@Image',
     category: 'video',
     inputTypes: ['text', 'image', 'video'],
     aspectRatios: ['auto', '16:9', '9:16', '1:1', '4:3', '3:4', '3:2', '2:3', '21:9'],
@@ -325,6 +342,7 @@ export function buildModelInput(
     enableLoop?: boolean
     imageUrl?: string
     endImageUrl?: string
+    referenceImageUrls?: string[]
     seed?: number
   } = {}
 ): Record<string, any> {
@@ -360,6 +378,22 @@ export function buildModelInput(
       ? 'tail_image_url'
       : 'end_image_url'
     input[endParam] = options.endImageUrl
+  }
+
+  // Reference images (subject/style). Shape depends on the model:
+  //  - elements: [{frontal_image_url}] (Kling v3)
+  //  - subject_reference_image_url: single string (MiniMax)
+  //  - image_urls / input_image_urls: plain array (Seedance 2.0, Kling o1/1.6)
+  // The prompt must cite them (@Image1 / @Element1) — handled in the submit route.
+  if (options.referenceImageUrls?.length && model.referenceParam) {
+    const refs = options.referenceImageUrls
+    if (model.referenceParam === 'elements') {
+      input.elements = refs.map(url => ({ frontal_image_url: url }))
+    } else if (model.referenceParam === 'subject_reference_image_url') {
+      input.subject_reference_image_url = refs[0]
+    } else {
+      input[model.referenceParam] = refs
+    }
   }
 
   // FLUX models - image_size must be a {width,height} object (NOT a "WxH"

@@ -61,7 +61,7 @@ function makeAssetId() { return `asset-${assetCount++}` }
 // Connection type validation rules
 const CONNECTION_RULES: Record<string, string[]> = {
   'prompt-out': ['prompt-in'],
-  'image-out': ['image-in', 'end-frame-in'],
+  'image-out': ['image-in', 'end-frame-in', 'reference-in'],
   'video-out': ['video-in'],
 }
 
@@ -72,6 +72,7 @@ const HANDLE_NAMES: Record<string, string> = {
   'image-out': 'Image output',
   'image-in': 'First frame / image input',
   'end-frame-in': 'End frame',
+  'reference-in': 'Reference image',
   'video-out': 'Video output',
   'video-in': 'Video input',
 }

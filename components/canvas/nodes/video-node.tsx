@@ -289,6 +289,7 @@ export function VideoNode({ id, data, selected }: NodeProps) {
     let compiledPrompt = ''
     let connectedImageUrl: string | null = null
     let connectedEndImageUrl: string | null = null
+    let connectedReferenceUrls: string[] = []
     let connectedVideoUrl: string | null = null
 
     const urlOfSource = (edge: any) => {
@@ -313,12 +314,17 @@ export function VideoNode({ id, data, selected }: NodeProps) {
         edge => edge.target === id && edge.targetHandle === 'end-frame-in'
       )
 
+      // Reference images (own handle, multiple allowed).
+      const incomingReferenceEdges = edges.filter(
+        edge => edge.target === id && edge.targetHandle === 'reference-in'
+      )
+
       // First frame (image-in). The image-out source fallback is for old
-      // connections, but must NOT swallow end-frame or video edges.
+      // connections, but must NOT swallow end-frame / reference / video edges.
       const incomingImageEdges = edges.filter(
         edge => edge.target === id && (
           edge.targetHandle === 'image-in' ||
-          (edge.sourceHandle === 'image-out' && edge.targetHandle !== 'end-frame-in' && edge.targetHandle !== 'video-in')
+          (edge.sourceHandle === 'image-out' && edge.targetHandle !== 'end-frame-in' && edge.targetHandle !== 'reference-in' && edge.targetHandle !== 'video-in')
         )
       )
 
@@ -341,6 +347,11 @@ export function VideoNode({ id, data, selected }: NodeProps) {
         const url = urlOfSource(incomingEndFrameEdges[0])
         if (url) connectedEndImageUrl = url
       }
+
+      // Collect all connected reference image URLs
+      connectedReferenceUrls = incomingReferenceEdges
+        .map(e => urlOfSource(e))
+        .filter((u): u is string => !!u)
 
       // Get video URL from connected video source node
       if (incomingVideoEdges.length > 0) {
@@ -396,6 +407,7 @@ export function VideoNode({ id, data, selected }: NodeProps) {
         prompt: compiledPrompt,
         referenceImageUrl: connectedImageUrl,
         endImageUrl: connectedEndImageUrl,
+        referenceImageUrls: connectedReferenceUrls.length ? connectedReferenceUrls : undefined,
         settings: {
           aspectRatio,
           duration,
@@ -541,11 +553,20 @@ export function VideoNode({ id, data, selected }: NodeProps) {
         </>
       )}
 
+      {/* Reference images (pink) - models that support subject/style refs.
+          Accepts multiple image connections. */}
+      {currentModel?.referenceParam && (
+        <>
+          <Handle type="target" id="reference-in" title="Reference image(s)" position={Position.Left} style={{ top: 250, left: -12, opacity: 0, width: 24, height: 24 }} />
+          <HandleIcon icon={ImageIcon} color="rgba(236,72,153,0.9)" position="left" top={250} visible />
+        </>
+      )}
+
       {/* Video input (green) - only if model supports video-to-video */}
       {currentModel?.inputTypes.includes('video') && (
         <>
-          <Handle type="target" id="video-in" title="Source video" position={Position.Left} style={{ top: 260, left: -12, opacity: 0, width: 24, height: 24 }} />
-          <HandleIcon icon={FilmStrip} color="rgba(74,222,128,0.8)" position="left" top={260} visible />
+          <Handle type="target" id="video-in" title="Source video" position={Position.Left} style={{ top: 310, left: -12, opacity: 0, width: 24, height: 24 }} />
+          <HandleIcon icon={FilmStrip} color="rgba(74,222,128,0.8)" position="left" top={310} visible />
         </>
       )}
       
