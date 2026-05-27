@@ -57,7 +57,7 @@ export async function GET(request: NextRequest) {
         try {
           const prompt = searchParams.get('prompt') || 'Generated asset'
           const projectId = searchParams.get('projectId')
-          if (projectId) {
+          if (projectId && projectId !== 'undefined' && projectId !== 'null') {
             await recordAsset(
               output.videos ? 'video' : 'image',
               model,

@@ -122,7 +122,8 @@ function StatusBadge({ status, progress }: { status: GenerationStatus; progress?
 
 export function VideoNode({ id, data, selected }: NodeProps) {
   const params = useParams()
-  const projectId = params.projectId as string
+  // Route segment is [id], so the param is `id` (not `projectId`).
+  const projectId = params.id as string
   const [prompt, setPrompt] = useState((data.prompt as string) || '')
   const [modelId, setModelId] = useState((data.modelId as string) || 'seedance-1.5')
   const [duration, setDuration] = useState((data.duration as string) || '')
