@@ -240,7 +240,7 @@ export const FAL_MODELS: ModelConfig[] = [
     category: 'video',
     inputTypes: ['text', 'image', 'video'],
     aspectRatios: ['auto', '16:9', '9:16', '1:1', '4:3', '3:4', '3:2', '2:3', '21:9'],
-    durations: ['5s', '10s'],
+    durations: ['3s', '4s', '5s', '6s', '7s', '8s', '9s', '10s'],
     supportsAudio: false,
     defaultAspectRatio: '16:9',
     defaultDuration: '5s',

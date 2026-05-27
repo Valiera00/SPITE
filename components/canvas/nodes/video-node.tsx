@@ -2,7 +2,7 @@
 
 import { Position, NodeProps, Handle, useReactFlow } from '@xyflow/react'
 import { useParams } from 'next/navigation'
-import { Play, CaretDown, SpeakerHigh, SpeakerSlash, TextT, Image as ImageIcon, FilmStrip, CircleNotch, X, Check, ArrowsClockwise } from '@phosphor-icons/react'
+import { Play, CaretDown, SpeakerHigh, SpeakerSlash, TextT, Image as ImageIcon, FilmStrip, CircleNotch, X, Check, ArrowsClockwise, Minus, Plus } from '@phosphor-icons/react'
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { toast } from 'sonner'
 import { NodeActionToolbar } from './node-toolbar'
@@ -132,6 +132,7 @@ export function VideoNode({ id, data, selected }: NodeProps) {
   const [resolution, setResolution] = useState((data.resolution as string) || '')
   const [enableAudio, setEnableAudio] = useState((data.enableAudio as boolean) || false)
   const [enableLoop, setEnableLoop] = useState((data.enableLoop as boolean) || false)
+  const [numVideos, setNumVideos] = useState((data.numVideos as number) || 1)
   
   const [status, setStatus] = useState<GenerationStatus>('idle')
   const [progress, setProgress] = useState<number | undefined>()
@@ -190,11 +191,24 @@ export function VideoNode({ id, data, selected }: NodeProps) {
 
   // Persist state changes to node data
   useEffect(() => {
-    setNodes(ns => ns.map(n => n.id === id ? { 
-      ...n, 
-      data: { ...n.data, prompt, modelId, duration, aspectRatio, resolution, enableAudio, enableLoop, outputUrl } 
+    setNodes(ns => ns.map(n => n.id === id ? {
+      ...n,
+      data: { ...n.data, prompt, modelId, duration, aspectRatio, resolution, enableAudio, enableLoop, numVideos, outputUrl }
     } : n))
-  }, [prompt, modelId, duration, aspectRatio, resolution, enableAudio, enableLoop, outputUrl, id, setNodes])
+  }, [prompt, modelId, duration, aspectRatio, resolution, enableAudio, enableLoop, numVideos, outputUrl, id, setNodes])
+
+  // If this node was spawned for a batch generation, resume polling its job.
+  useEffect(() => {
+    const pending = data.pendingRequestId as string | undefined
+    if (pending && !outputUrl) {
+      setFalEndpoint((data.pendingFalEndpoint as string) || null)
+      setRequestId(pending)
+      setStatus('in_queue')
+      setNodes(ns => ns.map(n => n.id === id ? { ...n, data: { ...n.data, pendingRequestId: undefined, pendingFalEndpoint: undefined } } : n))
+    }
+    // run once on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Poll for status
   const pollStatus = useCallback(async (reqId: string, falModelId: string) => {
@@ -362,35 +376,69 @@ export function VideoNode({ id, data, selected }: NodeProps) {
 
     try {
       // Send RAW settings; the server builds the model-specific payload.
-      const response = await fetch('/api/generate/submit', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          modelId,
-          prompt: compiledPrompt,
-          referenceImageUrl: connectedImageUrl,
-          settings: {
-            aspectRatio,
-            duration,
-            resolution,
-            enableAudio,
-            enableLoop,
-            videoUrl: connectedVideoUrl || undefined,
-          },
-        }),
+      const body = JSON.stringify({
+        modelId,
+        prompt: compiledPrompt,
+        referenceImageUrl: connectedImageUrl,
+        settings: {
+          aspectRatio,
+          duration,
+          resolution,
+          enableAudio,
+          enableLoop,
+          videoUrl: connectedVideoUrl || undefined,
+        },
       })
 
-      const result = await response.json()
-
-      if (result.error) {
+      // Each video is a separate fal job. Fire `numVideos` of them in parallel.
+      const count = Math.max(1, Math.min(4, numVideos))
+      const results = await Promise.all(
+        Array.from({ length: count }, () =>
+          fetch('/api/generate/submit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body }).then(r => r.json())
+        )
+      )
+      const ok = results.filter(r => r.request_id)
+      if (ok.length === 0) {
         setStatus('failed')
-        setError(result.error)
+        setError(results[0]?.error || 'Failed to submit job')
         return
       }
 
-      setFalEndpoint(result.model || currentModel.falModel)
-      setRequestId(result.request_id)
+      // This node tracks the first job.
+      setFalEndpoint(ok[0].model || currentModel.falModel)
+      setRequestId(ok[0].request_id)
       setStatus('in_queue')
+
+      // Extra jobs become duplicate video nodes (in a grid) that each poll
+      // their own request and fill in when done.
+      if (ok.length > 1) {
+        const extra = ok.slice(1)
+        const self = getNodes().find(nd => nd.id === id)
+        const baseX = self?.position?.x ?? 0
+        const baseY = self?.position?.y ?? 0
+        const colGap = 400
+        const rowGap = 540
+        const cols = 3
+        const stamp = Date.now()
+        const { shotId, outputUrl: _drop, ...restData } = ((self?.data || {}) as Record<string, unknown>)
+        const newNodes = extra.map((res, idx) => {
+          const slot = idx + 1
+          const col = slot % cols
+          const row = Math.floor(slot / cols)
+          return {
+            id: `${id}-v${stamp}-${idx}`,
+            type: 'videoGen',
+            position: { x: baseX + col * colGap, y: baseY + row * rowGap },
+            data: {
+              ...restData,
+              prompt: compiledPrompt,
+              pendingRequestId: res.request_id,
+              pendingFalEndpoint: res.model || currentModel.falModel,
+            },
+          }
+        })
+        setNodes(ns => [...ns, ...(newNodes as any)])
+      }
     } catch (err: any) {
       setStatus('failed')
       setError(err.message || 'Failed to submit job')
@@ -535,9 +583,28 @@ export function VideoNode({ id, data, selected }: NodeProps) {
         {/* Controls - Dynamic based on model */}
         <div className="flex items-center justify-between px-3 pb-3 gap-2">
           <div className="flex items-center gap-1.5 flex-wrap">
+            {/* Video count counter */}
+            <div className="flex items-center gap-0.5 px-1.5 h-6 rounded-md bg-white/5 text-[10px] font-mono text-muted-foreground">
+              <button
+                onClick={() => setNumVideos(n => Math.max(1, n - 1))}
+                disabled={isGenerating || numVideos <= 1}
+                className="w-4 h-4 flex items-center justify-center hover:text-foreground disabled:opacity-30"
+              >
+                <Minus size={8} weight="bold" />
+              </button>
+              <span className="w-4 text-center">x{numVideos}</span>
+              <button
+                onClick={() => setNumVideos(n => Math.min(4, n + 1))}
+                disabled={isGenerating || numVideos >= 4}
+                className="w-4 h-4 flex items-center justify-center hover:text-foreground disabled:opacity-30"
+              >
+                <Plus size={8} weight="bold" />
+              </button>
+            </div>
+
             {/* Model selector */}
-            <ControlSelect 
-              value={currentModel?.name || modelId} 
+            <ControlSelect
+              value={currentModel?.name || modelId}
               options={modelOptions}
               onChange={setModelId}
               disabled={isGenerating}
