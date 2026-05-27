@@ -4,6 +4,7 @@ import { Position, NodeProps, Handle, useReactFlow } from '@xyflow/react'
 import { useParams } from 'next/navigation'
 import { Play, CaretDown, SpeakerHigh, SpeakerSlash, TextT, Image as ImageIcon, FilmStrip, CircleNotch, X, Check, ArrowsClockwise } from '@phosphor-icons/react'
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { toast } from 'sonner'
 import { NodeActionToolbar } from './node-toolbar'
 import { ShotSelector, type ShotOption } from './shot-selector'
 import { getVideoModels, getModelById, buildModelInput, type ModelConfig } from '@/lib/fal-models'
@@ -403,6 +404,7 @@ export function VideoNode({ id, data, selected }: NodeProps) {
     stopRef.current = true
     if (pollingRef.current) clearTimeout(pollingRef.current)
     setStatus('cancelled')
+    toast.warning('Generation cancelled', { description: currentModel.name })
     const reqId = requestId
     const cancelModel = falEndpoint || currentModel.falModel
     setRequestId(null)

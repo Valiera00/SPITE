@@ -346,21 +346,21 @@ export function buildModelInput(
     }
   }
 
-  // FLUX models - use image_size enum instead of aspect_ratio
+  // FLUX models - image_size must be a {width,height} object (NOT a "WxH"
+  // string, which fal rejects with a 422 validation error).
   if (model.id.includes('flux')) {
-    // image_size format: "1024x1024", "1536x1024", etc.
     const aspectRatio = options.aspectRatio || model.defaultAspectRatio
-    const sizeMap: Record<string, string> = {
-      '21:9': '1856x768',
-      '16:9': '1536x768',
-      '4:3': '1408x1056',
-      '3:2': '1344x896',
-      '1:1': '1024x1024',
-      '2:3': '896x1344',
-      '3:4': '1056x1408',
-      '9:16': '768x1536',
+    const sizeMap: Record<string, { width: number; height: number }> = {
+      '21:9': { width: 1856, height: 768 },
+      '16:9': { width: 1536, height: 768 },
+      '4:3': { width: 1408, height: 1056 },
+      '3:2': { width: 1344, height: 896 },
+      '1:1': { width: 1024, height: 1024 },
+      '2:3': { width: 896, height: 1344 },
+      '3:4': { width: 1056, height: 1408 },
+      '9:16': { width: 768, height: 1536 },
     }
-    input.image_size = sizeMap[aspectRatio] || '1024x1024'
+    input.image_size = sizeMap[aspectRatio] || { width: 1024, height: 1024 }
     input.prompt = prompt
     if (options.seed !== undefined) input.seed = options.seed
     return input

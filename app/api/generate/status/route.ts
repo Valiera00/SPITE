@@ -37,14 +37,25 @@ export async function GET(request: NextRequest) {
       })
       
       if (!resultRes.ok) {
-        // Result not ready yet - treat as still in progress
         const errText = await resultRes.text()
         console.error('[fal.ai] Result fetch failed:', resultRes.status, errText)
-        // Don't fail - return as still processing so client keeps polling
-        return NextResponse.json({
-          status: 'IN_PROGRESS',
-          requestId,
-        })
+        // A 4xx means the job finished but with an error (e.g. invalid params).
+        // Surface it as FAILED so the node never spins forever. 5xx may be a
+        // transient blip, so keep polling in that case.
+        if (resultRes.status >= 400 && resultRes.status < 500) {
+          let msg = 'Generation failed'
+          try {
+            const j = JSON.parse(errText)
+            const detail = Array.isArray(j.detail) ? j.detail[0]?.msg : j.detail
+            msg = detail || j.error || msg
+          } catch {}
+          return NextResponse.json({
+            status: 'FAILED',
+            error: typeof msg === 'string' ? msg : 'Generation failed',
+            requestId,
+          })
+        }
+        return NextResponse.json({ status: 'IN_PROGRESS', requestId })
       }
       
       const result = await resultRes.json()

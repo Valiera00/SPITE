@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useParams } from 'next/navigation'
 import { Handle, Position, NodeProps, useReactFlow } from '@xyflow/react'
 import { Play, CaretDown, Minus, Plus, TextT, Image as ImageIcon, CircleNotch, X, Check, ArrowsClockwise } from '@phosphor-icons/react'
+import { toast } from 'sonner'
 import { NodeActionToolbar } from './node-toolbar'
 import { ShotSelector, type ShotOption } from './shot-selector'
 import { getImageModels, getModelById, buildModelInput, type ModelConfig } from '@/lib/fal-models'
@@ -451,6 +452,7 @@ export function ImageNode({ id, data, selected }: NodeProps) {
     stopRef.current = true
     if (pollingRef.current) clearTimeout(pollingRef.current)
     setStatus('cancelled')
+    toast.warning('Generation cancelled', { description: currentModel.name })
     const reqId = requestId
     const cancelModel = falEndpoint || currentModel.falModel
     setRequestId(null)
