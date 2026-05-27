@@ -340,28 +340,33 @@ export function buildModelInput(
     } else {
       input[param] = options.imageUrl
     }
-    // FLUX image-to-image needs a strength value (how much to change the input).
+    // FLUX image-to-image strength: how much to change the input. fal's
+    // default (0.95) nearly ignores the reference; 0.6 keeps it clearly visible.
     if (model.id === 'flux-dev') {
-      input.strength = 0.95
+      input.strength = 0.6
     }
   }
 
   // FLUX models - image_size must be a {width,height} object (NOT a "WxH"
   // string, which fal rejects with a 422 validation error).
   if (model.id.includes('flux')) {
-    const aspectRatio = options.aspectRatio || model.defaultAspectRatio
-    const sizeMap: Record<string, { width: number; height: number }> = {
-      '21:9': { width: 1856, height: 768 },
-      '16:9': { width: 1536, height: 768 },
-      '4:3': { width: 1408, height: 1056 },
-      '3:2': { width: 1344, height: 896 },
-      '1:1': { width: 1024, height: 1024 },
-      '2:3': { width: 896, height: 1344 },
-      '3:4': { width: 1056, height: 1408 },
-      '9:16': { width: 768, height: 1536 },
-    }
-    input.image_size = sizeMap[aspectRatio] || { width: 1024, height: 1024 }
     input.prompt = prompt
+    // image_size only applies to text-to-image; for image-to-image the output
+    // follows the input image, and fal ignores image_size anyway.
+    if (!options.imageUrl) {
+      const aspectRatio = options.aspectRatio || model.defaultAspectRatio
+      const sizeMap: Record<string, { width: number; height: number }> = {
+        '21:9': { width: 1856, height: 768 },
+        '16:9': { width: 1536, height: 768 },
+        '4:3': { width: 1408, height: 1056 },
+        '3:2': { width: 1344, height: 896 },
+        '1:1': { width: 1024, height: 1024 },
+        '2:3': { width: 896, height: 1344 },
+        '3:4': { width: 1056, height: 1408 },
+        '9:16': { width: 768, height: 1536 },
+      }
+      input.image_size = sizeMap[aspectRatio] || { width: 1024, height: 1024 }
+    }
     if (options.seed !== undefined) input.seed = options.seed
     return input
   }
