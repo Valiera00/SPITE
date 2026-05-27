@@ -1,0 +1,120 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+/* Onnier font for FRAME wordmark */
+@font-face {
+  font-family: 'Onnier';
+  src: url('/fonts/onnier.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@theme {
+  --font-onnier: 'Onnier', serif;
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  10%, 30%, 50%, 70%, 90% { transform: translateX(-4px); }
+  20%, 40%, 60%, 80% { transform: translateX(4px); }
+}
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  /* FRAME — cinematic dark theme */
+  --background: #080A0C;
+  --canvas: #0D0F12;
+  --foreground: #E8EAF0;
+  --muted-foreground: #6B7280;
+  --accent: #A855F7;
+  --accent-foreground: #ffffff;
+
+  --card: rgba(255, 255, 255, 0.04);
+  --card-foreground: #E8EAF0;
+  --border: rgba(255, 255, 255, 0.08);
+  --border-bright: rgba(255, 255, 255, 0.12);
+  --input: rgba(255, 255, 255, 0.06);
+  --ring: #A855F7;
+
+  --glass-bg: rgba(255, 255, 255, 0.04);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-shine: rgba(255, 255, 255, 0.10);
+
+  --radius: 0.75rem;
+}
+
+@theme inline {
+  --font-sans: var(--font-geist-mono);
+  --font-mono: var(--font-geist-mono);
+  --font-display: var(--font-dm-serif);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-muted-foreground: var(--muted-foreground);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+    box-sizing: border-box;
+  }
+
+  html {
+    background-color: #080A0C;
+  }
+
+  body {
+    background-color: #080A0C;
+    color: #E8EAF0;
+    font-family: var(--font-geist-mono), 'Courier New', monospace;
+  }
+}
+
+/* Dot grid for canvas areas */
+.dot-grid {
+  background-image: radial-gradient(circle, #1a1d21 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+/* Liquid glass material */
+.glass {
+  background: rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.10);
+}
+
+.glass-hover {
+  transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.glass-hover:hover {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.14);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+/* Purple glow for accent elements */
+.teal-glow {
+  box-shadow: 0 0 20px rgba(168, 85, 247, 0.3), 0 0 40px rgba(168, 85, 247, 0.10);
+}
+
+/* Shake animation for login errors */
+.animate-shake {
+  animation: shake 0.6s ease-in-out;
+}

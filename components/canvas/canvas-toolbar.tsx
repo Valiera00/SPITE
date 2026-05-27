@@ -1,0 +1,119 @@
+'use client'
+
+import Link from 'next/link'
+import { ArrowLeft, MagnifyingGlassPlus, MagnifyingGlassMinus, CornersOut, Lightning, Lock, CheckCircle, Circle, GearSix } from '@phosphor-icons/react'
+import { useReactFlow } from '@xyflow/react'
+import { useState } from 'react'
+import { useAuth } from '@/components/auth-provider'
+
+interface CanvasToolbarProps {
+  projectName: string
+  onProjectNameChange: (name: string) => void
+  saveStatus: 'saved' | 'unsaved'
+  projectId: string
+}
+
+export function CanvasToolbar({ projectName, onProjectNameChange, saveStatus, projectId }: CanvasToolbarProps) {
+  const { zoomIn, zoomOut, fitView } = useReactFlow()
+  const [editing, setEditing] = useState(false)
+  const { logout } = useAuth()
+
+  const handleLogout = () => {
+    logout()
+  }
+
+  return (
+    <div className="glass flex items-center justify-between px-4 h-12 shrink-0 relative z-10">
+      {/* Left */}
+      <div className="flex items-center gap-3">
+        <Link
+          href="/"
+          className="flex items-center justify-center w-7 h-7 rounded-lg glass-hover text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <ArrowLeft size={14} weight="thin" />
+        </Link>
+        <div className="w-px h-4 bg-border" />
+        {editing ? (
+          <input
+            autoFocus
+            value={projectName}
+            onChange={e => onProjectNameChange(e.target.value)}
+            onBlur={() => setEditing(false)}
+            onKeyDown={e => e.key === 'Enter' && setEditing(false)}
+            className="bg-transparent border-none outline-none text-foreground text-base tracking-tight"
+            style={{ fontFamily: '"Onnier", serif' }}
+          />
+        ) : (
+          <button
+            onClick={() => setEditing(true)}
+            className="text-base tracking-tight text-foreground hover:text-accent transition-colors cursor-text"
+            style={{ fontFamily: '"Onnier", serif' }}
+          >
+            {projectName}
+          </button>
+        )}
+      </div>
+
+      {/* Right */}
+      <div className="flex items-center gap-1">
+        <button
+          onClick={() => zoomIn({ duration: 200 })}
+          className="flex items-center justify-center w-7 h-7 rounded-lg glass-hover text-muted-foreground hover:text-foreground transition-colors"
+          title="Zoom in"
+        >
+          <MagnifyingGlassPlus size={14} weight="thin" />
+        </button>
+        <button
+          onClick={() => zoomOut({ duration: 200 })}
+          className="flex items-center justify-center w-7 h-7 rounded-lg glass-hover text-muted-foreground hover:text-foreground transition-colors"
+          title="Zoom out"
+        >
+          <MagnifyingGlassMinus size={14} weight="thin" />
+        </button>
+        <button
+          onClick={() => fitView({ duration: 300, padding: 0.1 })}
+          className="flex items-center justify-center w-7 h-7 rounded-lg glass-hover text-muted-foreground hover:text-foreground transition-colors"
+          title="Fit to screen"
+        >
+          <CornersOut size={14} weight="thin" />
+        </button>
+
+        <div className="w-px h-4 bg-border mx-1" />
+
+        <button className="flex items-center gap-2 px-3 h-7 rounded-lg text-xs font-mono font-medium transition-all teal-glow hover:opacity-90 bg-accent text-accent-foreground">
+          <Lightning size={12} weight="fill" />
+          Generate All
+        </button>
+
+        <div className="w-px h-4 bg-border mx-1" />
+
+        <div className="flex items-center gap-1.5 text-[10px] font-mono tracking-wider text-muted-foreground select-none">
+          {saveStatus === 'saved' ? (
+            <CheckCircle size={11} weight="fill" className="text-accent/60" />
+          ) : (
+            <Circle size={11} weight="thin" className="text-muted-foreground/40" />
+          )}
+          <span className={saveStatus === 'saved' ? 'text-accent/60' : 'text-muted-foreground/40'}>
+            {saveStatus === 'saved' ? 'Saved' : 'Unsaved'}
+          </span>
+        </div>
+
+        <Link
+          href="/settings"
+          className="flex items-center justify-center w-7 h-7 rounded-lg glass-hover transition-colors text-muted-foreground hover:text-foreground"
+          title="Settings"
+        >
+          <GearSix size={13} weight="thin" />
+        </Link>
+
+        <button
+          onClick={handleLogout}
+          className="flex items-center justify-center w-7 h-7 rounded-lg glass-hover transition-colors ml-1 text-muted-foreground hover:text-destructive"
+          title="Logout and lock canvas"
+        >
+          <Lock size={13} weight="thin" />
+        </button>
+      </div>
+    </div>
+  )
+}
