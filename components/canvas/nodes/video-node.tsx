@@ -141,6 +141,8 @@ export function VideoNode({ id, data, selected }: NodeProps) {
   const [falEndpoint, setFalEndpoint] = useState<string | null>(null)
 
   const pollingRef = useRef<NodeJS.Timeout | null>(null)
+  // Set true to immediately stop polling (cancel / unmount).
+  const stopRef = useRef(false)
   const { setNodes, getEdges, getNodes } = useReactFlow()
   
   // Check if there are any connected prompt nodes - compute fresh on each render
@@ -195,9 +197,13 @@ export function VideoNode({ id, data, selected }: NodeProps) {
 
   // Poll for status
   const pollStatus = useCallback(async (reqId: string, falModelId: string) => {
+    if (stopRef.current) return true
     try {
         const response = await fetch(`/api/generate/status?request_id=${reqId}&model=${encodeURIComponent(falModelId)}&projectId=${projectId}&prompt=${encodeURIComponent(prompt)}`)
       const result = await response.json()
+
+      // Cancelled while this request was in flight — drop the result.
+      if (stopRef.current) return true
 
       if (result.error) {
         setStatus('failed')
@@ -241,11 +247,13 @@ export function VideoNode({ id, data, selected }: NodeProps) {
   // Start polling when we have a request_id
   useEffect(() => {
     if (!requestId || !currentModel) return
+    stopRef.current = false
     const pollModel = falEndpoint || currentModel.falModel
 
     const poll = async () => {
+      if (stopRef.current) return
       const shouldStop = await pollStatus(requestId, pollModel)
-      if (!shouldStop) {
+      if (!shouldStop && !stopRef.current) {
         pollingRef.current = setTimeout(poll, 2000)
       }
     }
@@ -254,6 +262,7 @@ export function VideoNode({ id, data, selected }: NodeProps) {
     pollingRef.current = setTimeout(poll, 4000)
 
     return () => {
+      stopRef.current = true
       if (pollingRef.current) {
         clearTimeout(pollingRef.current)
       }
@@ -390,20 +399,20 @@ export function VideoNode({ id, data, selected }: NodeProps) {
   const handleCancel = async () => {
     if (!requestId || !currentModel) return
 
+    // Stop polling immediately and locally so the UI reliably unsticks.
+    stopRef.current = true
+    if (pollingRef.current) clearTimeout(pollingRef.current)
+    setStatus('cancelled')
+    const reqId = requestId
+    const cancelModel = falEndpoint || currentModel.falModel
+    setRequestId(null)
+
     try {
       await fetch('/api/generate/cancel', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          request_id: requestId,
-          model: falEndpoint || currentModel.falModel,
-        }),
+        body: JSON.stringify({ request_id: reqId, model: cancelModel }),
       })
-      setStatus('cancelled')
-      setRequestId(null)
-      if (pollingRef.current) {
-        clearTimeout(pollingRef.current)
-      }
     } catch (err) {
       console.error('[v0] Cancel error:', err)
     }
