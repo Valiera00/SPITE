@@ -22,9 +22,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: `Unknown model: ${modelId}` }, { status: 400 })
   }
 
-  // Reference media is stored behind our private R2 proxy, which fal.ai
-  // cannot fetch. Sign it into a temporary public URL first.
-  const referenceImageSigned = await toFalFetchableUrl(referenceImageUrl)
+  // Reference media is stored behind our private R2 proxy. Turn it into an
+  // absolute, token-signed proxy URL fal.ai can fetch (1-hour validity).
+  const host = request.headers.get('host')
+  const proto = request.headers.get('x-forwarded-proto') || 'https'
+  const baseUrl = host ? `${proto}://${host}` : ''
+  const referenceImageSigned = toFalFetchableUrl(referenceImageUrl, baseUrl)
 
   // Build the input using model-specific parameter mapping
   const input = buildModelInput(model, prompt, {
@@ -44,7 +47,7 @@ export async function POST(request: NextRequest) {
   // Video-to-video: pass a connected source video through if provided
   // (also signed so fal can fetch it).
   if (settings?.videoUrl) {
-    input.video_url = await toFalFetchableUrl(settings.videoUrl)
+    input.video_url = toFalFetchableUrl(settings.videoUrl, baseUrl)
   }
 
   // When a reference image is supplied and the model has a dedicated edit /

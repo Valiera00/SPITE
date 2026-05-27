@@ -6,7 +6,9 @@ import type { NextRequest } from 'next/server'
 // - /api/auth/verify + /api/auth/logout: the login/logout endpoints
 // - /api/assets/cleanup: the scheduled cleanup job, which authenticates
 //   itself with CRON_SECRET instead of a user session
-const PUBLIC_PATHS = ['/login', '/api/auth/verify', '/api/auth/logout', '/api/assets/cleanup']
+// - /api/r2-image: the media proxy, which does its own cookie-or-signed-token
+//   check so fal.ai can fetch referenced assets without a login cookie
+const PUBLIC_PATHS = ['/login', '/api/auth/verify', '/api/auth/logout', '/api/assets/cleanup', '/api/r2-image']
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl

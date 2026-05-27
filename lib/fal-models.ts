@@ -329,16 +329,20 @@ export function buildModelInput(
 ): Record<string, any> {
   const input: Record<string, any> = {}
 
-  // Attach a reference image using the param name this model expects:
+  // Attach a reference image using the field name(s) the endpoint expects:
   //  - image_urls (array): Nano Banana, Kling o1 image
-  //  - start_image_url: Kling v3 family + Kling o1 video (first frame)
-  //  - image_url (default): everything else (flux i2i, most image-to-video)
+  //  - video models: set BOTH image_url AND start_image_url. Kling endpoints
+  //    require start_image_url (first frame); others use image_url. fal ignores
+  //    unknown fields, so sending both is safe + covers every video endpoint.
+  //  - image_url: everything else (e.g. FLUX image-to-image)
   if (options.imageUrl && model.inputTypes.includes('image')) {
-    const param = model.imageParam || 'image_url'
-    if (param === 'image_urls') {
+    if (model.imageParam === 'image_urls') {
       input.image_urls = [options.imageUrl]
+    } else if (model.category === 'video') {
+      input.image_url = options.imageUrl
+      input.start_image_url = options.imageUrl
     } else {
-      input[param] = options.imageUrl
+      input.image_url = options.imageUrl
     }
     // FLUX image-to-image strength: how much to change the input. fal's
     // default (0.95) nearly ignores the reference; 0.6 keeps it clearly visible.

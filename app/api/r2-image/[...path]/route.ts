@@ -1,5 +1,6 @@
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3'
 import { NextRequest, NextResponse } from 'next/server'
+import { verifyImageToken } from '@/lib/r2-upload'
 
 const s3Client = new S3Client({
   region: 'auto',
@@ -17,6 +18,15 @@ export async function GET(
   try {
     const { path } = await params
     const key = path.join('/')
+
+    // Allow either a logged-in browser (cookie) or a valid signed token
+    // (used by fal.ai to fetch referenced assets). Otherwise deny.
+    const cookieOk = request.cookies.get('frame_session')?.value === 'authenticated'
+    const { searchParams } = new URL(request.url)
+    const tokenOk = verifyImageToken(key, searchParams.get('exp'), searchParams.get('sig'))
+    if (!cookieOk && !tokenOk) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+    }
 
     const command = new GetObjectCommand({
       Bucket: process.env.R2_BUCKET_NAME!,

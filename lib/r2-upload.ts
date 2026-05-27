@@ -1,6 +1,7 @@
 import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { neon } from '@neondatabase/serverless'
+import crypto from 'crypto'
 
 // Lazy initialization for database connection
 function getDb() {
@@ -19,6 +20,10 @@ function getR2Client() {
       secretAccessKey: process.env.R2_SECRET_ACCESS_KEY!,
     },
     endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+    // Stop the SDK injecting x-amz-checksum-mode into presigned URLs — it
+    // breaks fetches of those URLs on R2 (and intermittently on fal.ai).
+    requestChecksumCalculation: 'WHEN_REQUIRED',
+    responseChecksumValidation: 'WHEN_REQUIRED',
   })
 }
 
@@ -88,21 +93,40 @@ export async function rehostToR2(sourceUrl: string): Promise<string> {
   return `/api/r2-image/${key}`
 }
 
-// Convert an internal R2 proxy URL (/api/r2-image/<key>) into a temporary
-// signed R2 URL that an external service (fal.ai) can actually fetch.
-// Non-proxy URLs (e.g. fal's own URLs) are returned unchanged.
-export async function toFalFetchableUrl(url: string | null | undefined): Promise<string | null | undefined> {
+// Signed, time-limited access to the /api/r2-image proxy so an external
+// service (fal.ai) can fetch a private asset without a login cookie. This is
+// more reliable than R2 presigned URLs, which some fal endpoints fail to fetch.
+function imageProxySecret(): string {
+  return process.env.APP_PASSWORD || process.env.CRON_SECRET || 'frame-fallback-secret'
+}
+
+// Turn an internal proxy path (/api/r2-image/<key>) into an absolute,
+// token-signed URL fal can fetch. Non-proxy URLs are returned unchanged.
+export function toFalFetchableUrl(
+  url: string | null | undefined,
+  baseUrl: string
+): string | null | undefined {
   if (!url) return url
   const marker = '/api/r2-image/'
   const idx = url.indexOf(marker)
   if (idx === -1) return url // already an absolute, externally-fetchable URL
   const key = url.slice(idx + marker.length)
-  const client = getR2Client()
-  return getSignedUrl(
-    client,
-    new GetObjectCommand({ Bucket: process.env.R2_BUCKET_NAME!, Key: key }),
-    { expiresIn: 3600 } // 1 hour, plenty for fal to download
-  )
+  const exp = Date.now() + 3600_000 // 1 hour
+  const sig = crypto.createHmac('sha256', imageProxySecret()).update(`${key}:${exp}`).digest('hex')
+  return `${baseUrl}/api/r2-image/${key}?exp=${exp}&sig=${sig}`
+}
+
+// Validate a token produced by toFalFetchableUrl, used by the proxy route.
+export function verifyImageToken(key: string, exp: string | null, sig: string | null): boolean {
+  if (!exp || !sig) return false
+  const e = Number(exp)
+  if (!e || Date.now() > e) return false
+  const expected = crypto.createHmac('sha256', imageProxySecret()).update(`${key}:${e}`).digest('hex')
+  try {
+    return crypto.timingSafeEqual(Buffer.from(sig, 'hex'), Buffer.from(expected, 'hex'))
+  } catch {
+    return false
+  }
 }
 
 export async function recordAsset(
