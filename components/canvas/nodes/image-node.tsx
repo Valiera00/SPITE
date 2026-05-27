@@ -148,7 +148,7 @@ export function ImageNode({ id, data, selected }: NodeProps) {
   // status check can't reschedule itself or apply a late result.
   const stopRef = useRef(false)
   const resizeStartRef = useRef<{ x: number; width: number } | null>(null)
-  const { setNodes, getEdges, getNodes } = useReactFlow()
+  const { setNodes, setEdges, getEdges, getNodes } = useReactFlow()
   
   // Check if there are any connected prompt nodes - compute fresh on each render
   // Accept edges that either have targetHandle='prompt-in' OR no targetHandle (for backward compatibility)
@@ -294,6 +294,14 @@ export function ImageNode({ id, data, selected }: NodeProps) {
               }
             })
             setNodes(ns => [...ns, ...(newNodes as any)])
+            // Mirror this node's incoming connections onto each duplicate.
+            const incoming = getEdges().filter(e => e.target === id)
+            if (incoming.length) {
+              const newEdges = newNodes.flatMap((nn, ni) =>
+                incoming.map((e, ei) => ({ ...e, id: `${nn.id}-e${ei}-${stamp}-${ni}`, target: nn.id }))
+              )
+              setEdges(es => [...es, ...(newEdges as any)])
+            }
           }
         }
         return true
