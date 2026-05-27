@@ -134,6 +134,7 @@ export function ImageNode({ id, data, selected }: NodeProps) {
   const [error, setError] = useState<string | null>(null)
   const [outputUrl, setOutputUrl] = useState<string | null>((data.outputUrl as string) || null)
   const [requestId, setRequestId] = useState<string | null>(null)
+  const [falEndpoint, setFalEndpoint] = useState<string | null>(null)
   const [imageAspect, setImageAspect] = useState<number | null>(null) // null = no image yet
   const [nodeWidth, setNodeWidth] = useState<number>((data.width as number) || 320)
   const [isResizing, setIsResizing] = useState(false)
@@ -285,9 +286,12 @@ export function ImageNode({ id, data, selected }: NodeProps) {
   // Start polling when we have a request_id
   useEffect(() => {
     if (!requestId || !currentModel) return
+    // Poll the exact endpoint the server submitted to (may be the /edit
+    // endpoint when a reference image was used).
+    const pollModel = falEndpoint || currentModel.falModel
 
     const poll = async () => {
-      const shouldStop = await pollStatus(requestId, currentModel.falModel)
+      const shouldStop = await pollStatus(requestId, pollModel)
       if (!shouldStop) {
         pollingRef.current = setTimeout(poll, 2000)
       }
@@ -301,7 +305,7 @@ export function ImageNode({ id, data, selected }: NodeProps) {
         clearTimeout(pollingRef.current)
       }
     }
-  }, [requestId, currentModel, pollStatus])
+  }, [requestId, currentModel, falEndpoint, pollStatus])
 
   const handleGenerate = async () => {
     // Compile prompts from connected nodes and this node's prompt
@@ -398,6 +402,7 @@ export function ImageNode({ id, data, selected }: NodeProps) {
         return
       }
 
+      setFalEndpoint(result.model || null)
       setRequestId(result.request_id)
       setStatus('in_queue')
     } catch (err: any) {

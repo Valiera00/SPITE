@@ -31,11 +31,16 @@ export async function POST(request: NextRequest) {
     imageUrl: referenceImageUrl,
   })
 
-  console.log(`[fal.ai] Submitting: model=${model.falModel}`, JSON.stringify(input))
+  // When a reference image is supplied and the model has a dedicated edit
+  // endpoint, submit there instead of the text-to-image endpoint.
+  const hasReferenceImage = !!referenceImageUrl && model.inputTypes.includes('image')
+  const endpoint = hasReferenceImage && model.editModel ? model.editModel : model.falModel
+
+  console.log(`[fal.ai] Submitting: model=${endpoint}`, JSON.stringify(input))
 
   try {
     // Submit to fal.ai queue using REST API directly
-    const res = await fetch(`https://queue.fal.run/${model.falModel}`, {
+    const res = await fetch(`https://queue.fal.run/${endpoint}`, {
       method: 'POST',
       headers: {
         'Authorization': `Key ${falKey}`,
@@ -58,7 +63,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       request_id: data.request_id,
-      model: model.falModel,
+      model: endpoint,
       modelId: model.id,
       category: model.category,
     })

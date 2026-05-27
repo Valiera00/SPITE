@@ -8,6 +8,7 @@ export interface ModelConfig {
   id: string
   name: string
   falModel: string
+  editModel?: string            // fal endpoint to use when a reference image is supplied
   category: ModelCategory
   inputTypes: InputType[]
   aspectRatios: string[]
@@ -32,6 +33,7 @@ export const FAL_MODELS: ModelConfig[] = [
     id: 'nano-banana-2',
     name: 'Nano Banana 2',
     falModel: 'fal-ai/nano-banana-2',
+    editModel: 'fal-ai/nano-banana-2/edit',
     category: 'image',
     inputTypes: ['text', 'image'],
     // Supports extreme aspect ratios
@@ -46,6 +48,7 @@ export const FAL_MODELS: ModelConfig[] = [
     id: 'nano-banana-pro',
     name: 'Nano Banana Pro',
     falModel: 'fal-ai/nano-banana-pro',
+    editModel: 'fal-ai/nano-banana-pro/edit',
     category: 'image',
     inputTypes: ['text', 'image'],
     aspectRatios: ['auto', '21:9', '16:9', '3:2', '4:3', '5:4', '1:1', '4:5', '3:4', '2:3', '9:16'],
@@ -303,8 +306,9 @@ export function buildModelInput(
 ): Record<string, any> {
   const input: Record<string, any> = {}
 
-  // Add reference image if model supports image input
-  if (options.imageUrl && model.inputTypes.includes('image')) {
+  // Add reference image if model supports image input (flat image_url param).
+  // Nano Banana uses an image_urls array instead — handled in its own branch below.
+  if (options.imageUrl && model.inputTypes.includes('image') && !model.id.includes('nano-banana')) {
     input.image_url = options.imageUrl
   }
 
@@ -330,14 +334,11 @@ export function buildModelInput(
 
   // NANO BANANA models
   if (model.id.includes('nano-banana')) {
-    // Nano Banana is Gemini-based multimodal - use array format for image+text
+    // prompt is always a plain string. When a reference image is supplied,
+    // the /edit endpoint takes the image(s) via an image_urls array.
+    input.prompt = prompt
     if (options.imageUrl) {
-      input.prompt = [
-        { type: 'image_url', image_url: { url: options.imageUrl } },
-        { type: 'text', text: prompt }
-      ]
-    } else {
-      input.prompt = prompt
+      input.image_urls = [options.imageUrl]
     }
     // Use aspect_ratio for nano banana
     if (options.aspectRatio && model.aspectRatios.includes(options.aspectRatio)) {
