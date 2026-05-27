@@ -1,4 +1,5 @@
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3'
+import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3'
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { neon } from '@neondatabase/serverless'
 
 // Lazy initialization for database connection
@@ -85,6 +86,23 @@ export async function rehostToR2(sourceUrl: string): Promise<string> {
 
   // Served privately through the existing R2 proxy route.
   return `/api/r2-image/${key}`
+}
+
+// Convert an internal R2 proxy URL (/api/r2-image/<key>) into a temporary
+// signed R2 URL that an external service (fal.ai) can actually fetch.
+// Non-proxy URLs (e.g. fal's own URLs) are returned unchanged.
+export async function toFalFetchableUrl(url: string | null | undefined): Promise<string | null | undefined> {
+  if (!url) return url
+  const marker = '/api/r2-image/'
+  const idx = url.indexOf(marker)
+  if (idx === -1) return url // already an absolute, externally-fetchable URL
+  const key = url.slice(idx + marker.length)
+  const client = getR2Client()
+  return getSignedUrl(
+    client,
+    new GetObjectCommand({ Bucket: process.env.R2_BUCKET_NAME!, Key: key }),
+    { expiresIn: 3600 } // 1 hour, plenty for fal to download
+  )
 }
 
 export async function recordAsset(

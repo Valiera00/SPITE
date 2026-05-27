@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getModelById, buildModelInput } from '@/lib/fal-models'
+import { toFalFetchableUrl } from '@/lib/r2-upload'
 
 export async function POST(request: NextRequest) {
   const falKey = process.env.FAL_KEY
@@ -21,6 +22,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: `Unknown model: ${modelId}` }, { status: 400 })
   }
 
+  // Reference media is stored behind our private R2 proxy, which fal.ai
+  // cannot fetch. Sign it into a temporary public URL first.
+  const referenceImageSigned = await toFalFetchableUrl(referenceImageUrl)
+
   // Build the input using model-specific parameter mapping
   const input = buildModelInput(model, prompt, {
     aspectRatio: settings?.aspectRatio,
@@ -28,7 +33,7 @@ export async function POST(request: NextRequest) {
     resolution: settings?.resolution,
     enableAudio: settings?.enableAudio,
     enableLoop: settings?.enableLoop,
-    imageUrl: referenceImageUrl,
+    imageUrl: referenceImageSigned || undefined,
   })
 
   // Batch image count — image models only (video models produce one clip).
@@ -36,9 +41,10 @@ export async function POST(request: NextRequest) {
     input.num_images = Math.max(1, Math.min(4, Number(settings.numImages) || 1))
   }
 
-  // Video-to-video: pass a connected source video through if provided.
+  // Video-to-video: pass a connected source video through if provided
+  // (also signed so fal can fetch it).
   if (settings?.videoUrl) {
-    input.video_url = settings.videoUrl
+    input.video_url = await toFalFetchableUrl(settings.videoUrl)
   }
 
   // When a reference image is supplied and the model has a dedicated edit /
