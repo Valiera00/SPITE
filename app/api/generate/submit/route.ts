@@ -95,6 +95,7 @@ export async function POST(request: NextRequest) {
       model: pollModel,
       modelId: model.id,
       category: model.category,
+      _dbg: { endpoint, refUrl: referenceImageSigned, sentInput: input },
     })
   } catch (error: any) {
     console.error('[fal.ai] Submit error:', error)
