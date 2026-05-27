@@ -9,6 +9,7 @@ export interface ModelConfig {
   name: string
   falModel: string
   editModel?: string            // fal endpoint to use when a reference image is supplied
+  imageParam?: 'image_url' | 'image_urls' | 'start_image_url'  // how the reference image is passed (default image_url)
   category: ModelCategory
   inputTypes: InputType[]
   aspectRatios: string[]
@@ -34,6 +35,7 @@ export const FAL_MODELS: ModelConfig[] = [
     name: 'Nano Banana 2',
     falModel: 'fal-ai/nano-banana-2',
     editModel: 'fal-ai/nano-banana-2/edit',
+    imageParam: 'image_urls',
     category: 'image',
     inputTypes: ['text', 'image'],
     // Supports extreme aspect ratios
@@ -49,6 +51,7 @@ export const FAL_MODELS: ModelConfig[] = [
     name: 'Nano Banana Pro',
     falModel: 'fal-ai/nano-banana-pro',
     editModel: 'fal-ai/nano-banana-pro/edit',
+    imageParam: 'image_urls',
     category: 'image',
     inputTypes: ['text', 'image'],
     aspectRatios: ['auto', '21:9', '16:9', '3:2', '4:3', '5:4', '1:1', '4:5', '3:4', '2:3', '9:16'],
@@ -73,6 +76,8 @@ export const FAL_MODELS: ModelConfig[] = [
     id: 'flux-dev',
     name: 'FLUX Dev',
     falModel: 'fal-ai/flux/dev',
+    editModel: 'fal-ai/flux/dev/image-to-image',
+    imageParam: 'image_url',
     category: 'image',
     inputTypes: ['text', 'image'],
     aspectRatios: ['21:9', '16:9', '4:3', '3:2', '1:1', '2:3', '3:4', '9:16'],
@@ -84,6 +89,8 @@ export const FAL_MODELS: ModelConfig[] = [
     id: 'kling-o1',
     name: 'Kling o1',
     falModel: 'fal-ai/kling-image/o1',
+    editModel: 'fal-ai/kling-image/o1',
+    imageParam: 'image_urls',
     category: 'image',
     inputTypes: ['text', 'image'],
     aspectRatios: ['auto', '21:9', '16:9', '4:3', '3:2', '1:1', '2:3', '3:4', '9:16'],
@@ -99,6 +106,7 @@ export const FAL_MODELS: ModelConfig[] = [
     id: 'seedance-1.5',
     name: 'Seedance 1.5',
     falModel: 'fal-ai/bytedance/seedance/v1.5/pro/text-to-video',
+    editModel: 'fal-ai/bytedance/seedance/v1.5/pro/image-to-video',
     category: 'video',
     inputTypes: ['text', 'image'],
     aspectRatios: ['16:9', '9:16', '1:1'],
@@ -115,6 +123,7 @@ export const FAL_MODELS: ModelConfig[] = [
     id: 'seedance-2.0',
     name: 'Seedance 2.0',
     falModel: 'bytedance/seedance-2.0/text-to-video',
+    editModel: 'bytedance/seedance-2.0/image-to-video',
     category: 'video',
     inputTypes: ['text', 'image'],
     aspectRatios: ['auto', '21:9', '16:9', '4:3', '1:1', '3:4', '9:16'],
@@ -131,6 +140,7 @@ export const FAL_MODELS: ModelConfig[] = [
     id: 'kling-1.0',
     name: 'Kling 1.0',
     falModel: 'fal-ai/kling-video/v1/standard/text-to-video',
+    editModel: 'fal-ai/kling-video/v1/standard/image-to-video',
     category: 'video',
     inputTypes: ['text', 'image'],
     aspectRatios: ['16:9', '9:16', '1:1'],
@@ -145,6 +155,7 @@ export const FAL_MODELS: ModelConfig[] = [
     id: 'kling-1.5',
     name: 'Kling 1.5',
     falModel: 'fal-ai/kling-video/v1.5/pro/text-to-video',
+    editModel: 'fal-ai/kling-video/v1.5/pro/image-to-video',
     category: 'video',
     inputTypes: ['text', 'image'],
     aspectRatios: ['16:9', '9:16', '1:1'],
@@ -159,6 +170,7 @@ export const FAL_MODELS: ModelConfig[] = [
     id: 'kling-1.6',
     name: 'Kling 1.6',
     falModel: 'fal-ai/kling-video/v1.6/standard/text-to-video',
+    editModel: 'fal-ai/kling-video/v1.6/standard/image-to-video',
     category: 'video',
     inputTypes: ['text', 'image'],
     aspectRatios: ['16:9', '9:16', '1:1'],
@@ -173,6 +185,8 @@ export const FAL_MODELS: ModelConfig[] = [
     id: 'kling-3.0-standard',
     name: 'Kling 3.0',
     falModel: 'fal-ai/kling-video/v3/standard/text-to-video',
+    editModel: 'fal-ai/kling-video/v3/standard/image-to-video',
+    imageParam: 'start_image_url',
     category: 'video',
     inputTypes: ['text', 'image'],
     aspectRatios: ['16:9', '9:16', '1:1'],
@@ -187,6 +201,8 @@ export const FAL_MODELS: ModelConfig[] = [
     id: 'kling-3.0-pro',
     name: 'Kling 3.0 Pro',
     falModel: 'fal-ai/kling-video/v3/pro/text-to-video',
+    editModel: 'fal-ai/kling-video/v3/pro/image-to-video',
+    imageParam: 'start_image_url',
     category: 'video',
     inputTypes: ['text', 'image'],
     aspectRatios: ['16:9', '9:16', '1:1'],
@@ -201,6 +217,8 @@ export const FAL_MODELS: ModelConfig[] = [
     id: 'kling-3.0-4k',
     name: 'Kling 3.0 4K',
     falModel: 'fal-ai/kling-video/v3/4k/text-to-video',
+    editModel: 'fal-ai/kling-video/v3/4k/image-to-video',
+    imageParam: 'start_image_url',
     category: 'video',
     inputTypes: ['text', 'image'],
     aspectRatios: ['16:9', '9:16', '1:1'],
@@ -217,6 +235,8 @@ export const FAL_MODELS: ModelConfig[] = [
     id: 'kling-o1-video',
     name: 'Kling o1',
     falModel: 'fal-ai/kling-video/o1/text-to-video',
+    editModel: 'fal-ai/kling-video/o1/image-to-video',
+    imageParam: 'start_image_url',
     category: 'video',
     inputTypes: ['text', 'image', 'video'],
     aspectRatios: ['auto', '16:9', '9:16', '1:1', '4:3', '3:4', '3:2', '2:3', '21:9'],
@@ -231,6 +251,7 @@ export const FAL_MODELS: ModelConfig[] = [
     id: 'minimax-hailuo',
     name: 'MiniMax Hailuo',
     falModel: 'fal-ai/minimax/video-01',
+    editModel: 'fal-ai/minimax/video-01/image-to-video',
     category: 'video',
     inputTypes: ['text', 'image'],
     aspectRatios: [],  // No aspect ratio control
@@ -245,6 +266,7 @@ export const FAL_MODELS: ModelConfig[] = [
     id: 'minimax-hailuo-2.3',
     name: 'MiniMax Hailuo 2.3',
     falModel: 'fal-ai/minimax/hailuo-2.3/standard/text-to-video',
+    editModel: 'fal-ai/minimax/hailuo-2.3/standard/image-to-video',
     category: 'video',
     inputTypes: ['text', 'image'],
     aspectRatios: [],  // No aspect ratio control
@@ -259,6 +281,7 @@ export const FAL_MODELS: ModelConfig[] = [
     id: 'luma-ray2',
     name: 'Luma Ray2',
     falModel: 'fal-ai/luma-dream-machine/ray-2',
+    editModel: 'fal-ai/luma-dream-machine/ray-2/image-to-video',
     category: 'video',
     inputTypes: ['text', 'image'],
     aspectRatios: ['16:9', '9:16', '4:3', '3:4', '21:9', '9:21'],
@@ -306,10 +329,21 @@ export function buildModelInput(
 ): Record<string, any> {
   const input: Record<string, any> = {}
 
-  // Add reference image if model supports image input (flat image_url param).
-  // Nano Banana uses an image_urls array instead — handled in its own branch below.
-  if (options.imageUrl && model.inputTypes.includes('image') && !model.id.includes('nano-banana')) {
-    input.image_url = options.imageUrl
+  // Attach a reference image using the param name this model expects:
+  //  - image_urls (array): Nano Banana, Kling o1 image
+  //  - start_image_url: Kling v3 family + Kling o1 video (first frame)
+  //  - image_url (default): everything else (flux i2i, most image-to-video)
+  if (options.imageUrl && model.inputTypes.includes('image')) {
+    const param = model.imageParam || 'image_url'
+    if (param === 'image_urls') {
+      input.image_urls = [options.imageUrl]
+    } else {
+      input[param] = options.imageUrl
+    }
+    // FLUX image-to-image needs a strength value (how much to change the input).
+    if (model.id === 'flux-dev') {
+      input.strength = 0.95
+    }
   }
 
   // FLUX models - use image_size enum instead of aspect_ratio
@@ -334,12 +368,9 @@ export function buildModelInput(
 
   // NANO BANANA models
   if (model.id.includes('nano-banana')) {
-    // prompt is always a plain string. When a reference image is supplied,
-    // the /edit endpoint takes the image(s) via an image_urls array.
+    // prompt is always a plain string. The reference image (image_urls) is
+    // attached centrally above and routed to the /edit endpoint in submit.
     input.prompt = prompt
-    if (options.imageUrl) {
-      input.image_urls = [options.imageUrl]
-    }
     // Use aspect_ratio for nano banana
     if (options.aspectRatio && model.aspectRatios.includes(options.aspectRatio)) {
       input.aspect_ratio = options.aspectRatio

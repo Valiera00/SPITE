@@ -52,30 +52,43 @@ export async function GET(request: NextRequest) {
       
       const output = extractOutputUrls(result)
 
-      // Persist the output into our own R2 (fal URLs are temporary) and record
-      // it in the asset library. Re-hosting falls back to the fal URL on error
-      // so a storage hiccup never loses the generation.
+      // Persist outputs into our own R2 (fal URLs are temporary) and record
+      // each in the asset library. Re-hosting falls back to the fal URL on
+      // error so a storage hiccup never loses the generation.
       if (output.url) {
         try {
           const isVideo = !!output.videos
-          let storedUrl = output.url
-
-          // Only re-host external (fal) URLs, not already-proxied ones.
-          if (storedUrl.startsWith('http')) {
-            try {
-              storedUrl = await rehostToR2(output.url)
-              output.url = storedUrl
-              if (output.images?.length) output.images[0] = storedUrl
-              if (output.videos?.length) output.videos[0] = storedUrl
-            } catch (rehostErr) {
-              console.error('[r2] Re-host failed, keeping fal URL:', rehostErr)
-            }
-          }
-
           const prompt = searchParams.get('prompt') || 'Generated asset'
           const projectId = searchParams.get('projectId')
-          if (projectId && projectId !== 'undefined' && projectId !== 'null') {
-            await recordAsset(isVideo ? 'video' : 'image', model, prompt, storedUrl, projectId)
+          const canRecord = !!projectId && projectId !== 'undefined' && projectId !== 'null'
+
+          const rehost = async (u: string) => {
+            if (u.startsWith('http')) {
+              try {
+                return await rehostToR2(u)
+              } catch (rehostErr) {
+                console.error('[r2] Re-host failed, keeping fal URL:', rehostErr)
+              }
+            }
+            return u
+          }
+
+          if (isVideo) {
+            const stored = await rehost(output.url)
+            output.url = stored
+            if (output.videos?.length) output.videos[0] = stored
+            if (canRecord) await recordAsset('video', model, prompt, stored, projectId!)
+          } else {
+            // One or more images — re-host + record each, preserving order.
+            const sources = output.images?.length ? output.images : [output.url]
+            const stored: string[] = []
+            for (const u of sources) {
+              const s = await rehost(u)
+              stored.push(s)
+              if (canRecord) await recordAsset('image', model, prompt, s, projectId!)
+            }
+            output.images = stored
+            output.url = stored[0]
           }
         } catch (err) {
           console.error('[r2] Failed to record asset:', err)

@@ -137,7 +137,9 @@ export function VideoNode({ id, data, selected }: NodeProps) {
   const [error, setError] = useState<string | null>(null)
   const [outputUrl, setOutputUrl] = useState<string | null>((data.outputUrl as string) || null)
   const [requestId, setRequestId] = useState<string | null>(null)
-  
+  // The exact fal queue path to poll, as told to us by the submit response.
+  const [falEndpoint, setFalEndpoint] = useState<string | null>(null)
+
   const pollingRef = useRef<NodeJS.Timeout | null>(null)
   const { setNodes, getEdges, getNodes } = useReactFlow()
   
@@ -239,9 +241,10 @@ export function VideoNode({ id, data, selected }: NodeProps) {
   // Start polling when we have a request_id
   useEffect(() => {
     if (!requestId || !currentModel) return
+    const pollModel = falEndpoint || currentModel.falModel
 
     const poll = async () => {
-      const shouldStop = await pollStatus(requestId, currentModel.falModel)
+      const shouldStop = await pollStatus(requestId, pollModel)
       if (!shouldStop) {
         pollingRef.current = setTimeout(poll, 2000)
       }
@@ -255,7 +258,7 @@ export function VideoNode({ id, data, selected }: NodeProps) {
         clearTimeout(pollingRef.current)
       }
     }
-  }, [requestId, currentModel, pollStatus])
+  }, [requestId, currentModel, falEndpoint, pollStatus])
 
   const handleGenerate = async () => {
     // Compile prompts from connected nodes and this node's prompt
@@ -347,27 +350,22 @@ export function VideoNode({ id, data, selected }: NodeProps) {
     setProgress(undefined)
 
     try {
-      const input = buildModelInput(currentModel, compiledPrompt, {
-        aspectRatio,
-        duration,
-        resolution,
-        enableAudio,
-        enableLoop,
-      })
-      
-      // Add connected video URL for video-to-video generation (in settings)
-      if (connectedVideoUrl) {
-        input.video_url = connectedVideoUrl
-      }
-
+      // Send RAW settings; the server builds the model-specific payload.
       const response = await fetch('/api/generate/submit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           modelId,
           prompt: compiledPrompt,
-          referenceImageUrl: connectedImageUrl,  // Pass as top-level param for API
-          settings: input,
+          referenceImageUrl: connectedImageUrl,
+          settings: {
+            aspectRatio,
+            duration,
+            resolution,
+            enableAudio,
+            enableLoop,
+            videoUrl: connectedVideoUrl || undefined,
+          },
         }),
       })
 
@@ -379,6 +377,7 @@ export function VideoNode({ id, data, selected }: NodeProps) {
         return
       }
 
+      setFalEndpoint(result.model || currentModel.falModel)
       setRequestId(result.request_id)
       setStatus('in_queue')
     } catch (err: any) {
@@ -396,7 +395,7 @@ export function VideoNode({ id, data, selected }: NodeProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           request_id: requestId,
-          model: currentModel.falModel,
+          model: falEndpoint || currentModel.falModel,
         }),
       })
       setStatus('cancelled')

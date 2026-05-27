@@ -31,8 +31,18 @@ export async function POST(request: NextRequest) {
     imageUrl: referenceImageUrl,
   })
 
-  // When a reference image is supplied and the model has a dedicated edit
-  // endpoint, submit there instead of the text-to-image endpoint.
+  // Batch image count — image models only (video models produce one clip).
+  if (model.category === 'image' && settings?.numImages) {
+    input.num_images = Math.max(1, Math.min(4, Number(settings.numImages) || 1))
+  }
+
+  // Video-to-video: pass a connected source video through if provided.
+  if (settings?.videoUrl) {
+    input.video_url = settings.videoUrl
+  }
+
+  // When a reference image is supplied and the model has a dedicated edit /
+  // image-to-video endpoint, submit there instead of the text endpoint.
   const hasReferenceImage = !!referenceImageUrl && model.inputTypes.includes('image')
   const endpoint = hasReferenceImage && model.editModel ? model.editModel : model.falModel
 
@@ -61,11 +71,19 @@ export async function POST(request: NextRequest) {
     const data = await res.json()
     console.log(`[fal.ai] Submitted, request_id=${data.request_id}`)
 
+    // fal returns the exact status/result URLs for this job. Derive the queue
+    // path fal expects for polling from status_url — this is authoritative and
+    // handles every case (/edit strips to base, image-to-video keeps its path,
+    // etc.) instead of us guessing. Fall back to falModel if absent.
+    let pollModel = model.falModel
+    const m = typeof data.status_url === 'string'
+      ? data.status_url.match(/queue\.fal\.run\/(.+?)\/requests\//)
+      : null
+    if (m) pollModel = m[1]
+
     return NextResponse.json({
       request_id: data.request_id,
-      // Submit may go to a sub-path (e.g. /edit), but fal's queue keys
-      // status/result/cancel by the BASE app id — so poll falModel.
-      model: model.falModel,
+      model: pollModel,
       modelId: model.id,
       category: model.category,
     })
