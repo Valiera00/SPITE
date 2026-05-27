@@ -359,7 +359,8 @@ export function ImageNode({ id, data, selected }: NodeProps) {
       if (incomingImageEdges.length > 0) {
         const imageEdge = incomingImageEdges[0]
         const sourceNode = nodes.find(n => n.id === imageEdge.source)
-        const sourceImageUrl = sourceNode?.data?.outputUrl as string | undefined
+        // Generated nodes store the URL in outputUrl; reference/upload nodes in thumbnail.
+        const sourceImageUrl = (sourceNode?.data?.outputUrl || sourceNode?.data?.thumbnail) as string | undefined
         if (sourceImageUrl) {
           connectedImageUrl = sourceImageUrl
         }

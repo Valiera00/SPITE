@@ -1,7 +1,7 @@
 'use client'
 
 import { Position, NodeProps, Handle, useReactFlow } from '@xyflow/react'
-import { Image as ImageIcon, UploadSimple, CircleNotch } from '@phosphor-icons/react'
+import { Image as ImageIcon, UploadSimple, CircleNotch, VideoCamera } from '@phosphor-icons/react'
 import { useState, useEffect, useRef } from 'react'
 import { NodeActionToolbar } from './node-toolbar'
 import { ShotSelector, type ShotOption } from './shot-selector'
@@ -33,6 +33,7 @@ export function ReferenceNode({ id, data, selected }: NodeProps) {
   const selectedShotId = (data.selectedShotId as string) || undefined
   const isTaggedToShot = !!selectedShotId
   const isUploading = data.isUploading as boolean
+  const isVideo = (data.mediaType as string) === 'video' || /\.(mp4|webm|mov|m4v)(\?|$)/i.test(thumbnail || '')
 
   const handleShotSelect = (shotId: string) => {
     setNodes(ns => ns.map(n => n.id === id ? { ...n, data: { ...n.data, selectedShotId: shotId } } : n))
@@ -107,7 +108,32 @@ export function ReferenceNode({ id, data, selected }: NodeProps) {
 
       {/* Handles */}
       <Handle type="target" position={Position.Left} style={{ opacity: 0 }} />
-      <Handle type="source" id="image-out" position={Position.Right} style={{ top: '50%', opacity: 0 }} />
+      <Handle
+        type="source"
+        id={isVideo ? 'video-out' : 'image-out'}
+        position={Position.Right}
+        style={{ top: '50%', right: -12, width: 24, height: 24, transform: 'translateY(-50%)', opacity: 0 }}
+      />
+      {/* Visible output indicator so the reference can be wired into a generator */}
+      <div
+        className="absolute flex items-center justify-center"
+        style={{
+          width: 24,
+          height: 24,
+          borderRadius: '50%',
+          background: '#111316',
+          border: `1.5px solid ${isVideo ? 'rgba(244,114,182,0.85)' : 'rgba(96,165,250,0.85)'}`,
+          top: '50%',
+          right: -12,
+          transform: 'translateY(-50%)',
+          zIndex: 10,
+          pointerEvents: 'none',
+        }}
+      >
+        {isVideo
+          ? <VideoCamera size={11} weight="bold" style={{ color: 'rgba(244,114,182,0.95)' }} />
+          : <ImageIcon size={11} weight="bold" style={{ color: 'rgba(96,165,250,0.95)' }} />}
+      </div>
 
       {/* Card */}
       <div
@@ -125,7 +151,11 @@ export function ReferenceNode({ id, data, selected }: NodeProps) {
         {/* Image area */}
         {thumbnail ? (
           <div className="relative">
-            <img src={thumbnail} alt="" className="w-full h-auto block" />
+            {isVideo ? (
+              <video src={thumbnail} className="w-full h-auto block" muted loop controls playsInline />
+            ) : (
+              <img src={thumbnail} alt="" className="w-full h-auto block" />
+            )}
             {isUploading && (
               <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
                 <CircleNotch size={24} className="text-white animate-spin" />
@@ -135,7 +165,7 @@ export function ReferenceNode({ id, data, selected }: NodeProps) {
         ) : (
           <div className="flex flex-col items-center justify-center gap-2 py-12 text-muted-foreground/40">
             <ImageIcon size={28} />
-            <span className="text-xs">Drop image</span>
+            <span className="text-xs">Drop image or video</span>
           </div>
         )}
 

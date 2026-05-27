@@ -388,6 +388,7 @@ function CanvasInner({ projectId }: { projectId: string }) {
           assetId: asset.id,
           thumbnail: asset.r2_url,
           label: asset.prompt || 'Reference',
+          mediaType: asset.type === 'video' ? 'video' : 'image',
         },
       }
       
@@ -515,8 +516,9 @@ function CanvasInner({ projectId }: { projectId: string }) {
     const n = makeNode('reference', flowPos, nodeLabel, activeSceneId)
     
     // Create temp blob URL for immediate display
+    const isVideoFile = file.type.startsWith('video/')
     const tempUrl = URL.createObjectURL(file)
-    n.data = { ...n.data, thumbnail: tempUrl, isUploading: true }
+    n.data = { ...n.data, thumbnail: tempUrl, isUploading: true, mediaType: isVideoFile ? 'video' : 'image' }
     setNodes(ns => [...ns, n])
     
     // Upload to R2 in background
@@ -536,17 +538,17 @@ function CanvasInner({ projectId }: { projectId: string }) {
         const proxyUrl = r2Key ? `/api/r2-image/${r2Key}` : uploadData.url
         
         // Update node with proxy URL
-        setNodes(ns => ns.map(node => 
-          node.id === n.id 
+        setNodes(ns => ns.map(node =>
+          node.id === n.id
             ? { ...node, data: { ...node.data, thumbnail: proxyUrl, isUploading: false } }
             : node
         ))
-        
+
         // Record in assets with proxy URL and mark as protected (used in canvas)
         const assetRes = await fetch('/api/assets', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url: proxyUrl, type: 'image', filename: nodeLabel, projectId })
+          body: JSON.stringify({ url: proxyUrl, type: isVideoFile ? 'video' : 'image', filename: nodeLabel, projectId })
         })
         const assetData = await assetRes.json()
         console.log('[v0] Asset recorded:', { assetData, status: assetRes.status })
