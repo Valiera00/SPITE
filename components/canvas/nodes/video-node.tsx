@@ -288,26 +288,40 @@ export function VideoNode({ id, data, selected }: NodeProps) {
     // Compile prompts from connected nodes and this node's prompt
     let compiledPrompt = ''
     let connectedImageUrl: string | null = null
+    let connectedEndImageUrl: string | null = null
     let connectedVideoUrl: string | null = null
-    
+
+    const urlOfSource = (edge: any) => {
+      const sourceNode = nodes.find(n => n.id === edge.source)
+      // Generated nodes store the URL in outputUrl; reference/upload nodes in thumbnail.
+      return (sourceNode?.data?.outputUrl || sourceNode?.data?.thumbnail) as string | undefined
+    }
+
+    let nodes: any[] = []
     try {
       const edges = getEdges()
-      const nodes = getNodes()
-      
+      nodes = getNodes()
+
       // Get all edges where target is this node's "prompt-in" handle
       // Accept edges without targetHandle for backward compatibility (old connections)
       const incomingPromptEdges = edges.filter(
         edge => edge.target === id && (edge.targetHandle === 'prompt-in' || !edge.targetHandle)
       )
-      
-      // Get connected image input (from image-in handle or image-out source handle)
+
+      // End frame (its own handle) — matched first so it isn't mistaken for the first frame.
+      const incomingEndFrameEdges = edges.filter(
+        edge => edge.target === id && edge.targetHandle === 'end-frame-in'
+      )
+
+      // First frame (image-in). The image-out source fallback is for old
+      // connections, but must NOT swallow end-frame or video edges.
       const incomingImageEdges = edges.filter(
         edge => edge.target === id && (
-          edge.targetHandle === 'image-in' || 
-          edge.sourceHandle === 'image-out'  // Also check source handle for backward compatibility
+          edge.targetHandle === 'image-in' ||
+          (edge.sourceHandle === 'image-out' && edge.targetHandle !== 'end-frame-in' && edge.targetHandle !== 'video-in')
         )
       )
-      
+
       // Get connected video input (from video-in handle or video-out source handle)
       const incomingVideoEdges = edges.filter(
         edge => edge.target === id && (
@@ -315,18 +329,19 @@ export function VideoNode({ id, data, selected }: NodeProps) {
           edge.sourceHandle === 'video-out'  // Also check source handle
         )
       )
-      
-      // Get image URL from connected image source node
+
+      // Get image URL from connected first-frame source node
       if (incomingImageEdges.length > 0) {
-        const imageEdge = incomingImageEdges[0]
-        const sourceNode = nodes.find(n => n.id === imageEdge.source)
-        // Generated nodes store the URL in outputUrl; reference/upload nodes in thumbnail.
-        const sourceImageUrl = (sourceNode?.data?.outputUrl || sourceNode?.data?.thumbnail) as string | undefined
-        if (sourceImageUrl) {
-          connectedImageUrl = sourceImageUrl
-        }
+        const url = urlOfSource(incomingImageEdges[0])
+        if (url) connectedImageUrl = url
       }
-      
+
+      // Get end-frame URL
+      if (incomingEndFrameEdges.length > 0) {
+        const url = urlOfSource(incomingEndFrameEdges[0])
+        if (url) connectedEndImageUrl = url
+      }
+
       // Get video URL from connected video source node
       if (incomingVideoEdges.length > 0) {
         const videoEdge = incomingVideoEdges[0]
@@ -380,6 +395,7 @@ export function VideoNode({ id, data, selected }: NodeProps) {
         modelId,
         prompt: compiledPrompt,
         referenceImageUrl: connectedImageUrl,
+        endImageUrl: connectedEndImageUrl,
         settings: {
           aspectRatio,
           duration,
@@ -509,19 +525,27 @@ export function VideoNode({ id, data, selected }: NodeProps) {
       <Handle type="target" id="prompt-in" position={Position.Left} style={{ top: 80, left: -12, opacity: 0, width: 24, height: 24 }} />
       <HandleIcon icon={TextT} color="rgba(168,85,247,0.8)" position="left" top={80} visible />
       
-      {/* Image input - only if model supports image input */}
+      {/* First frame (blue) - only if model supports image input */}
       {currentModel?.inputTypes.includes('image') && (
         <>
-          <Handle type="target" id="image-in" position={Position.Left} style={{ top: 150, left: -12, opacity: 0, width: 24, height: 24 }} />
+          <Handle type="target" id="image-in" title="First frame" position={Position.Left} style={{ top: 150, left: -12, opacity: 0, width: 24, height: 24 }} />
           <HandleIcon icon={ImageIcon} color="rgba(96,165,250,0.8)" position="left" top={150} visible />
         </>
       )}
-      
-      {/* Video input - only if model supports video-to-video */}
+
+      {/* End frame (amber) - video models that support a last frame */}
+      {currentModel?.category === 'video' && !currentModel.id.startsWith('minimax') && (
+        <>
+          <Handle type="target" id="end-frame-in" title="End frame" position={Position.Left} style={{ top: 200, left: -12, opacity: 0, width: 24, height: 24 }} />
+          <HandleIcon icon={ImageIcon} color="rgba(251,191,36,0.9)" position="left" top={200} visible />
+        </>
+      )}
+
+      {/* Video input (green) - only if model supports video-to-video */}
       {currentModel?.inputTypes.includes('video') && (
         <>
-          <Handle type="target" id="video-in" position={Position.Left} style={{ top: 220, left: -12, opacity: 0, width: 24, height: 24 }} />
-          <HandleIcon icon={FilmStrip} color="rgba(74,222,128,0.8)" position="left" top={220} visible />
+          <Handle type="target" id="video-in" title="Source video" position={Position.Left} style={{ top: 260, left: -12, opacity: 0, width: 24, height: 24 }} />
+          <HandleIcon icon={FilmStrip} color="rgba(74,222,128,0.8)" position="left" top={260} visible />
         </>
       )}
       

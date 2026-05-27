@@ -11,7 +11,7 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  const { modelId, prompt, referenceImageUrl, settings } = await request.json()
+  const { modelId, prompt, referenceImageUrl, endImageUrl, settings } = await request.json()
 
   if (!modelId || !prompt) {
     return NextResponse.json({ error: 'modelId and prompt are required' }, { status: 400 })
@@ -28,6 +28,7 @@ export async function POST(request: NextRequest) {
   const proto = request.headers.get('x-forwarded-proto') || 'https'
   const baseUrl = host ? `${proto}://${host}` : ''
   const referenceImageSigned = toFalFetchableUrl(referenceImageUrl, baseUrl)
+  const endImageSigned = toFalFetchableUrl(endImageUrl, baseUrl)
 
   // Build the input using model-specific parameter mapping
   const input = buildModelInput(model, prompt, {
@@ -37,6 +38,7 @@ export async function POST(request: NextRequest) {
     enableAudio: settings?.enableAudio,
     enableLoop: settings?.enableLoop,
     imageUrl: referenceImageSigned || undefined,
+    endImageUrl: endImageSigned || undefined,
   })
 
   // Batch image count — image models only (video models produce one clip).
@@ -52,7 +54,7 @@ export async function POST(request: NextRequest) {
 
   // When a reference image is supplied and the model has a dedicated edit /
   // image-to-video endpoint, submit there instead of the text endpoint.
-  const hasReferenceImage = !!referenceImageUrl && model.inputTypes.includes('image')
+  const hasReferenceImage = !!(referenceImageUrl || endImageUrl) && model.inputTypes.includes('image')
   const endpoint = hasReferenceImage && model.editModel ? model.editModel : model.falModel
 
   console.log(`[fal.ai] Submitting: model=${endpoint}`, JSON.stringify(input))

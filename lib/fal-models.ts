@@ -324,6 +324,7 @@ export function buildModelInput(
     enableAudio?: boolean
     enableLoop?: boolean
     imageUrl?: string
+    endImageUrl?: string
     seed?: number
   } = {}
 ): Record<string, any> {
@@ -349,6 +350,16 @@ export function buildModelInput(
     if (model.id === 'flux-dev') {
       input.strength = 0.6
     }
+  }
+
+  // End/last frame (video image-to-video only). Kling v1.x calls it
+  // tail_image_url; everything else uses end_image_url. Same endpoint as the
+  // first frame, so this never changes which endpoint we submit to.
+  if (options.endImageUrl && model.category === 'video') {
+    const endParam = ['kling-1.0', 'kling-1.5', 'kling-1.6'].includes(model.id)
+      ? 'tail_image_url'
+      : 'end_image_url'
+    input[endParam] = options.endImageUrl
   }
 
   // FLUX models - image_size must be a {width,height} object (NOT a "WxH"
