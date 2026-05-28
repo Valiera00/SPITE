@@ -1459,6 +1459,7 @@ export function LeftToolbar({
           open={!!editingFolder}
           onClose={() => { setEditingFolder(null); mutateFolders() }}
           folderType={editingFolder.type}
+          projectId={projectId}
           assetId=""
           assetUrl=""
           editFolder={editingFolder}

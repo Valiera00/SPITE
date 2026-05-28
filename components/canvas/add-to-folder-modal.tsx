@@ -27,6 +27,12 @@ interface AddToFolderModalProps {
   open: boolean
   onClose: () => void
   folderType: FolderType
+  // The project we're saving the folder under. Required — without it the
+  // folders API silently writes everything to a default "proj-001" bucket
+  // and the sidebar (which scopes its fetch by the real project id) never
+  // sees them. Also required to record uploaded assets — /api/assets POST
+  // rejects calls that omit projectId.
+  projectId: string
   assetId?: string
   assetUrl?: string
   editFolder?: Folder | null
@@ -46,7 +52,7 @@ const typeIcons = {
   general: Package,
 }
 
-export function AddToFolderModal({ open, onClose, folderType, assetId, assetUrl, editFolder }: AddToFolderModalProps) {
+export function AddToFolderModal({ open, onClose, folderType, projectId, assetId, assetUrl, editFolder }: AddToFolderModalProps) {
   const [folders, setFolders] = useState<Folder[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -61,21 +67,23 @@ export function AddToFolderModal({ open, onClose, folderType, assetId, assetUrl,
   const fileInputRef = useRef<HTMLInputElement>(null)
   const pickerFileInputRef = useRef<HTMLInputElement>(null)
 
-  // Fetch existing folders and available assets
+  // Fetch existing folders + available assets — both scoped to the current
+  // project. Without the projectId param these endpoints either fall back
+  // to a default bucket (folders) or return the whole library (assets).
   useEffect(() => {
     if (!open) return
     setLoading(true)
-    fetch(`/api/folders?type=${folderType}`)
+    fetch(`/api/folders?type=${folderType}&projectId=${projectId}`)
       .then(r => r.json())
       .then(data => setFolders(Array.isArray(data) ? data : []))
       .catch(console.error)
       .finally(() => setLoading(false))
 
-    fetch('/api/assets')
+    fetch(`/api/assets?projectId=${projectId}`)
       .then(r => r.json())
       .then(data => setAvailableAssets(Array.isArray(data) ? data : []))
       .catch(console.error)
-  }, [open, folderType])
+  }, [open, folderType, projectId])
 
   // Initialize form
   useEffect(() => {
@@ -132,6 +140,7 @@ export function AddToFolderModal({ open, onClose, folderType, assetId, assetUrl,
       formData.append('file', file)
       formData.append('filename', file.name)
       const uploadRes = await fetch('/api/r2-upload', { method: 'POST', body: formData })
+      if (!uploadRes.ok) throw new Error(`r2-upload returned ${uploadRes.status}`)
       const { url: r2Url } = await uploadRes.json()
 
       // r2-upload returns the direct R2 URL (e.g. https://bucket.account.r2.dev/...).
@@ -141,14 +150,19 @@ export function AddToFolderModal({ open, onClose, folderType, assetId, assetUrl,
       const r2Key = typeof r2Url === 'string' ? r2Url.split('.r2.dev/')[1] : null
       const proxyUrl = r2Key ? `/api/r2-image/${r2Key}` : r2Url
 
-      // Record in assets DB
+      // Record in assets DB. projectId is REQUIRED — the API responds 400
+      // without it, which used to leave the upload as a thumbnail-only
+      // ghost row in selectedAssets (id: undefined) that the folder save
+      // then silently dropped.
       const isVideo = file.type.startsWith('video/')
       const assetRes = await fetch('/api/assets', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: proxyUrl, type: isVideo ? 'video' : 'image', filename: file.name }),
+        body: JSON.stringify({ url: proxyUrl, type: isVideo ? 'video' : 'image', filename: file.name, projectId }),
       })
+      if (!assetRes.ok) throw new Error(`assets POST returned ${assetRes.status}`)
       const assetData = await assetRes.json()
+      if (!assetData?.id) throw new Error('assets POST returned no id')
 
       // Replace placeholder with real asset (using proxy URL so the thumbnail
       // actually resolves), revoke the temp blob.
@@ -160,10 +174,11 @@ export function AddToFolderModal({ open, onClose, folderType, assetId, assetUrl,
       return { id: assetData.id, url: proxyUrl }
     } catch (err) {
       console.error('[v0] Upload failed:', err)
+      URL.revokeObjectURL(tempUrl)
       setSelectedAssets(prev => prev.filter(a => a.id !== tempId))
       return null
     }
-  }, [])
+  }, [projectId])
 
   const handleFiles = useCallback(async (files: FileList | File[]) => {
     const media = Array.from(files).filter(f => f.type.startsWith('image/') || f.type.startsWith('video/'))
@@ -220,7 +235,15 @@ export function AddToFolderModal({ open, onClose, folderType, assetId, assetUrl,
         const res = await fetch('/api/folders', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: newName.trim(), description: newDescription.trim() || null, type: folderType, assetIds })
+          body: JSON.stringify({
+            name: newName.trim(),
+            description: newDescription.trim() || null,
+            type: folderType,
+            assetIds,
+            // Required — without this the folder lands in a default
+            // proj-001 bucket and never shows up in the sidebar.
+            projectId,
+          }),
         })
         const data = await res.json()
         console.log('[v0] Create response:', res.status, data)

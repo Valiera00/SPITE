@@ -1,6 +1,7 @@
 'use client'
 
 import { Position, NodeProps, Handle, useReactFlow } from '@xyflow/react'
+import { useParams } from 'next/navigation'
 import { Image as ImageIcon, UploadSimple, CircleNotch, VideoCamera } from '@phosphor-icons/react'
 import { memo, useState, useEffect, useRef } from 'react'
 import { NodeActionToolbar } from './node-toolbar'
@@ -9,6 +10,8 @@ import { AddToFolderModal } from '../add-to-folder-modal'
 import { Lightbox } from '../lightbox'
 
 function ReferenceNodeImpl({ id, data, selected }: NodeProps) {
+  const params = useParams()
+  const projectId = (params?.id as string) || ''
   const { setNodes } = useReactFlow()
   const [imageWidth, setImageWidth] = useState<number>((data.width as number) || 320)
   const [thumbnail, setThumbnail] = useState<string | null>((data.thumbnail as string) || null)
@@ -231,6 +234,7 @@ function ReferenceNodeImpl({ id, data, selected }: NodeProps) {
         open={folderModalOpen}
         onClose={() => setFolderModalOpen(false)}
         folderType={folderType}
+        projectId={projectId}
         assetId={(data.assetId as string) || ''}
         assetUrl={thumbnail || ''}
       />
