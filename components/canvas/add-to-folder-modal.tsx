@@ -263,13 +263,27 @@ export function AddToFolderModal({ open, onClose, folderType, assetId, assetUrl,
         className="bg-[#1A1D21] border-white/10 max-w-md max-h-[85vh] overflow-y-auto"
         // Whole modal accepts drag-and-drop of files. The small "+" tile
         // also still works for direct clicks.
+        //
+        // CRITICAL: stopPropagation on every drag event. Radix renders this
+        // dialog via portal to document.body, but React's synthetic events
+        // still bubble through the COMPONENT tree — so without stopping
+        // them here, every drop also fires canvas-workspace's onDrop and
+        // the file gets added to the canvas as a reference node in
+        // addition to landing in the folder.
         onDragOver={e => {
           if (e.dataTransfer.types.includes('Files')) {
             e.preventDefault()
+            e.stopPropagation()
             setIsDraggingOver(true)
           }
         }}
+        onDragEnter={e => {
+          if (e.dataTransfer.types.includes('Files')) {
+            e.stopPropagation()
+          }
+        }}
         onDragLeave={e => {
+          e.stopPropagation()
           // dragleave fires every time we cross a child boundary; only clear
           // the overlay when the pointer actually exits the modal.
           if (!e.currentTarget.contains(e.relatedTarget as Node)) {
@@ -279,6 +293,7 @@ export function AddToFolderModal({ open, onClose, folderType, assetId, assetUrl,
         onDrop={e => {
           if (e.dataTransfer.files.length === 0) return
           e.preventDefault()
+          e.stopPropagation()
           setIsDraggingOver(false)
           handleFiles(e.dataTransfer.files)
         }}
