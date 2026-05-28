@@ -147,22 +147,32 @@ export function VideoNode({ id, data, selected }: NodeProps) {
   const stopRef = useRef(false)
   const { setNodes, getEdges, getNodes } = useReactFlow()
   
-  // Check if there are any connected prompt nodes - compute fresh on each render
-  // Accept edges that either have targetHandle='prompt-in' OR no targetHandle (for backward compatibility)
+  // Check connection states fresh on each render
   let hasConnectedPrompts = false
+  let hasConnectedFirstFrame = false
+  let hasConnectedReferences = false
   try {
     const edges = getEdges()
     const allIncomingEdges = edges.filter(edge => edge.target === id)
-    const incomingPromptEdges = allIncomingEdges.filter(edge => 
-      edge.targetHandle === 'prompt-in' || edge.targetHandle === null || edge.targetHandle === undefined
+    hasConnectedPrompts = allIncomingEdges.some(e =>
+      e.targetHandle === 'prompt-in' || e.targetHandle === null || e.targetHandle === undefined
     )
-    hasConnectedPrompts = incomingPromptEdges.length > 0
-  } catch (err) {
-    hasConnectedPrompts = false
-  }
+    hasConnectedFirstFrame = allIncomingEdges.some(e =>
+      e.targetHandle === 'image-in' ||
+      (e.sourceHandle === 'image-out' && e.targetHandle !== 'end-frame-in' && e.targetHandle !== 'reference-in' && e.targetHandle !== 'video-in')
+    )
+    hasConnectedReferences = allIncomingEdges.some(e => e.targetHandle === 'reference-in')
+  } catch { /* ignore */ }
 
   // Get current model config
   const currentModel = useMemo(() => getModelById(modelId), [modelId])
+
+  // Kling v3 references ride the image-to-video endpoint, which requires a
+  // first frame. Block generation (with a clear message) when refs are
+  // connected but no first frame, so the user gets a helpful error not a
+  // confusing fal validation failure.
+  const refsRequireFirstFrame = !!currentModel?.referenceParam && currentModel.referenceParam === 'elements' && !currentModel.referenceModel
+  const blockedNoFirstFrame = refsRequireFirstFrame && hasConnectedReferences && !hasConnectedFirstFrame
 
   // Reset settings when model changes
   useEffect(() => {
@@ -620,6 +630,14 @@ export function VideoNode({ id, data, selected }: NodeProps) {
               <span className="text-[9px] font-mono text-red-400">{error}</span>
             </div>
           )}
+
+          {!error && blockedNoFirstFrame && (
+            <div className="absolute bottom-2 left-2 right-2 bg-amber-500/20 border border-amber-500/30 rounded px-2 py-1">
+              <span className="text-[9px] font-mono text-amber-300">
+                {currentModel?.name} needs a first frame when references are connected. Wire an image into the blue handle.
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Prompt input */}
@@ -736,11 +754,13 @@ export function VideoNode({ id, data, selected }: NodeProps) {
               <X size={10} weight="bold" />
             </button>
           ) : (
-            <button 
+            <button
               onClick={handleGenerate}
-              disabled={!prompt.trim() && !hasConnectedPrompts}
+              disabled={(!prompt.trim() && !hasConnectedPrompts) || blockedNoFirstFrame}
               className="w-6 h-6 rounded-full bg-accent/20 hover:bg-accent text-accent hover:text-accent-foreground flex items-center justify-center transition-colors teal-glow disabled:opacity-50 disabled:cursor-not-allowed"
-              title="Generate video"
+              title={blockedNoFirstFrame
+                ? `${currentModel?.name} needs a first frame when references are connected — wire an image into the blue First frame handle.`
+                : 'Generate video'}
             >
               <Play size={10} weight="fill" />
             </button>
