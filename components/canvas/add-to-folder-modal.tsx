@@ -256,7 +256,11 @@ export function AddToFolderModal({ open, onClose, folderType, assetId, assetUrl,
         // max-h + overflow keeps the form fully visible on short screens —
         // without this the centered-fixed dialog can clip its lower half off
         // when its content (asset thumbnails, picker, etc.) is tall.
-        className="bg-[#1A1D21] border-white/10 max-w-md max-h-[85vh] overflow-y-auto relative"
+        // NOTE: do NOT add a `relative` class here — tailwind-merge would
+        // overwrite the base `fixed` and the dialog would lose its centered
+        // viewport positioning. `fixed` is already a positioning context
+        // for the absolute-positioned drop overlay below.
+        className="bg-[#1A1D21] border-white/10 max-w-md max-h-[85vh] overflow-y-auto"
         // Whole modal accepts drag-and-drop of files. The small "+" tile
         // also still works for direct clicks.
         onDragOver={e => {
