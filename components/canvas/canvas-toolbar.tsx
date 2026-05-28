@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { ArrowLeft, MagnifyingGlassPlus, MagnifyingGlassMinus, CornersOut, Lightning, Lock, CheckCircle, Circle, GearSix } from '@phosphor-icons/react'
+import { ArrowLeft, MagnifyingGlassPlus, MagnifyingGlassMinus, CornersOut, Lock, CheckCircle, Circle, GearSix } from '@phosphor-icons/react'
 import { useReactFlow } from '@xyflow/react'
 import { useState } from 'react'
 import { useAuth } from '@/components/auth-provider'
@@ -76,13 +76,6 @@ export function CanvasToolbar({ projectName, onProjectNameChange, saveStatus, pr
           title="Fit to screen"
         >
           <CornersOut size={14} weight="thin" />
-        </button>
-
-        <div className="w-px h-4 bg-border mx-1" />
-
-        <button className="flex items-center gap-2 px-3 h-7 rounded-lg text-xs font-mono font-medium transition-all teal-glow hover:opacity-90 bg-accent text-accent-foreground">
-          <Lightning size={12} weight="fill" />
-          Generate All
         </button>
 
         <div className="w-px h-4 bg-border mx-1" />

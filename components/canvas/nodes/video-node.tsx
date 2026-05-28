@@ -7,6 +7,8 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { toast } from 'sonner'
 import { NodeActionToolbar } from './node-toolbar'
 import { ShotSelector, type ShotOption } from './shot-selector'
+import { Lightbox } from '../lightbox'
+import { labelFromPrompt, DEFAULT_VIDEO_LABEL } from '@/lib/auto-name'
 import { getVideoModels, getModelById, buildModelInput, type ModelConfig } from '@/lib/fal-models'
 import { captureVideoThumbnail } from '@/lib/video-thumbnail'
 
@@ -142,6 +144,9 @@ export function VideoNode({ id, data, selected }: NodeProps) {
   const [requestId, setRequestId] = useState<string | null>(null)
   // The exact fal queue path to poll, as told to us by the submit response.
   const [falEndpoint, setFalEndpoint] = useState<string | null>(null)
+  const [lightboxOpen, setLightboxOpen] = useState(false)
+  const [isRenaming, setIsRenaming] = useState(false)
+  const [labelDraft, setLabelDraft] = useState('')
 
   const pollingRef = useRef<NodeJS.Timeout | null>(null)
   // Set true to immediately stop polling (cancel / unmount).
@@ -253,6 +258,29 @@ export function VideoNode({ id, data, selected }: NodeProps) {
       data: { ...n.data, prompt, modelId, duration, aspectRatio, resolution, enableAudio, enableLoop, numVideos, outputUrl }
     } : n))
   }, [prompt, modelId, duration, aspectRatio, resolution, enableAudio, enableLoop, numVideos, outputUrl, id, setNodes])
+
+  // Auto-name: once a generation completes, replace the default
+  // "Video Generator #N" label with the first few words of the prompt.
+  // User-renamed labels are left alone.
+  useEffect(() => {
+    if (!outputUrl) return
+    const current = (data.label as string) || ''
+    if (current && !DEFAULT_VIDEO_LABEL.test(current)) return
+    const derived = labelFromPrompt(prompt)
+    if (!derived || derived === current) return
+    setNodes(ns => ns.map(n => n.id === id ? { ...n, data: { ...n.data, label: derived } } : n))
+  }, [outputUrl, prompt, data.label, id, setNodes])
+
+  const handleRename = () => {
+    setLabelDraft((data.label as string) || '')
+    setIsRenaming(true)
+  }
+  const commitRename = () => {
+    const next = labelDraft.trim()
+    setIsRenaming(false)
+    if (!next) return
+    setNodes(ns => ns.map(n => n.id === id ? { ...n, data: { ...n.data, label: next } } : n))
+  }
 
   // Capture a freeze-frame from the rendered video so the scene-shot bar
   // can show a thumbnail (an <img> can't render an mp4). Re-captures when
@@ -591,7 +619,22 @@ export function VideoNode({ id, data, selected }: NodeProps) {
 
   return (
     <div className="relative group" style={{ width: 420 }}>
-      <NodeActionToolbar nodeId={id} selected={selected} />
+      <NodeActionToolbar
+        nodeId={id}
+        selected={selected}
+        nodeLabel={(data.label as string) || 'Video Generator'}
+        assetUrl={outputUrl || undefined}
+        assetType="video"
+        onRename={handleRename}
+        onViewFullscreen={outputUrl ? () => setLightboxOpen(true) : undefined}
+      />
+
+      <Lightbox
+        open={lightboxOpen}
+        url={outputUrl}
+        type="video"
+        onClose={() => setLightboxOpen(false)}
+      />
 
       {/* Shot selector badge */}
       <div className="absolute -top-8 left-0 flex items-center gap-2 z-10">
@@ -601,9 +644,27 @@ export function VideoNode({ id, data, selected }: NodeProps) {
           onSelect={handleShotSelect}
           onNewShot={handleNewShot}
         />
-        <span className="text-[10px] font-mono text-muted-foreground/60 whitespace-nowrap">
-          {(data.label as string) || 'Video Generator #1'}
-        </span>
+        {isRenaming ? (
+          <input
+            autoFocus
+            value={labelDraft}
+            onChange={e => setLabelDraft(e.target.value)}
+            onBlur={commitRename}
+            onKeyDown={e => {
+              if (e.key === 'Enter') commitRename()
+              else if (e.key === 'Escape') setIsRenaming(false)
+            }}
+            className="text-[10px] font-mono text-foreground bg-transparent border-b border-accent/60 outline-none min-w-[140px]"
+          />
+        ) : (
+          <span
+            onDoubleClick={handleRename}
+            className="text-[10px] font-mono text-muted-foreground/60 whitespace-nowrap cursor-text hover:text-foreground transition-colors"
+            title="Double-click to rename"
+          >
+            {(data.label as string) || 'Video Generator #1'}
+          </span>
+        )}
       </div>
 
       {/* Handles - dynamic based on model inputTypes */}
@@ -667,15 +728,18 @@ export function VideoNode({ id, data, selected }: NodeProps) {
         }}
       >
         {/* Preview area */}
-        <div className="min-h-[220px] bg-[#0a0c0f] flex items-center justify-center relative">
+        <div
+          className="min-h-[220px] bg-[#0a0c0f] flex items-center justify-center relative"
+          onDoubleClick={() => { if (outputUrl) setLightboxOpen(true) }}
+        >
           {outputUrl ? (
-            <video 
-              src={outputUrl} 
-              controls 
-              autoPlay 
+            <video
+              src={outputUrl}
+              controls
+              autoPlay
               loop={enableLoop}
               muted={!enableAudio}
-              className="w-full h-full object-contain"
+              className="w-full h-full object-contain cursor-zoom-in"
             />
           ) : (
             <div className="flex flex-col items-center gap-2">

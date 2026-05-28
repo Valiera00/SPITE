@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { NodeToolbar, Position, useReactFlow } from '@xyflow/react'
+import { toast } from 'sonner'
 import {
   Play,
   CaretDown,
@@ -19,6 +20,9 @@ import {
   MapPin,
   Package,
   CaretRight,
+  PencilSimple,
+  DownloadSimple,
+  ArrowsOutSimple,
 } from '@phosphor-icons/react'
 
 interface NodeActionToolbarProps {
@@ -30,8 +34,35 @@ interface NodeActionToolbarProps {
   onMoveToPage?: (page: number) => void
   onQuickConnect?: (nodeType: string) => void
   onAddToFolder?: (type: 'character' | 'prop' | 'location') => void
+  onRename?: () => void
+  onViewFullscreen?: () => void
   assetId?: string
   assetUrl?: string
+  assetType?: 'image' | 'video'
+  nodeLabel?: string
+}
+
+async function downloadAsset(url: string, suggestedName: string) {
+  try {
+    const res = await fetch(url)
+    if (!res.ok) throw new Error(`status ${res.status}`)
+    const blob = await res.blob()
+    const objectUrl = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = objectUrl
+    a.download = suggestedName
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 5000)
+  } catch (err) {
+    console.error('[download] failed:', err)
+    toast.error('Download failed')
+  }
+}
+
+function sanitizeFilename(s: string): string {
+  return s.replace(/[\\/:*?"<>|]/g, '').replace(/\s+/g, '-').slice(0, 60) || 'asset'
 }
 
 const QUICK_CONNECT_OPTIONS = [
@@ -41,17 +72,21 @@ const QUICK_CONNECT_OPTIONS = [
   { id: 'reference', label: 'Reference Asset', icon: Upload },
 ]
 
-export function NodeActionToolbar({ 
-  nodeId, 
-  selected, 
-  onRun, 
-  onDelete, 
-  onDuplicate, 
+export function NodeActionToolbar({
+  nodeId,
+  selected,
+  onRun,
+  onDelete,
+  onDuplicate,
   onMoveToPage,
   onQuickConnect,
   onAddToFolder,
+  onRename,
+  onViewFullscreen,
   assetId,
   assetUrl,
+  assetType,
+  nodeLabel,
 }: NodeActionToolbarProps) {
   const [runMenuOpen, setRunMenuOpen] = useState(false)
   const [connectMenuOpen, setConnectMenuOpen] = useState(false)
@@ -259,11 +294,32 @@ export function NodeActionToolbar({
                   )}
                 </div>
               )}
-              <MenuItem label="View fullscreen" onClick={() => setMoreMenuOpen(false)} />
-              <MenuItem label="Download" onClick={() => setMoreMenuOpen(false)} />
-              <div className="h-px bg-white/10 my-1" />
-              <MenuItem label="Copy prompt" onClick={() => setMoreMenuOpen(false)} />
-              <MenuItem label="Prompt info" onClick={() => setMoreMenuOpen(false)} />
+              {onRename && (
+                <MenuItem
+                  label="Rename"
+                  icon={PencilSimple}
+                  onClick={() => { onRename(); setMoreMenuOpen(false) }}
+                />
+              )}
+              {assetUrl && onViewFullscreen && (
+                <MenuItem
+                  label="View fullscreen"
+                  icon={ArrowsOutSimple}
+                  onClick={() => { onViewFullscreen(); setMoreMenuOpen(false) }}
+                />
+              )}
+              {assetUrl && (
+                <MenuItem
+                  label="Download"
+                  icon={DownloadSimple}
+                  onClick={() => {
+                    const ext = assetType === 'video' ? 'mp4' : 'png'
+                    const name = `${sanitizeFilename(nodeLabel || 'asset')}.${ext}`
+                    downloadAsset(assetUrl, name)
+                    setMoreMenuOpen(false)
+                  }}
+                />
+              )}
             </DropdownMenu>
           )}
         </div>

@@ -85,11 +85,13 @@ export function ReferenceNode({ id, data, selected }: NodeProps) {
 
   return (
     <div className="relative group">
-      <NodeActionToolbar 
-        nodeId={id} 
-        selected={selected} 
+      <NodeActionToolbar
+        nodeId={id}
+        selected={selected}
+        nodeLabel={(data.label as string) || 'Reference'}
         assetId={data.assetId as string}
         assetUrl={thumbnail || undefined}
+        assetType={isVideo ? 'video' : 'image'}
         onAddToFolder={handleAddToFolder}
       />
 

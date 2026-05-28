@@ -7,6 +7,8 @@ import { Play, CaretDown, Minus, Plus, TextT, Image as ImageIcon, CircleNotch, X
 import { toast } from 'sonner'
 import { NodeActionToolbar } from './node-toolbar'
 import { ShotSelector, type ShotOption } from './shot-selector'
+import { Lightbox } from '../lightbox'
+import { labelFromPrompt, DEFAULT_IMAGE_LABEL } from '@/lib/auto-name'
 import { getImageModels, getModelById, buildModelInput, type ModelConfig } from '@/lib/fal-models'
 
 const IMAGE_MODELS = getImageModels()
@@ -142,6 +144,9 @@ export function ImageNode({ id, data, selected }: NodeProps) {
   const [nodeWidth, setNodeWidth] = useState<number>((data.width as number) || 320)
   const [isResizing, setIsResizing] = useState(false)
   const [showResizeHandle, setShowResizeHandle] = useState(false)
+  const [lightboxOpen, setLightboxOpen] = useState(false)
+  const [isRenaming, setIsRenaming] = useState(false)
+  const [labelDraft, setLabelDraft] = useState('')
   
   const pollingRef = useRef<NodeJS.Timeout | null>(null)
   // Set true to immediately stop polling (cancel / unmount), so an in-flight
@@ -284,11 +289,34 @@ export function ImageNode({ id, data, selected }: NodeProps) {
 
   // Persist state changes to node data
   useEffect(() => {
-    setNodes(ns => ns.map(n => n.id === id ? { 
-      ...n, 
-      data: { ...n.data, prompt, modelId, aspectRatio, resolution, numImages, outputUrl } 
+    setNodes(ns => ns.map(n => n.id === id ? {
+      ...n,
+      data: { ...n.data, prompt, modelId, aspectRatio, resolution, numImages, outputUrl }
     } : n))
   }, [prompt, modelId, aspectRatio, resolution, numImages, outputUrl, id, setNodes])
+
+  // Auto-name: once a generation completes, replace the default
+  // "Image Generator #N" label with the first few words of the prompt.
+  // User-renamed labels are left alone.
+  useEffect(() => {
+    if (!outputUrl) return
+    const current = (data.label as string) || ''
+    if (current && !DEFAULT_IMAGE_LABEL.test(current)) return
+    const derived = labelFromPrompt(prompt)
+    if (!derived || derived === current) return
+    setNodes(ns => ns.map(n => n.id === id ? { ...n, data: { ...n.data, label: derived } } : n))
+  }, [outputUrl, prompt, data.label, id, setNodes])
+
+  const handleRename = () => {
+    setLabelDraft((data.label as string) || '')
+    setIsRenaming(true)
+  }
+  const commitRename = () => {
+    const next = labelDraft.trim()
+    setIsRenaming(false)
+    if (!next) return
+    setNodes(ns => ns.map(n => n.id === id ? { ...n, data: { ...n.data, label: next } } : n))
+  }
 
   // Poll for status
   const pollStatus = useCallback(async (reqId: string, falModelId: string) => {
@@ -538,7 +566,22 @@ export function ImageNode({ id, data, selected }: NodeProps) {
       onMouseEnter={() => setShowResizeHandle(true)}
       onMouseLeave={() => !isResizing && setShowResizeHandle(false)}
     >
-      <NodeActionToolbar nodeId={id} selected={selected} />
+      <NodeActionToolbar
+        nodeId={id}
+        selected={selected}
+        nodeLabel={(data.label as string) || 'Image Generator'}
+        assetUrl={outputUrl || undefined}
+        assetType="image"
+        onRename={handleRename}
+        onViewFullscreen={outputUrl ? () => setLightboxOpen(true) : undefined}
+      />
+
+      <Lightbox
+        open={lightboxOpen}
+        url={outputUrl}
+        type="image"
+        onClose={() => setLightboxOpen(false)}
+      />
 
       {/* Shot selector badge */}
       <div className="absolute -top-8 left-0 flex items-center gap-2 z-10">
@@ -548,9 +591,27 @@ export function ImageNode({ id, data, selected }: NodeProps) {
           onSelect={handleShotSelect}
           onNewShot={handleNewShot}
         />
-        <span className="text-[10px] font-mono text-muted-foreground/60 whitespace-nowrap">
-          {(data.label as string) || 'Image Generator #1'}
-        </span>
+        {isRenaming ? (
+          <input
+            autoFocus
+            value={labelDraft}
+            onChange={e => setLabelDraft(e.target.value)}
+            onBlur={commitRename}
+            onKeyDown={e => {
+              if (e.key === 'Enter') commitRename()
+              else if (e.key === 'Escape') setIsRenaming(false)
+            }}
+            className="text-[10px] font-mono text-foreground bg-transparent border-b border-accent/60 outline-none min-w-[140px]"
+          />
+        ) : (
+          <span
+            onDoubleClick={handleRename}
+            className="text-[10px] font-mono text-muted-foreground/60 whitespace-nowrap cursor-text hover:text-foreground transition-colors"
+            title="Double-click to rename"
+          >
+            {(data.label as string) || 'Image Generator #1'}
+          </span>
+        )}
       </div>
 
       {/* Handles - dynamic based on model inputTypes */}
@@ -589,14 +650,15 @@ export function ImageNode({ id, data, selected }: NodeProps) {
         }}
       >
         {/* Preview area - image displays at natural aspect ratio */}
-        <div 
+        <div
           className="bg-[#0a0c0f] relative overflow-hidden"
+          onDoubleClick={() => { if (outputUrl) setLightboxOpen(true) }}
         >
           {outputUrl ? (
-            <img 
-              src={outputUrl} 
+            <img
+              src={outputUrl}
               alt="Generated"
-              className="w-full h-auto"
+              className="w-full h-auto cursor-zoom-in"
               onLoad={(e) => {
                 const img = e.target as HTMLImageElement
                 setImageAspect(img.naturalWidth / img.naturalHeight)

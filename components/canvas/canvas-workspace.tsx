@@ -107,13 +107,13 @@ function makeNode(type: string, position: { x: number; y: number }, label?: stri
     id: makeId(),
     type,
     position,
-    data: { 
+    data: {
       label: label || labels[type] || type,
       sceneId: sceneId || 'scene-1',
       thumbnail: undefined as string | undefined,
       isUploading: false,
       uploadError: false,
-    },
+    } as Record<string, any>,
   }
 }
 
@@ -217,6 +217,20 @@ function CanvasInner({ projectId }: { projectId: string }) {
             setEdges(savedEdges)
           }
         }
+
+        // Restore the last viewport (pan + zoom) for this project, so the
+        // canvas opens where the user left it. Stored client-side because
+        // it's a per-user preference, not shared project state.
+        try {
+          const raw = localStorage.getItem(`frame-viewport-${projectId}`)
+          if (raw) {
+            const vp = JSON.parse(raw)
+            if (typeof vp?.x === 'number' && typeof vp?.y === 'number' && typeof vp?.zoom === 'number') {
+              // Defer past the initial fitView so we override it.
+              requestAnimationFrame(() => setViewport(vp))
+            }
+          }
+        } catch {}
 
         // Load assets
         const assetsResponse = await fetch(`/api/projects/${projectId}/assets`)
@@ -332,8 +346,24 @@ function CanvasInner({ projectId }: { projectId: string }) {
   
   const [minimapOpen, setMinimapOpen] = useState(true)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; flowPos: { x: number; y: number } } | null>(null)
-  const { fitView, screenToFlowPosition, setCenter } = useReactFlow()
+  const { fitView, screenToFlowPosition, setCenter, setViewport } = useReactFlow()
   const viewport = useViewport()
+
+  // Persist the viewport (pan + zoom) per-project to localStorage so the
+  // canvas opens where the user left it. Throttled to avoid thrashing
+  // localStorage during a continuous pan/zoom.
+  useEffect(() => {
+    if (!projectId) return
+    const t = setTimeout(() => {
+      try {
+        localStorage.setItem(
+          `frame-viewport-${projectId}`,
+          JSON.stringify({ x: viewport.x, y: viewport.y, zoom: viewport.zoom }),
+        )
+      } catch {}
+    }, 400)
+    return () => clearTimeout(t)
+  }, [projectId, viewport.x, viewport.y, viewport.zoom])
   const flowRef = useRef<HTMLDivElement>(null)
 
   const addNode = useCallback((type: string, flowPos?: { x: number; y: number }) => {
@@ -803,8 +833,8 @@ function CanvasInner({ projectId }: { projectId: string }) {
               <Background
                 variant={BackgroundVariant.Dots}
                 gap={24}
-                size={1}
-                color="#1a1d21"
+                size={1.5}
+                color="#2a2e34"
               />
 
               {minimapOpen && (
