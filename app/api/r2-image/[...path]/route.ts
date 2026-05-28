@@ -17,14 +17,28 @@ export async function GET(
 ) {
   try {
     const { path } = await params
-    const key = path.join('/')
 
-    // Allow either a logged-in browser (cookie) or a valid signed token
-    // (used by fal.ai to fetch referenced assets). Otherwise deny.
+    // Two URL shapes are accepted:
+    //   1. /api/r2-image/<key...>                  — browser, cookie-auth
+    //   2. /api/r2-image/s/<exp>/<sig>/<key...>    — fal.ai, path-token (no
+    //      query string so the URL ends in the file extension and passes
+    //      strict validators like Kling 3.0's `elements`).
+    //   (legacy `?exp=&sig=` query-token is also still accepted as fallback.)
+    let key: string
+    let pathTokenOk = false
+    if (path[0] === 's' && path.length >= 4) {
+      const exp = path[1]
+      const sig = path[2]
+      key = path.slice(3).join('/')
+      pathTokenOk = verifyImageToken(key, exp, sig)
+    } else {
+      key = path.join('/')
+    }
+
     const cookieOk = request.cookies.get('frame_session')?.value === 'authenticated'
     const { searchParams } = new URL(request.url)
-    const tokenOk = verifyImageToken(key, searchParams.get('exp'), searchParams.get('sig'))
-    if (!cookieOk && !tokenOk) {
+    const queryTokenOk = verifyImageToken(key, searchParams.get('exp'), searchParams.get('sig'))
+    if (!cookieOk && !pathTokenOk && !queryTokenOk) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
     }
 

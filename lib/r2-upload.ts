@@ -102,6 +102,9 @@ function imageProxySecret(): string {
 
 // Turn an internal proxy path (/api/r2-image/<key>) into an absolute,
 // token-signed URL fal can fetch. Non-proxy URLs are returned unchanged.
+// Token rides in the PATH (`/s/<exp>/<sig>/<key>`) instead of a query string
+// so the URL ends in the asset's file extension — some fal validators (e.g.
+// Kling 3.0's `elements.frontal_image_url`) reject URLs containing `?...`.
 export function toFalFetchableUrl(
   url: string | null | undefined,
   baseUrl: string
@@ -113,7 +116,7 @@ export function toFalFetchableUrl(
   const key = url.slice(idx + marker.length)
   const exp = Date.now() + 3600_000 // 1 hour
   const sig = crypto.createHmac('sha256', imageProxySecret()).update(`${key}:${exp}`).digest('hex')
-  return `${baseUrl}/api/r2-image/${key}?exp=${exp}&sig=${sig}`
+  return `${baseUrl}/api/r2-image/s/${exp}/${sig}/${key}`
 }
 
 // Validate a token produced by toFalFetchableUrl, used by the proxy route.
