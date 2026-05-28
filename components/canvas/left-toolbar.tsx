@@ -159,7 +159,20 @@ export function LeftToolbar({
     setHistoryOpen(showHistory)
   }, [showHistory])
 
-  const fetcher = (url: string) => fetch(url).then(r => r.json()).then(d => Array.isArray(d) ? d : [])
+  const fetcher = async (url: string) => {
+    const r = await fetch(url)
+    if (!r.ok) {
+      // Surface the actual server error in the browser console instead of
+      // silently returning [] (which is what hid the recent /api/folders
+      // 500's behind a "0 folders" empty state).
+      let body: any = null
+      try { body = await r.json() } catch {}
+      console.error(`[fetcher] ${url} -> HTTP ${r.status}`, body)
+      throw new Error(body?.detail || body?.error || `HTTP ${r.status}`)
+    }
+    const d = await r.json()
+    return Array.isArray(d) ? d : []
+  }
   const { data: generatedAssets = [], isLoading: loadingHistory, mutate: mutateAssets } = useSWR<GeneratedAsset[]>(
     historyOpen ? `/api/assets?projectId=${projectId}` : null,
     fetcher,
