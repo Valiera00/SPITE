@@ -6,6 +6,7 @@ import { memo, useState, useEffect, useRef } from 'react'
 import { NodeActionToolbar } from './node-toolbar'
 import { ShotSelector, type ShotOption } from './shot-selector'
 import { AddToFolderModal } from '../add-to-folder-modal'
+import { Lightbox } from '../lightbox'
 
 function ReferenceNodeImpl({ id, data, selected }: NodeProps) {
   const { setNodes } = useReactFlow()
@@ -14,6 +15,7 @@ function ReferenceNodeImpl({ id, data, selected }: NodeProps) {
   const widthRef = useRef(imageWidth)
   const [folderModalOpen, setFolderModalOpen] = useState(false)
   const [folderType, setFolderType] = useState<'character' | 'prop' | 'location'>('character')
+  const [lightboxOpen, setLightboxOpen] = useState(false)
 
   // Keep ref in sync
   useEffect(() => {
@@ -93,6 +95,14 @@ function ReferenceNodeImpl({ id, data, selected }: NodeProps) {
         assetUrl={thumbnail || undefined}
         assetType={isVideo ? 'video' : 'image'}
         onAddToFolder={handleAddToFolder}
+        onViewFullscreen={thumbnail ? () => setLightboxOpen(true) : undefined}
+      />
+
+      <Lightbox
+        open={lightboxOpen}
+        url={thumbnail}
+        type={isVideo ? 'video' : 'image'}
+        onClose={() => setLightboxOpen(false)}
       />
 
       {/* Header above card */}
@@ -152,11 +162,29 @@ function ReferenceNodeImpl({ id, data, selected }: NodeProps) {
       >
         {/* Image area */}
         {thumbnail ? (
-          <div className="relative">
+          <div
+            className="relative"
+            onDoubleClick={() => { if (thumbnail && !isUploading) setLightboxOpen(true) }}
+          >
             {isVideo ? (
-              <video src={thumbnail} className="w-full h-auto block" muted loop controls playsInline preload="metadata" />
+              <video
+                src={thumbnail}
+                className="w-full h-auto block cursor-zoom-in"
+                muted
+                loop
+                controls
+                playsInline
+                preload="metadata"
+                controlsList="nofullscreen"
+                onDoubleClick={(e) => {
+                  // Suppress the browser's native fullscreen on the video controls.
+                  e.preventDefault()
+                  e.stopPropagation()
+                  if (!isUploading) setLightboxOpen(true)
+                }}
+              />
             ) : (
-              <img src={thumbnail} alt="" className="w-full h-auto block" loading="lazy" decoding="async" />
+              <img src={thumbnail} alt="" className="w-full h-auto block cursor-zoom-in" loading="lazy" decoding="async" />
             )}
             {isUploading && (
               <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
@@ -211,6 +239,4 @@ function ReferenceNodeImpl({ id, data, selected }: NodeProps) {
 }
 
 export const ReferenceNode = memo(ReferenceNodeImpl)
-ReferenceNode.displayName = 'ReferenceNode'
-
 ReferenceNode.displayName = 'ReferenceNode'

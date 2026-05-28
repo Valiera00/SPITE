@@ -515,7 +515,7 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
       })
 
       // Each video is a separate fal job. Fire `numVideos` of them in parallel.
-      const count = Math.max(1, Math.min(4, numVideos))
+      const count = Math.max(1, Math.min(12, numVideos))
       const results = await Promise.all(
         Array.from({ length: count }, () =>
           fetch('/api/generate/submit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body }).then(r => r.json())
@@ -802,10 +802,10 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
               >
                 <Minus size={8} weight="bold" />
               </button>
-              <span className="w-4 text-center">x{numVideos}</span>
+              <span className="w-6 text-center">x{numVideos}</span>
               <button
-                onClick={() => setNumVideos(n => Math.min(4, n + 1))}
-                disabled={isGenerating || numVideos >= 4}
+                onClick={() => setNumVideos(n => Math.min(12, n + 1))}
+                disabled={isGenerating || numVideos >= 12}
                 className="w-4 h-4 flex items-center justify-center hover:text-foreground disabled:opacity-30"
               >
                 <Plus size={8} weight="bold" />

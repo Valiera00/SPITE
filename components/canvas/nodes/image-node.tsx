@@ -505,37 +505,83 @@ function ImageNodeImpl({ id, data, selected }: NodeProps) {
     setProgress(undefined)
 
     try {
-      // Send RAW settings; the server builds the model-specific payload.
-      const response = await fetch('/api/generate/submit', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          modelId,
-          prompt: compiledPrompt,
-          referenceImageUrl: connectedImageUrl,
-          settings: { aspectRatio, resolution, numImages },
-        }),
+      // Fan out one fal job per requested image, mirroring how video-node
+      // handles batch counts. This lets us blow past fal's per-request
+      // num_images cap (typically 4) — `numImages` now goes up to 12.
+      const body = JSON.stringify({
+        modelId,
+        prompt: compiledPrompt,
+        referenceImageUrl: connectedImageUrl,
+        settings: { aspectRatio, resolution, numImages: 1 },
       })
+      const count = Math.max(1, Math.min(12, numImages))
+      const results = await Promise.all(
+        Array.from({ length: count }, () =>
+          fetch('/api/generate/submit', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body,
+          }).then(r => r.json()),
+        ),
+      )
 
-      const result = await response.json()
-
-      if (result.error) {
+      const ok = results.filter(r => r.request_id)
+      if (ok.length === 0) {
         setStatus('failed')
-        setError(result.error)
+        setError(results[0]?.error || 'Failed to submit job')
         return
       }
 
-      const endpoint = result.model || currentModel.falModel
-      setFalEndpoint(endpoint)
-      setRequestId(result.request_id)
+      // This node tracks the first job.
+      const firstEndpoint = ok[0].model || currentModel.falModel
+      setFalEndpoint(firstEndpoint)
+      setRequestId(ok[0].request_id)
       setStatus('in_queue')
 
-      // Persist the in-flight job onto the node so polling can resume
-      // after a page refresh. Cleared when the generation resolves below.
       setNodes(ns => ns.map(n => n.id === id ? {
         ...n,
-        data: { ...n.data, pendingRequestId: result.request_id, pendingFalEndpoint: endpoint },
+        data: { ...n.data, pendingRequestId: ok[0].request_id, pendingFalEndpoint: firstEndpoint },
       } : n))
+
+      // Extra jobs spawn duplicate image nodes in a 3-column grid that each
+      // poll their own request and fill in when done.
+      if (ok.length > 1) {
+        const extra = ok.slice(1)
+        const self = getNodes().find(nd => nd.id === id)
+        const baseX = self?.position?.x ?? 0
+        const baseY = self?.position?.y ?? 0
+        const w = (self?.data?.width as number) || nodeWidth || 320
+        const colGap = w + 40
+        const rowGap = 520
+        const cols = 3
+        const stamp = Date.now()
+        const { shotId, outputUrl: _drop, ...restData } = (self?.data || {}) as Record<string, unknown>
+        const newNodes = extra.map((res, idx) => {
+          const slot = idx + 1
+          const col = slot % cols
+          const row = Math.floor(slot / cols)
+          return {
+            id: `${id}-v${stamp}-${idx}`,
+            type: 'imageGen',
+            position: { x: baseX + col * colGap, y: baseY + row * rowGap },
+            data: {
+              ...restData,
+              prompt: compiledPrompt,
+              pendingRequestId: res.request_id,
+              pendingFalEndpoint: res.model || currentModel.falModel,
+            },
+          }
+        })
+        setNodes(ns => [...ns, ...(newNodes as any)])
+        // Mirror this node's incoming connections onto the duplicates.
+        const incoming = getEdges().filter(e => e.target === id)
+        if (incoming.length) {
+          const newEdges = newNodes.flatMap((nn, ni) =>
+            incoming.map((e, ei) => ({ ...e, id: `${nn.id}-e${ei}-${stamp}-${ni}`, target: nn.id }))
+          )
+          window.dispatchEvent(new CustomEvent('frame-add-edges', { detail: { edges: newEdges } }))
+        }
+      }
     } catch (err: any) {
       setStatus('failed')
       setError(err.message || 'Failed to submit job')
@@ -729,10 +775,10 @@ function ImageNodeImpl({ id, data, selected }: NodeProps) {
               >
                 <Minus size={8} weight="bold" />
               </button>
-              <span className="w-4 text-center">x{numImages}</span>
-              <button 
-                onClick={() => setNumImages(n => Math.min(4, n + 1))}
-                disabled={isGenerating || numImages >= 4}
+              <span className="w-6 text-center">x{numImages}</span>
+              <button
+                onClick={() => setNumImages(n => Math.min(12, n + 1))}
+                disabled={isGenerating || numImages >= 12}
                 className="w-4 h-4 flex items-center justify-center hover:text-foreground disabled:opacity-30"
               >
                 <Plus size={8} weight="bold" />
