@@ -388,13 +388,17 @@ export function buildModelInput(
   if (options.referenceImageUrls?.length && model.referenceParam) {
     const refs = options.referenceImageUrls
     if (model.referenceParam === 'elements') {
-      // One "element" = one subject (front view + optional alternate views).
-      // Collapse all connected refs into a single element so @Element1 in the
-      // prompt cites this whole subject.
-      input.elements = [{
-        frontal_image_url: refs[0],
-        reference_image_urls: refs.slice(1),
-      }]
+      // Kling 3.0 elements: one "element" describes one subject. fal's
+      // schema requires BOTH frontal_image_url AND a non-empty
+      // reference_image_urls. Map first frame → frontal_image_url and
+      // connected references → reference_image_urls. The video-node UI
+      // blocks references-without-first-frame so options.imageUrl is set.
+      if (options.imageUrl) {
+        input.elements = [{
+          frontal_image_url: options.imageUrl,
+          reference_image_urls: refs,
+        }]
+      }
     } else if (model.referenceParam === 'subject_reference_image_url') {
       input.subject_reference_image_url = refs[0]
     } else {
