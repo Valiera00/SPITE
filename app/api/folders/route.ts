@@ -23,54 +23,64 @@ export async function GET(request: NextRequest) {
       return NextResponse.json([])
     }
 
-    let folders
-    if (type) {
-      folders = await sql`
-        SELECT f.*, 
-          COALESCE(
-            json_agg(
-              json_build_object(
-                'id', fi.asset_id,
-                'r2_url', gh.r2_url,
-                'type', gh.type,
-                'prompt', gh.prompt
-              ) ORDER BY fi.created_at DESC
-            ) FILTER (WHERE fi.id IS NOT NULL), '[]'
-          ) as assets
-        FROM asset_folders f
-        LEFT JOIN asset_folder_items fi ON f.id = fi.folder_id
+    // Two-step query — simpler + more robust than a single join with an
+    // aggregating COALESCE(json_agg(...), '[]') which started 500'ing on
+    // some PostgreSQL setups (the '[]' literal failed to implicit-cast to
+    // json against the aggregated json result). Fetch the folder rows
+    // first, then fetch all their items in one round trip and stitch them
+    // together client-side. Cheap because folder counts stay small.
+    const folderRows = type
+      ? await sql`
+          SELECT id, project_id, name, description, type, created_at, updated_at
+          FROM asset_folders
+          WHERE project_id = ${projectId} AND type = ${type}
+          ORDER BY name ASC
+        `
+      : await sql`
+          SELECT id, project_id, name, description, type, created_at, updated_at
+          FROM asset_folders
+          WHERE project_id = ${projectId}
+          ORDER BY type, name ASC
+        `
+
+    let itemsByFolder = new Map<string, any[]>()
+    if (folderRows.length > 0) {
+      const folderIds = folderRows.map(f => f.id as string)
+      const items = await sql`
+        SELECT fi.folder_id, fi.asset_id, fi.created_at AS item_created_at,
+               gh.r2_url, gh.type AS asset_type, gh.prompt
+        FROM asset_folder_items fi
         LEFT JOIN generation_history gh ON fi.asset_id = gh.id
-        WHERE f.project_id = ${projectId} AND f.type = ${type}
-        GROUP BY f.id
-        ORDER BY f.name ASC
+        WHERE fi.folder_id = ANY(${folderIds}::text[])
+        ORDER BY fi.created_at DESC
       `
-    } else {
-      folders = await sql`
-        SELECT f.*, 
-          COALESCE(
-            json_agg(
-              json_build_object(
-                'id', fi.asset_id,
-                'r2_url', gh.r2_url,
-                'type', gh.type,
-                'prompt', gh.prompt
-              ) ORDER BY fi.created_at DESC
-            ) FILTER (WHERE fi.id IS NOT NULL), '[]'
-          ) as assets
-        FROM asset_folders f
-        LEFT JOIN asset_folder_items fi ON f.id = fi.folder_id
-        LEFT JOIN generation_history gh ON fi.asset_id = gh.id
-        WHERE f.project_id = ${projectId}
-        GROUP BY f.id
-        ORDER BY f.type, f.name ASC
-      `
+      for (const row of items) {
+        const fid = row.folder_id as string
+        if (!itemsByFolder.has(fid)) itemsByFolder.set(fid, [])
+        itemsByFolder.get(fid)!.push({
+          id: row.asset_id,
+          r2_url: row.r2_url,
+          type: row.asset_type,
+          prompt: row.prompt,
+        })
+      }
     }
+
+    const folders = folderRows.map(f => ({
+      ...f,
+      assets: itemsByFolder.get(f.id as string) || [],
+    }))
 
     console.log('[folders] GET', { projectId, type, returned: folders.length })
     return NextResponse.json(folders)
-  } catch (error) {
+  } catch (error: any) {
     console.error('[folders] GET error:', error)
-    return NextResponse.json({ error: 'Failed to fetch folders' }, { status: 500 })
+    // Surface the actual error message in the response body so we can see
+    // it in browser devtools instead of just a generic 500.
+    return NextResponse.json(
+      { error: 'Failed to fetch folders', detail: error?.message || String(error) },
+      { status: 500 },
+    )
   }
 }
 

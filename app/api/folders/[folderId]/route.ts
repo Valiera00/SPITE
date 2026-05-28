@@ -17,33 +17,40 @@ export async function GET(
     const sql = getDb()
     const { folderId } = await params
 
-    const folders = await sql`
-      SELECT f.*, 
-        COALESCE(
-          json_agg(
-            json_build_object(
-              'id', fi.asset_id,
-              'r2_url', gh.r2_url,
-              'type', gh.type,
-              'prompt', gh.prompt
-            ) ORDER BY fi.created_at DESC
-          ) FILTER (WHERE fi.id IS NOT NULL), '[]'
-        ) as assets
-      FROM asset_folders f
-      LEFT JOIN asset_folder_items fi ON f.id = fi.folder_id
-      LEFT JOIN generation_history gh ON fi.asset_id = gh.id
-      WHERE f.id = ${folderId}
-      GROUP BY f.id
+    // Two-step query — see the list-folders GET for why we avoid the
+    // single-shot json_agg / COALESCE pattern.
+    const folderRows = await sql`
+      SELECT id, project_id, name, description, type, created_at, updated_at
+      FROM asset_folders
+      WHERE id = ${folderId}
     `
 
-    if (folders.length === 0) {
+    if (folderRows.length === 0) {
       return NextResponse.json({ error: 'Folder not found' }, { status: 404 })
     }
 
-    return NextResponse.json(folders[0])
-  } catch (error) {
-    console.error('[folders] GET error:', error)
-    return NextResponse.json({ error: 'Failed to fetch folder' }, { status: 500 })
+    const items = await sql`
+      SELECT fi.asset_id, fi.created_at,
+             gh.r2_url, gh.type AS asset_type, gh.prompt
+      FROM asset_folder_items fi
+      LEFT JOIN generation_history gh ON fi.asset_id = gh.id
+      WHERE fi.folder_id = ${folderId}
+      ORDER BY fi.created_at DESC
+    `
+    const assets = items.map(r => ({
+      id: r.asset_id,
+      r2_url: r.r2_url,
+      type: r.asset_type,
+      prompt: r.prompt,
+    }))
+
+    return NextResponse.json({ ...folderRows[0], assets })
+  } catch (error: any) {
+    console.error('[folders] GET single error:', error)
+    return NextResponse.json(
+      { error: 'Failed to fetch folder', detail: error?.message || String(error) },
+      { status: 500 },
+    )
   }
 }
 
