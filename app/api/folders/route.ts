@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { neon } from '@neondatabase/serverless'
 import { v4 as uuidv4 } from 'uuid'
+import { ensureFoldersSchema } from '@/lib/folders-schema'
 
 function getDb() {
   if (!process.env.DATABASE_URL) {
@@ -20,6 +21,7 @@ function getDb() {
 export async function GET(request: NextRequest) {
   try {
     const sql = getDb()
+    await ensureFoldersSchema(sql)
     const { searchParams } = new URL(request.url)
     const projectId = searchParams.get('projectId')
     const type = searchParams.get('type')
@@ -89,6 +91,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const sql = getDb()
+    await ensureFoldersSchema(sql)
     const { name, description, type, projectId, assetIds = [] } = await request.json()
 
     if (!name || !type) {

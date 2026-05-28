@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { neon } from '@neondatabase/serverless'
+import { ensureFoldersSchema } from '@/lib/folders-schema'
 
 function getDb() {
   if (!process.env.DATABASE_URL) {
@@ -15,6 +16,7 @@ export async function GET(
 ) {
   try {
     const sql = getDb()
+    await ensureFoldersSchema(sql)
     const { folderId } = await params
 
     const folders = await sql`
@@ -60,6 +62,7 @@ export async function PATCH(
 ) {
   try {
     const sql = getDb()
+    await ensureFoldersSchema(sql)
     const { folderId } = await params
     const { name, description, addAssetIds, removeAssetIds, setAssetIds } = await request.json()
 
@@ -133,6 +136,7 @@ export async function DELETE(
 ) {
   try {
     const sql = getDb()
+    await ensureFoldersSchema(sql)
     const { folderId } = await params
     // ON DELETE CASCADE on the FK handles the items table for us.
     await sql`DELETE FROM asset_folders WHERE id = ${folderId}`
