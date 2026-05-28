@@ -408,7 +408,7 @@ export function LeftToolbar({
                 image/video/uploads; this side-nav just toggles whether
                 generations or uploads come first conceptually — both
                 feeds use the same filteredGenAssets list. */}
-            <div className="flex-1 px-2 py-2">
+            <div className="flex-1 px-2 py-2 overflow-y-auto">
               <button
                 onClick={() => { setHistoryFilter('all'); setSidebarSection('history') }}
                 className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
@@ -427,6 +427,50 @@ export function LeftToolbar({
                 <UploadSimple size={16} />
                 Uploads
               </button>
+
+              {/* Folders — click to open in the category panel (legacy
+                  drawer behind the left toolbar's category icons). Items
+                  inside any folder are auto-protected, regardless of
+                  canvas usage, so they survive cleanup until you delete
+                  them yourself. */}
+              <div className="mt-4 pt-4 border-t border-border/30">
+                <div className="px-3 pb-1 flex items-center justify-between">
+                  <span className="text-[10px] text-muted-foreground/50 uppercase tracking-wider">Folders</span>
+                  <span className="text-[10px] text-muted-foreground/40">{folders.length}</span>
+                </div>
+                {folders.length === 0 ? (
+                  <div className="px-3 py-2 text-[11px] text-muted-foreground/40">
+                    None yet. Add an asset to a Character/Prop/Location/General folder via the node toolbar's “Add to…” menu.
+                  </div>
+                ) : (
+                  <div className="space-y-0.5">
+                    {(['character', 'prop', 'location', 'general'] as const).map(t => {
+                      const ofType = folders.filter(f => f.type === t)
+                      if (ofType.length === 0) return null
+                      const Icon = t === 'character' ? User : t === 'prop' ? Package : t === 'location' ? MapPin : Folder
+                      return (
+                        <div key={t}>
+                          <div className="px-3 pt-2 pb-1 flex items-center gap-2 text-[9px] text-muted-foreground/40 uppercase tracking-wider">
+                            <Icon size={11} />
+                            {t === 'character' ? 'Characters' : t === 'prop' ? 'Props' : t === 'location' ? 'Locations' : 'General'}
+                          </div>
+                          {ofType.map(f => (
+                            <button
+                              key={f.id}
+                              onClick={() => setEditingFolder(f)}
+                              className="w-full flex items-center gap-2 px-3 py-1.5 rounded-md text-left text-[12px] text-foreground/80 hover:text-foreground hover:bg-white/5 transition-colors"
+                              title="Edit folder"
+                            >
+                              <span className="flex-1 truncate">{f.name}</span>
+                              <span className="text-[10px] text-muted-foreground/50">{f.assets.length}</span>
+                            </button>
+                          ))}
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 

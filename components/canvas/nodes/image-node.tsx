@@ -9,6 +9,8 @@ import { NodeActionToolbar } from './node-toolbar'
 import { ShotSelector, type ShotOption } from './shot-selector'
 import { useSceneShots } from './use-scene-shots'
 import { Lightbox } from '../lightbox'
+import { MentionTextarea, resolveMentionRefs, type Mention } from '../mention-textarea'
+import { useProjectFolders } from '@/hooks/use-project-folders'
 import { labelFromPrompt, DEFAULT_IMAGE_LABEL } from '@/lib/auto-name'
 import { getImageModels, getModelById, buildModelInput, type ModelConfig } from '@/lib/fal-models'
 
@@ -129,6 +131,8 @@ function ImageNodeImpl({ id, data, selected }: NodeProps) {
   // Route segment is [id], so the param is `id` (not `projectId`).
   const projectId = params.id as string
   const [prompt, setPrompt] = useState((data.prompt as string) || '')
+  const [mentions, setMentions] = useState<Mention[]>((data.mentions as Mention[]) || [])
+  const { folders } = useProjectFolders(projectId)
   const [modelId, setModelId] = useState((data.modelId as string) || 'nano-banana-pro')
   const [aspectRatio, setAspectRatio] = useState((data.aspectRatio as string) || '')
   const [resolution, setResolution] = useState((data.resolution as string) || '')
@@ -285,9 +289,9 @@ function ImageNodeImpl({ id, data, selected }: NodeProps) {
   useEffect(() => {
     setNodes(ns => ns.map(n => n.id === id ? {
       ...n,
-      data: { ...n.data, prompt, modelId, aspectRatio, resolution, numImages, outputUrl }
+      data: { ...n.data, prompt, modelId, aspectRatio, resolution, numImages, outputUrl, mentions }
     } : n))
-  }, [prompt, modelId, aspectRatio, resolution, numImages, outputUrl, id, setNodes])
+  }, [prompt, modelId, aspectRatio, resolution, numImages, outputUrl, mentions, id, setNodes])
 
   // Auto-name: once a generation completes, replace the default
   // "Image Generator #N" label with the first few words of the prompt.
@@ -504,6 +508,13 @@ function ImageNodeImpl({ id, data, selected }: NodeProps) {
     setOutputUrl(null)
     setProgress(undefined)
 
+    // Folder-mention refs: every selected asset URL across all local
+    // @mentions, plus any @Folder tokens appearing in the compiled prompt
+    // (which is how prompt-node-forwarded mentions reach us — those use
+    // the folder's full asset list since the prompt-node has no per-asset
+    // picker yet).
+    const folderRefs = resolveMentionRefs(compiledPrompt, mentions, folders)
+
     try {
       // Fan out one fal job per requested image, mirroring how video-node
       // handles batch counts. This lets us blow past fal's per-request
@@ -512,6 +523,7 @@ function ImageNodeImpl({ id, data, selected }: NodeProps) {
         modelId,
         prompt: compiledPrompt,
         referenceImageUrl: connectedImageUrl,
+        referenceImageUrls: folderRefs.length > 0 ? folderRefs : undefined,
         settings: { aspectRatio, resolution, numImages: 1 },
       })
       const count = Math.max(1, Math.min(12, numImages))
@@ -751,12 +763,15 @@ function ImageNodeImpl({ id, data, selected }: NodeProps) {
           )}
         </div>
 
-        {/* Prompt input */}
+        {/* Prompt input. @-mention any folder (Character/Prop/Location/General)
+            to attach its assets as references at generate time. */}
         <div className="px-3 pt-3 pb-2">
-          <textarea
+          <MentionTextarea
             value={prompt}
-            onChange={e => setPrompt(e.target.value)}
-            placeholder="Describe the image you want to generate..."
+            mentions={mentions}
+            onChange={(text, ms) => { setPrompt(text); setMentions(ms) }}
+            folders={folders}
+            placeholder="Describe the image — type @ to reference a folder…"
             disabled={isGenerating}
             className="nodrag w-full bg-transparent resize-none outline-none text-[12px] text-foreground/90 placeholder:text-muted-foreground/40 leading-relaxed disabled:opacity-50 cursor-text"
             rows={2}

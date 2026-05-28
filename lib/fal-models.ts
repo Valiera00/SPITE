@@ -349,23 +349,39 @@ export function buildModelInput(
   const input: Record<string, any> = {}
 
   // Attach a reference image using the field name(s) the endpoint expects:
-  //  - image_urls (array): Nano Banana, Kling o1 image
+  //  - image_urls (array): Nano Banana / Kling o1 image. Folder-mention refs
+  //    merge into the same array — for these models every URL is a peer
+  //    reference, so a connected image + N mentioned-folder photos all go in.
   //  - video models: set BOTH image_url AND start_image_url. Kling endpoints
-  //    require start_image_url (first frame); others use image_url. fal ignores
-  //    unknown fields, so sending both is safe + covers every video endpoint.
-  //  - image_url: everything else (e.g. FLUX image-to-image)
-  if (options.imageUrl && model.inputTypes.includes('image')) {
+  //    require start_image_url (first frame); others use image_url. fal
+  //    ignores unknown fields, so sending both is safe + covers every video
+  //    endpoint. Folder refs ride separately via referenceParam (handled
+  //    below) since video models distinguish first-frame from subject refs.
+  //  - image_url (singular, e.g. FLUX image-to-image): falls back to the
+  //    first folder-mention ref when no connected image is provided.
+  if (model.inputTypes.includes('image')) {
+    const primary = options.imageUrl
+    const folderRefs = options.referenceImageUrls || []
+
     if (model.imageParam === 'image_urls') {
-      input.image_urls = [options.imageUrl]
+      const all = primary ? [primary, ...folderRefs] : folderRefs
+      if (all.length > 0) input.image_urls = all
     } else if (model.category === 'video') {
-      input.image_url = options.imageUrl
-      input.start_image_url = options.imageUrl
+      if (primary) {
+        input.image_url = primary
+        input.start_image_url = primary
+      }
+      // folderRefs handled below via model.referenceParam
     } else {
-      input.image_url = options.imageUrl
+      // Singular image_url (FLUX i2i etc.) — only one slot, prefer the
+      // explicit connected image but fall back to the first folder ref.
+      const pick = primary || folderRefs[0]
+      if (pick) input.image_url = pick
     }
+
     // FLUX image-to-image strength: how much to change the input. fal's
     // default (0.95) nearly ignores the reference; 0.6 keeps it clearly visible.
-    if (model.id === 'flux-dev') {
+    if (model.id === 'flux-dev' && (primary || folderRefs.length > 0)) {
       input.strength = 0.6
     }
   }

@@ -9,6 +9,8 @@ import { NodeActionToolbar } from './node-toolbar'
 import { ShotSelector, type ShotOption } from './shot-selector'
 import { useSceneShots } from './use-scene-shots'
 import { Lightbox } from '../lightbox'
+import { MentionTextarea, resolveMentionRefs, type Mention } from '../mention-textarea'
+import { useProjectFolders } from '@/hooks/use-project-folders'
 import { labelFromPrompt, DEFAULT_VIDEO_LABEL } from '@/lib/auto-name'
 import { getVideoModels, getModelById, buildModelInput, type ModelConfig } from '@/lib/fal-models'
 import { captureVideoThumbnail } from '@/lib/video-thumbnail'
@@ -130,6 +132,8 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
   // Route segment is [id], so the param is `id` (not `projectId`).
   const projectId = params.id as string
   const [prompt, setPrompt] = useState((data.prompt as string) || '')
+  const [mentions, setMentions] = useState<Mention[]>((data.mentions as Mention[]) || [])
+  const { folders } = useProjectFolders(projectId)
   const [modelId, setModelId] = useState((data.modelId as string) || 'seedance-1.5')
   const [duration, setDuration] = useState((data.duration as string) || '')
   const [aspectRatio, setAspectRatio] = useState((data.aspectRatio as string) || '')
@@ -234,9 +238,9 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
   useEffect(() => {
     setNodes(ns => ns.map(n => n.id === id ? {
       ...n,
-      data: { ...n.data, prompt, modelId, duration, aspectRatio, resolution, enableAudio, enableLoop, numVideos, outputUrl }
+      data: { ...n.data, prompt, modelId, duration, aspectRatio, resolution, enableAudio, enableLoop, numVideos, outputUrl, mentions }
     } : n))
-  }, [prompt, modelId, duration, aspectRatio, resolution, enableAudio, enableLoop, numVideos, outputUrl, id, setNodes])
+  }, [prompt, modelId, duration, aspectRatio, resolution, enableAudio, enableLoop, numVideos, outputUrl, mentions, id, setNodes])
 
   // Auto-name: once a generation completes, replace the default
   // "Video Generator #N" label with the first few words of the prompt.
@@ -496,6 +500,13 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
     setOutputUrl(null)
     setProgress(undefined)
 
+    // Folder-mention refs append to whatever the user wired into the
+    // pink reference-in handle. Local mentions are authoritative; @tags
+    // appearing only in the compiled prompt (e.g. forwarded by a connected
+    // prompt-node) fall back to "use every asset in the matched folder".
+    const folderRefs = resolveMentionRefs(compiledPrompt, mentions, folders)
+    const allReferenceUrls = [...connectedReferenceUrls, ...folderRefs]
+
     try {
       // Send RAW settings; the server builds the model-specific payload.
       const body = JSON.stringify({
@@ -503,7 +514,7 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
         prompt: compiledPrompt,
         referenceImageUrl: connectedImageUrl,
         endImageUrl: connectedEndImageUrl,
-        referenceImageUrls: connectedReferenceUrls.length ? connectedReferenceUrls : undefined,
+        referenceImageUrls: allReferenceUrls.length ? allReferenceUrls : undefined,
         settings: {
           aspectRatio,
           duration,
@@ -778,12 +789,15 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
           )}
         </div>
 
-        {/* Prompt input */}
+        {/* Prompt input. @-mention any folder (Character/Prop/Location/General)
+            to attach its assets as references at generate time. */}
         <div className="px-3 pt-3 pb-2">
-          <textarea
+          <MentionTextarea
             value={prompt}
-            onChange={e => setPrompt(e.target.value)}
-            placeholder="Describe the video you want to generate..."
+            mentions={mentions}
+            onChange={(text, ms) => { setPrompt(text); setMentions(ms) }}
+            folders={folders}
+            placeholder="Describe the video — type @ to reference a folder…"
             disabled={isGenerating}
             className="nodrag w-full bg-transparent resize-none outline-none text-[12px] text-foreground/90 placeholder:text-muted-foreground/40 leading-relaxed disabled:opacity-50 cursor-text"
             rows={2}

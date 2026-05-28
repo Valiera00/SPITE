@@ -1,9 +1,12 @@
 'use client'
 
 import { memo, useState, useEffect } from 'react'
+import { useParams } from 'next/navigation'
 import { Position, NodeProps, Handle, useReactFlow } from '@xyflow/react'
 import { TextT } from '@phosphor-icons/react'
 import { NodeActionToolbar } from './node-toolbar'
+import { MentionTextarea, type Mention } from '../mention-textarea'
+import { useProjectFolders } from '@/hooks/use-project-folders'
 
 function HandleIcon({ icon: Icon, color, style }: { icon: React.ElementType; color: string; style?: React.CSSProperties }) {
   return (
@@ -27,15 +30,20 @@ function HandleIcon({ icon: Icon, color, style }: { icon: React.ElementType; col
 }
 
 function PromptNodeImpl({ id, data, selected }: NodeProps) {
+  const params = useParams()
+  const projectId = params.id as string | undefined
   const [text, setText] = useState((data.text as string) || '')
+  const [mentions, setMentions] = useState<Mention[]>((data.mentions as Mention[]) || [])
+  const { folders } = useProjectFolders(projectId)
   const { setNodes } = useReactFlow()
 
-  // Sync text to node data whenever it changes
+  // Sync text + mentions to node data so downstream image/video nodes can
+  // resolve @Folder tags out of the compiled prompt.
   useEffect(() => {
-    setNodes(nodes => nodes.map(n => 
-      n.id === id ? { ...n, data: { ...n.data, text } } : n
+    setNodes(nodes => nodes.map(n =>
+      n.id === id ? { ...n, data: { ...n.data, text, mentions } } : n
     ))
-  }, [text, id, setNodes])
+  }, [text, mentions, id, setNodes])
 
   return (
     <div className="relative" style={{ width: 340 }}>
@@ -59,11 +67,14 @@ function PromptNodeImpl({ id, data, selected }: NodeProps) {
           boxShadow: selected ? '0 0 0 1px rgba(168,85,247,0.2), 0 0 24px rgba(168,85,247,0.15)' : 'none',
         }}
       >
-        <textarea
+        <MentionTextarea
           value={text}
-          onChange={e => setText(e.target.value)}
-          placeholder="Enter your prompt..."
+          mentions={mentions}
+          onChange={(t, ms) => { setText(t); setMentions(ms) }}
+          folders={folders}
+          placeholder="Enter your prompt — type @ to reference a folder…"
           className="nodrag w-full bg-transparent resize-none outline-none text-[13px] text-foreground placeholder:text-muted-foreground/40 leading-relaxed p-4 min-h-[160px] cursor-text"
+          rows={6}
         />
       </div>
     </div>
