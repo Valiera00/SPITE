@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { toast } from 'sonner'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -216,23 +217,33 @@ export function AddToFolderModal({ open, onClose, folderType, projectId, assetId
 
   const handleSave = async () => {
     if (!newName.trim()) return
+
+    // Fail fast (and visibly) when projectId is missing — without it the
+    // folder is invisible to every other view that scopes its fetch by
+    // project. Saw this manifest as "I pressed Create, nothing happened".
+    if (!editFolder && !projectId) {
+      toast.error("Couldn't save — no project context. Refresh the page and try again.")
+      console.error('[folders] handleSave called without projectId', { folderType, newName })
+      return
+    }
+
     setCreating(true)
     try {
       const assetIds = selectedAssets
         .filter(a => !a.isUploading && a.id && !a.id.startsWith('temp-'))
         .map(a => a.id)
 
-      console.log('[v0] Saving folder:', { name: newName, type: folderType, assetIds, editFolder: !!editFolder })
+      console.log('[folders] save', { name: newName, type: folderType, projectId, assetIds, editing: !!editFolder })
 
+      let res: Response
       if (editFolder) {
-        const res = await fetch(`/api/folders/${editFolder.id}`, {
+        res = await fetch(`/api/folders/${editFolder.id}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ name: newName.trim(), description: newDescription.trim() || null, setAssetIds: assetIds })
         })
-        console.log('[v0] Update response:', res.status)
       } else {
-        const res = await fetch('/api/folders', {
+        res = await fetch('/api/folders', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -245,15 +256,22 @@ export function AddToFolderModal({ open, onClose, folderType, projectId, assetId
             projectId,
           }),
         })
-        const data = await res.json()
-        console.log('[v0] Create response:', res.status, data)
       }
 
+      if (!res.ok) {
+        const body = await res.text()
+        console.error('[folders] save failed', res.status, body)
+        toast.error(`Couldn't save folder (HTTP ${res.status}). Check console for details.`)
+        return
+      }
+
+      toast.success(editFolder ? 'Folder updated' : `${typeLabels[folderType]} "${newName.trim()}" created`)
       window.dispatchEvent(new CustomEvent('asset-status-changed'))
       window.dispatchEvent(new CustomEvent('folders-changed'))
       onClose()
     } catch (err) {
-      console.error('[v0] Save failed:', err)
+      console.error('[folders] Save failed:', err)
+      toast.error("Couldn't save folder — network or server error.")
     } finally {
       setCreating(false)
     }

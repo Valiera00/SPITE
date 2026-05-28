@@ -15,7 +15,13 @@ export async function GET(request: NextRequest) {
     const sql = getDb()
     const { searchParams } = new URL(request.url)
     const type = searchParams.get('type') // character, prop, location, general
-    const projectId = searchParams.get('projectId') || 'proj-001'
+    const projectId = searchParams.get('projectId')
+    if (!projectId) {
+      // Return an empty list rather than silently leaking another project's
+      // folders via the old proj-001 fallback. Callers always know their
+      // project context.
+      return NextResponse.json([])
+    }
 
     let folders
     if (type) {
@@ -71,14 +77,24 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const sql = getDb()
-    const { name, description, type, projectId = 'proj-001', assetIds = [] } = await request.json()
+    const body = await request.json()
+    const { name, description, type, projectId, assetIds = [] } = body
 
     if (!name || !type) {
       return NextResponse.json({ error: 'Name and type are required' }, { status: 400 })
     }
+    if (!projectId) {
+      // Reject explicitly instead of silently falling back to a default
+      // "proj-001" project — that's what hid created folders from the
+      // sidebar (which fetches scoped to the real project id).
+      console.error('[folders] POST missing projectId', { name, type })
+      return NextResponse.json({ error: 'projectId is required' }, { status: 400 })
+    }
+
+    console.log('[folders] creating', { name, type, projectId, assetCount: assetIds.length })
 
     const id = uuidv4()
-    
+
     // Create the folder
     await sql`
       INSERT INTO asset_folders (id, project_id, name, description, type)
