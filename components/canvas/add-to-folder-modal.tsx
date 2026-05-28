@@ -253,7 +253,10 @@ export function AddToFolderModal({ open, onClose, folderType, assetId, assetUrl,
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent
-        className="bg-[#1A1D21] border-white/10 max-w-md relative"
+        // max-h + overflow keeps the form fully visible on short screens —
+        // without this the centered-fixed dialog can clip its lower half off
+        // when its content (asset thumbnails, picker, etc.) is tall.
+        className="bg-[#1A1D21] border-white/10 max-w-md max-h-[85vh] overflow-y-auto relative"
         // Whole modal accepts drag-and-drop of files. The small "+" tile
         // also still works for direct clicks.
         onDragOver={e => {
