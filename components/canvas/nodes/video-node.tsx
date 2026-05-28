@@ -730,7 +730,6 @@ export function VideoNode({ id, data, selected }: NodeProps) {
         {/* Preview area */}
         <div
           className="min-h-[220px] bg-[#0a0c0f] flex items-center justify-center relative"
-          onDoubleClick={() => { if (outputUrl) setLightboxOpen(true) }}
         >
           {outputUrl ? (
             <video
@@ -739,6 +738,14 @@ export function VideoNode({ id, data, selected }: NodeProps) {
               autoPlay
               loop={enableLoop}
               muted={!enableAudio}
+              controlsList="nofullscreen"
+              onDoubleClick={(e) => {
+                // The browser's built-in video controls trigger native
+                // fullscreen on dblclick; suppress it so only our lightbox opens.
+                e.preventDefault()
+                e.stopPropagation()
+                setLightboxOpen(true)
+              }}
               className="w-full h-full object-contain cursor-zoom-in"
             />
           ) : (

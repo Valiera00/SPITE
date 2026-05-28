@@ -36,8 +36,8 @@ export function Lightbox({ open, url, type, onClose }: LightboxProps) {
   // instead of the viewport — letting the user pan the canvas underneath).
   return createPortal(
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center cursor-zoom-out"
-      style={{ background: 'rgba(0,0,0,0.96)' }}
+      className="fixed inset-0 z-[100] flex items-center justify-center cursor-zoom-out backdrop-blur-md"
+      style={{ background: 'rgba(0,0,0,0.88)' }}
       onClick={onClose}
       onWheel={(e) => e.stopPropagation()}
       onMouseDown={(e) => e.stopPropagation()}
@@ -45,30 +45,39 @@ export function Lightbox({ open, url, type, onClose }: LightboxProps) {
     >
       <button
         onClick={(e) => { e.stopPropagation(); onClose() }}
-        className="absolute top-4 right-4 w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white/70 hover:text-white transition-colors"
+        className="absolute top-4 right-4 w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white/70 hover:text-white transition-colors z-10"
         aria-label="Close"
       >
         <X size={14} weight="bold" />
       </button>
 
-      {type === 'video' ? (
-        <video
-          src={url}
-          controls
-          autoPlay
-          playsInline
-          onClick={(e) => e.stopPropagation()}
-          className="max-w-[95vw] max-h-[95vh] object-contain cursor-default"
-        />
-      ) : (
-        <img
-          src={url}
-          alt="Preview"
-          onClick={(e) => e.stopPropagation()}
-          className="max-w-[95vw] max-h-[95vh] object-contain cursor-default"
-          draggable={false}
-        />
-      )}
+      {/* Wrapper fixes the viewport size so the media inside fills it via
+          object-contain — without this, a small natural-resolution video
+          would render at its intrinsic size instead of expanding. */}
+      <div
+        className="flex items-center justify-center"
+        style={{ width: '95vw', height: '95vh' }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {type === 'video' ? (
+          <video
+            src={url}
+            controls
+            autoPlay
+            playsInline
+            controlsList="nofullscreen"
+            onDoubleClick={(e) => e.preventDefault()}
+            className="w-full h-full object-contain cursor-default"
+          />
+        ) : (
+          <img
+            src={url}
+            alt="Preview"
+            className="w-full h-full object-contain cursor-default"
+            draggable={false}
+          />
+        )}
+      </div>
     </div>,
     document.body,
   )
