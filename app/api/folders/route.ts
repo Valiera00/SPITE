@@ -66,6 +66,7 @@ export async function GET(request: NextRequest) {
       `
     }
 
+    console.log('[folders] GET', { projectId, type, returned: folders.length })
     return NextResponse.json(folders)
   } catch (error) {
     console.error('[folders] GET error:', error)

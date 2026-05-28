@@ -166,7 +166,11 @@ export function LeftToolbar({
     { refreshInterval: 3000, revalidateOnFocus: true }
   )
 
-  // Fetch folders (characters, props, locations) - filtered by project
+  // Fetch folders for THIS project. Always-on (no historyOpen gate) so a
+  // folder-create from a node toolbar — which doesn't require the assets
+  // panel to be open — still triggers a refetch + repaints the sidebar
+  // when the user does open the panel afterwards.
+  const foldersKey = projectId ? `/api/folders?projectId=${projectId}` : null
   const { data: folders = [], mutate: mutateFolders } = useSWR<{
     id: string
     name: string
@@ -174,17 +178,27 @@ export function LeftToolbar({
     type: 'character' | 'prop' | 'location' | 'general'
     assets: { id: string; r2_url: string; type: string; prompt: string }[]
   }[]>(
-    historyOpen ? `/api/folders?projectId=${projectId}` : null,
-    fetcher,
+    foldersKey,
+    (url: string) => {
+      console.log('[folders] sidebar fetching', url)
+      return fetcher(url).then(d => {
+        console.log('[folders] sidebar got', d?.length ?? 0, 'folders for', projectId)
+        return d
+      })
+    },
     { refreshInterval: 5000, revalidateOnFocus: true }
   )
-  
-  // Listen for folder changes
+
+  // Listen for folder changes — force network revalidate so we don't show
+  // a stale cached list.
   useEffect(() => {
-    const handleFoldersChanged = () => mutateFolders()
+    const handleFoldersChanged = () => {
+      console.log('[folders] folders-changed event received, revalidating', foldersKey)
+      mutateFolders(undefined, { revalidate: true })
+    }
     window.addEventListener('folders-changed', handleFoldersChanged)
     return () => window.removeEventListener('folders-changed', handleFoldersChanged)
-  }, [mutateFolders])
+  }, [mutateFolders, foldersKey])
   
   // Group folders by type
   const characterFolders = useMemo(() => folders.filter(f => f.type === 'character'), [folders])
