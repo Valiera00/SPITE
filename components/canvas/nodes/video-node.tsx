@@ -195,8 +195,22 @@ export function VideoNode({ id, data, selected }: NodeProps) {
   }
 
   const handleNewShot = () => {
-    const newShotId = `shot-${Date.now()}`
-    setNodes(ns => ns.map(n => n.id === id ? { ...n, data: { ...n.data, shotId: newShotId } } : n))
+    // Pick the next free shot number in this scene. (Date.now() produced a
+    // 13-digit id which the timeline reader interpreted as a shot position
+    // and ran a billion-iteration loop building placeholders.)
+    setNodes(ns => {
+      const self = ns.find(n => n.id === id)
+      const sceneId = self?.data?.sceneId
+      const used = new Set<number>()
+      for (const n of ns) {
+        if (sceneId && n.data?.sceneId !== sceneId) continue
+        const m = String(n.data?.shotId || '').match(/^shot-(\d+)$/)
+        if (m) used.add(parseInt(m[1]))
+      }
+      let next = 1
+      while (used.has(next)) next++
+      return ns.map(n => n.id === id ? { ...n, data: { ...n.data, shotId: `shot-${next}` } } : n)
+    })
   }
 
   // Persist state changes to node data
