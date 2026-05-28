@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef } from 'react'
-import { Plus, CaretDown, Play, CaretLeft, CaretRight, Check } from '@phosphor-icons/react'
+import { Plus, CaretDown, Play, CaretLeft, CaretRight, Check, Image as ImageIcon } from '@phosphor-icons/react'
 
 export interface Shot {
   id: string
@@ -134,18 +134,23 @@ export function SceneTimeline({
                       }}
                       className={`
                         relative shrink-0 w-12 h-9 rounded overflow-hidden transition-all duration-150
-                        ${shot.nodeId ? 'cursor-grab active:cursor-grabbing' : 'cursor-default opacity-30'}
-                        ${!shot.nodeId ? 'border border-dashed border-border/40 bg-transparent' : shot.thumbnail ? '' : 'bg-card border border-border/50'}
+                        ${shot.nodeId ? 'cursor-grab active:cursor-grabbing' : 'cursor-default'}
+                        ${!shot.nodeId ? 'border border-dashed border-border/50 bg-card/20' : shot.thumbnail ? '' : 'bg-card border border-border/50'}
                         ${dropTarget?.sceneId === scene.id && dropTarget.index === index ? 'ring-2 ring-accent scale-105' : ''}
                       `}
                     >
                       {shot.thumbnail ? (
-                        <img 
-                          src={shot.thumbnail} 
-                          alt={shot.label || `Shot ${shot.order}`} 
+                        <img
+                          src={shot.thumbnail}
+                          alt={shot.label || `Shot ${shot.order}`}
                           className="w-full h-full object-cover"
                           draggable={false}
                         />
+                      ) : !shot.nodeId ? (
+                        <div className="w-full h-full flex flex-col items-center justify-center gap-0.5 text-muted-foreground/40">
+                          <ImageIcon size={12} />
+                          <span className="text-[7px] font-mono leading-none">{shot.order}</span>
+                        </div>
                       ) : (
                         <div className="w-full h-full flex items-center justify-center text-[8px] font-mono text-muted-foreground/40">
                           {shot.order}
