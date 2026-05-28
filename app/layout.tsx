@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { DM_Serif_Display, Geist_Mono } from 'next/font/google'
+import { DM_Serif_Display, Geist, Geist_Mono } from 'next/font/google'
 import { AuthProvider } from '@/components/auth-provider'
 import { Toaster } from '@/components/ui/sonner'
 import './globals.css'
@@ -8,6 +8,11 @@ const dmSerifDisplay = DM_Serif_Display({
   subsets: ['latin'],
   weight: ['400'],
   variable: '--font-dm-serif',
+})
+
+const geistSans = Geist({
+  subsets: ['latin'],
+  variable: '--font-geist-sans',
 })
 
 const geistMono = Geist_Mono({
@@ -36,8 +41,8 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en" className={`${dmSerifDisplay.variable} ${geistMono.variable} bg-background`} suppressHydrationWarning>
-      <body className="font-mono antialiased bg-background text-foreground min-h-screen" suppressHydrationWarning>
+    <html lang="en" className={`${dmSerifDisplay.variable} ${geistSans.variable} ${geistMono.variable} bg-background`} suppressHydrationWarning>
+      <body className="font-sans antialiased bg-background text-foreground min-h-screen" suppressHydrationWarning>
         <AuthProvider>
           {children}
         </AuthProvider>

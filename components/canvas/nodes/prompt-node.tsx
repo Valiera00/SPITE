@@ -63,7 +63,7 @@ export function PromptNode({ id, data, selected }: NodeProps) {
           value={text}
           onChange={e => setText(e.target.value)}
           placeholder="Enter your prompt..."
-          className="w-full bg-transparent resize-none outline-none text-[12px] font-mono text-foreground/80 placeholder:text-muted-foreground/40 leading-relaxed p-4 min-h-[160px]"
+          className="nodrag w-full bg-transparent resize-none outline-none text-[13px] text-foreground placeholder:text-muted-foreground/40 leading-relaxed p-4 min-h-[160px] cursor-text"
         />
       </div>
     </div>

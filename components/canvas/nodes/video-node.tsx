@@ -815,7 +815,7 @@ export function VideoNode({ id, data, selected }: NodeProps) {
             onChange={e => setPrompt(e.target.value)}
             placeholder="Describe the video you want to generate..."
             disabled={isGenerating}
-            className="w-full bg-transparent resize-none outline-none text-[11px] font-mono text-foreground/80 placeholder:text-muted-foreground/40 leading-relaxed disabled:opacity-50"
+            className="nodrag w-full bg-transparent resize-none outline-none text-[12px] text-foreground/90 placeholder:text-muted-foreground/40 leading-relaxed disabled:opacity-50 cursor-text"
             rows={2}
           />
         </div>

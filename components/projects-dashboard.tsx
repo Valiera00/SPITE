@@ -106,6 +106,7 @@ export function ProjectsDashboard() {
                 id={project.id}
                 name={project.name}
                 lastModified={formatRelativeTime(project.updatedat)}
+                onMutate={() => mutate()}
               />
             ))}
 

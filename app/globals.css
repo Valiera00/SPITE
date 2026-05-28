@@ -46,8 +46,11 @@
 }
 
 @theme inline {
-  --font-sans: var(--font-geist-mono);
-  --font-mono: var(--font-geist-mono);
+  /* Sleek sans-serif everywhere by default; we deliberately remap the
+     `font-mono` Tailwind class to Geist Sans too so the dozens of existing
+     `font-mono` usages adopt the new look without a sweeping rename. */
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-sans);
   --font-display: var(--font-dm-serif);
 
   --color-background: var(--background);
@@ -80,7 +83,7 @@
   body {
     background-color: #080A0C;
     color: #E8EAF0;
-    font-family: var(--font-geist-mono), 'Courier New', monospace;
+    font-family: var(--font-geist-sans), -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   }
 }
 
