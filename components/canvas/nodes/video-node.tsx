@@ -309,18 +309,29 @@ export function VideoNode({ id, data, selected }: NodeProps) {
     return () => { cancelled = true }
   }, [outputUrl, data.videoThumbnail, data.videoThumbnailFor, id, setNodes])
 
-  // If this node was spawned for a batch generation, resume polling its job.
+  // Resume polling on mount when this node has an in-flight job recorded —
+  // either because it was spawned for a batch generation, or because the
+  // user refreshed the page mid-generation. We do NOT clear the data
+  // here; the marker stays until the generation actually resolves, so
+  // another refresh resumes too.
   useEffect(() => {
     const pending = data.pendingRequestId as string | undefined
-    if (pending && !outputUrl) {
+    if (pending && !outputUrl && !requestId) {
       setFalEndpoint((data.pendingFalEndpoint as string) || null)
       setRequestId(pending)
       setStatus('in_queue')
-      setNodes(ns => ns.map(n => n.id === id ? { ...n, data: { ...n.data, pendingRequestId: undefined, pendingFalEndpoint: undefined } } : n))
     }
     // run once on mount
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Clear the persisted in-flight job marker when the generation resolves.
+  const clearPending = useCallback(() => {
+    setNodes(ns => ns.map(n => n.id === id ? {
+      ...n,
+      data: { ...n.data, pendingRequestId: undefined, pendingFalEndpoint: undefined },
+    } : n))
+  }, [id, setNodes])
 
   // Poll for status
   const pollStatus = useCallback(async (reqId: string, falModelId: string) => {
@@ -335,12 +346,14 @@ export function VideoNode({ id, data, selected }: NodeProps) {
       if (result.error) {
         setStatus('failed')
         setError(result.error)
+        clearPending()
         return true
       }
 
       if (result.status === 'COMPLETED') {
         setStatus('completed')
         setProgress(undefined)
+        clearPending()
         // API returns { output: { videos: [...], url: '...' } }
         const videoUrl = result.output?.url || result.output?.videos?.[0] || result.result?.video?.url || result.result?.video_url
         if (videoUrl) {
@@ -352,6 +365,7 @@ export function VideoNode({ id, data, selected }: NodeProps) {
       if (result.status === 'FAILED') {
         setStatus('failed')
         setError(result.error || 'Generation failed')
+        clearPending()
         return true
       }
 
@@ -369,7 +383,7 @@ export function VideoNode({ id, data, selected }: NodeProps) {
       console.error('[v0] Poll error:', err)
       return false
     }
-  }, [])
+  }, [clearPending])
 
   // Start polling when we have a request_id
   useEffect(() => {
@@ -545,9 +559,17 @@ export function VideoNode({ id, data, selected }: NodeProps) {
       }
 
       // This node tracks the first job.
-      setFalEndpoint(ok[0].model || currentModel.falModel)
+      const firstEndpoint = ok[0].model || currentModel.falModel
+      setFalEndpoint(firstEndpoint)
       setRequestId(ok[0].request_id)
       setStatus('in_queue')
+
+      // Persist the in-flight job onto the node so polling can resume
+      // after a page refresh. Cleared when the generation resolves.
+      setNodes(ns => ns.map(n => n.id === id ? {
+        ...n,
+        data: { ...n.data, pendingRequestId: ok[0].request_id, pendingFalEndpoint: firstEndpoint },
+      } : n))
 
       // Extra jobs become duplicate video nodes (in a grid) that each poll
       // their own request and fill in when done.
@@ -605,6 +627,7 @@ export function VideoNode({ id, data, selected }: NodeProps) {
     const reqId = requestId
     const cancelModel = falEndpoint || currentModel.falModel
     setRequestId(null)
+    clearPending()
 
     try {
       await fetch('/api/generate/cancel', {

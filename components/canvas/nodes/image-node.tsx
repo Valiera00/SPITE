@@ -206,6 +206,21 @@ export function ImageNode({ id, data, selected }: NodeProps) {
       setOutputUrl(data.outputUrl as string)
     }
   }, [data.outputUrl])
+
+  // Resume polling after a page refresh: if the saved data has a pending
+  // request id, pick up the in-flight job. We do NOT clear pendingRequestId
+  // here — the data stays on the node until the generation actually
+  // resolves (success / failure / cancel), so a second refresh resumes too.
+  useEffect(() => {
+    const pending = data.pendingRequestId as string | undefined
+    if (pending && !outputUrl && !requestId) {
+      setFalEndpoint((data.pendingFalEndpoint as string) || null)
+      setRequestId(pending)
+      setStatus('in_queue')
+    }
+    // run once on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   
   // Sync outputUrl TO node data when it changes (for connected nodes to read)
   useEffect(() => {
@@ -327,6 +342,16 @@ export function ImageNode({ id, data, selected }: NodeProps) {
     setNodes(ns => ns.map(n => n.id === id ? { ...n, data: { ...n.data, label: next } } : n))
   }
 
+  // Drop the persisted in-flight job marker once a generation resolves
+  // (success / failure / cancel) so a future refresh doesn't try to
+  // resume a completed job.
+  const clearPending = useCallback(() => {
+    setNodes(ns => ns.map(n => n.id === id ? {
+      ...n,
+      data: { ...n.data, pendingRequestId: undefined, pendingFalEndpoint: undefined },
+    } : n))
+  }, [id, setNodes])
+
   // Poll for status
   const pollStatus = useCallback(async (reqId: string, falModelId: string) => {
     if (stopRef.current) return true
@@ -340,12 +365,14 @@ export function ImageNode({ id, data, selected }: NodeProps) {
       if (result.error) {
         setStatus('failed')
         setError(result.error)
+        clearPending()
         return true
       }
 
       if (result.status === 'COMPLETED') {
         setStatus('completed')
         setProgress(undefined)
+        clearPending()
         // API returns { output: { images: [...], url: '...' } }
         const images: string[] = (result.output?.images?.length
           ? result.output.images
@@ -394,6 +421,7 @@ export function ImageNode({ id, data, selected }: NodeProps) {
       if (result.status === 'FAILED') {
         setStatus('failed')
         setError(result.error || 'Generation failed')
+        clearPending()
         return true
       }
 
@@ -411,7 +439,7 @@ export function ImageNode({ id, data, selected }: NodeProps) {
       console.error('[v0] Poll error:', err)
       return false
     }
-  }, [])
+  }, [clearPending])
 
   // Start polling when we have a request_id
   useEffect(() => {
@@ -527,9 +555,17 @@ export function ImageNode({ id, data, selected }: NodeProps) {
         return
       }
 
-      setFalEndpoint(result.model || currentModel.falModel)
+      const endpoint = result.model || currentModel.falModel
+      setFalEndpoint(endpoint)
       setRequestId(result.request_id)
       setStatus('in_queue')
+
+      // Persist the in-flight job onto the node so polling can resume
+      // after a page refresh. Cleared when the generation resolves below.
+      setNodes(ns => ns.map(n => n.id === id ? {
+        ...n,
+        data: { ...n.data, pendingRequestId: result.request_id, pendingFalEndpoint: endpoint },
+      } : n))
     } catch (err: any) {
       setStatus('failed')
       setError(err.message || 'Failed to submit job')
@@ -548,6 +584,7 @@ export function ImageNode({ id, data, selected }: NodeProps) {
     const reqId = requestId
     const cancelModel = falEndpoint || currentModel.falModel
     setRequestId(null)
+    clearPending()
 
     try {
       await fetch('/api/generate/cancel', {
