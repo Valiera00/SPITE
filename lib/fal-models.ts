@@ -388,7 +388,13 @@ export function buildModelInput(
   if (options.referenceImageUrls?.length && model.referenceParam) {
     const refs = options.referenceImageUrls
     if (model.referenceParam === 'elements') {
-      input.elements = refs.map(url => ({ frontal_image_url: url }))
+      // One "element" = one subject (front view + optional alternate views).
+      // Collapse all connected refs into a single element so @Element1 in the
+      // prompt cites this whole subject.
+      input.elements = [{
+        frontal_image_url: refs[0],
+        reference_image_urls: refs.slice(1),
+      }]
     } else if (model.referenceParam === 'subject_reference_image_url') {
       input.subject_reference_image_url = refs[0]
     } else {

@@ -46,8 +46,17 @@ export async function GET(request: NextRequest) {
           let msg = 'Generation failed'
           try {
             const j = JSON.parse(errText)
-            const detail = Array.isArray(j.detail) ? j.detail[0]?.msg : j.detail
-            msg = detail || j.error || msg
+            const first = Array.isArray(j.detail) ? j.detail[0] : null
+            if (first && typeof first === 'object') {
+              // Include which field fal complained about (e.g. "elements.0.frontal_image_url")
+              const loc = Array.isArray(first.loc)
+                ? first.loc.filter((s: any) => s !== 'body').join('.')
+                : ''
+              const detailMsg = first.msg || ''
+              msg = loc ? `${loc}: ${detailMsg}` : (detailMsg || msg)
+            } else {
+              msg = (typeof j.detail === 'string' ? j.detail : '') || j.error || msg
+            }
           } catch {}
           return NextResponse.json({
             status: 'FAILED',
