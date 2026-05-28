@@ -90,13 +90,15 @@
   background-size: 24px 24px;
 }
 
-/* Liquid glass material */
+/* Liquid glass material — dark, mostly-opaque panel material used by the
+   left toolbar, asset panel, top toolbar, and history dropdown. The
+   underlying canvas should be readable through it but not distracting. */
 .glass {
-  background: rgba(255, 255, 255, 0.04);
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.10);
+  background: rgba(10, 12, 16, 0.88);
+  backdrop-filter: blur(20px) saturate(140%);
+  -webkit-backdrop-filter: blur(20px) saturate(140%);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
 .glass-hover {

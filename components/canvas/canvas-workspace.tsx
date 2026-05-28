@@ -495,14 +495,19 @@ function CanvasInner({ projectId }: { projectId: string }) {
     }
   }, [scenesWithShots, nodes, setCenter, setNodes])
 
-  // Track state changes for undo/redo
+  // Track state changes for undo/redo. We push the PREVIOUS state (the
+  // one we're moving away from) onto `past`, not the new state — otherwise
+  // past[length-1] always equals the current state and undo is a no-op.
+  const lastStateRef = useRef<{ nodes: Node[]; edges: Edge[] } | null>(null)
   useEffect(() => {
+    const prev = lastStateRef.current
+    lastStateRef.current = { nodes, edges }
     if (skipHistoryRef.current) {
       skipHistoryRef.current = false
       return
     }
-    // Push current state to past, clear future on any change
-    setPast(p => [...p.slice(-49), { nodes, edges }]) // Max 50 history states
+    if (prev === null) return // first render — no prior state to remember
+    setPast(p => [...p.slice(-49), prev])
     setFuture([])
   }, [nodes, edges])
 

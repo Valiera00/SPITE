@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import {
   TextT,
   ImageSquare,
@@ -56,6 +56,29 @@ export function AddNodeMenu({ x, y, onSelect, onClose }: AddNodeMenuProps) {
   const [activeCategory, setActiveCategory] = useState<string | null>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const [pos, setPos] = useState({ left: x, top: y })
+
+  // Clamp the menu inside the viewport so it isn't clipped when right-clicking
+  // near the bottom or right edge of the screen. Runs synchronously after
+  // mount so the menu never paints in an off-screen position.
+  useLayoutEffect(() => {
+    const el = menuRef.current
+    if (!el) return
+    const rect = el.getBoundingClientRect()
+    const margin = 8
+    let left = x
+    let top = y
+    if (left + rect.width > window.innerWidth - margin) {
+      left = Math.max(margin, window.innerWidth - rect.width - margin)
+    }
+    if (top + rect.height > window.innerHeight - margin) {
+      top = Math.max(margin, window.innerHeight - rect.height - margin)
+    }
+    if (left !== pos.left || top !== pos.top) setPos({ left, top })
+    // We only want this to recompute when the requested click position
+    // changes, not when our clamped state changes — guard above prevents
+    // the loop. eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [x, y])
 
   useEffect(() => {
     inputRef.current?.focus()
@@ -91,8 +114,8 @@ export function AddNodeMenu({ x, y, onSelect, onClose }: AddNodeMenuProps) {
       ref={menuRef}
       className="fixed z-50 flex flex-col rounded-xl overflow-hidden"
       style={{
-        left: x,
-        top: y,
+        left: pos.left,
+        top: pos.top,
         width: 280,
         background: 'rgba(14,16,20,0.97)',
         border: '1px solid rgba(255,255,255,0.08)',

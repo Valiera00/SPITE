@@ -219,11 +219,20 @@ export function ImageNode({ id, data, selected }: NodeProps) {
   // Get current model config
   const currentModel = useMemo(() => getModelById(modelId), [modelId])
 
-  // Reset settings when model changes
+  // Reset aspect/resolution when the USER picks a new model. Skip the
+  // initial mount so saved settings on a reloaded or duplicated node aren't
+  // immediately clobbered by model defaults.
+  const prevModelIdRef = useRef<string | null>(null)
   useEffect(() => {
-    if (currentModel) {
+    if (!currentModel) return
+    if (prevModelIdRef.current === null) {
+      prevModelIdRef.current = currentModel.id
+      return
+    }
+    if (prevModelIdRef.current !== currentModel.id) {
       setAspectRatio(currentModel.defaultAspectRatio)
       setResolution(currentModel.defaultResolution || '')
+      prevModelIdRef.current = currentModel.id
     }
   }, [currentModel])
 

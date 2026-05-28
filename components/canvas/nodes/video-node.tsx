@@ -180,14 +180,23 @@ export function VideoNode({ id, data, selected }: NodeProps) {
   const refsRequireFirstFrame = !!currentModel?.referenceParam && currentModel.referenceParam === 'elements' && !currentModel.referenceModel
   const blockedNoFirstFrame = refsRequireFirstFrame && hasConnectedReferences && !hasConnectedFirstFrame
 
-  // Reset settings when model changes
+  // Reset settings when the USER picks a new model. Skip the initial mount
+  // so saved settings on a reloaded or duplicated node aren't immediately
+  // clobbered by model defaults.
+  const prevModelIdRef = useRef<string | null>(null)
   useEffect(() => {
-    if (currentModel) {
+    if (!currentModel) return
+    if (prevModelIdRef.current === null) {
+      prevModelIdRef.current = currentModel.id
+      return
+    }
+    if (prevModelIdRef.current !== currentModel.id) {
       setAspectRatio(currentModel.defaultAspectRatio)
       setDuration(currentModel.defaultDuration || '')
       setResolution(currentModel.defaultResolution || '')
       setEnableAudio(false)
       setEnableLoop(false)
+      prevModelIdRef.current = currentModel.id
     }
   }, [currentModel])
 

@@ -2,13 +2,14 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { NodeProps, useReactFlow } from '@xyflow/react'
+import { X } from '@phosphor-icons/react'
 
 export function CommentNode({ id, data, selected }: NodeProps) {
   const [text, setText] = useState((data.text as string) || '')
   const [isEditing, setIsEditing] = useState(!data.text)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const measureRef = useRef<HTMLSpanElement>(null)
-  const { setNodes } = useReactFlow()
+  const { setNodes, deleteElements } = useReactFlow()
 
   // Focus on mount if editing
   useEffect(() => {
@@ -37,8 +38,8 @@ export function CommentNode({ id, data, selected }: NodeProps) {
   }
 
   return (
-    <div 
-      className="flex items-center gap-2 px-3 py-2 rounded-full transition-all nodrag"
+    <div
+      className="relative group flex items-center gap-2 px-3 py-2 rounded-full transition-all nodrag"
       style={{
         background: 'rgba(30,32,38,0.95)',
         border: selected ? '1px solid rgba(168,85,247,0.6)' : '1px solid rgba(255,255,255,0.1)',
@@ -46,6 +47,20 @@ export function CommentNode({ id, data, selected }: NodeProps) {
       }}
       onDoubleClick={() => setIsEditing(true)}
     >
+      {/* Hover delete — `nodrag` blocks React Flow's click-to-select so the
+          Delete key flow doesn't reach comments. A persistent on-hover X
+          is the most discoverable way out. */}
+      <button
+        onClick={(e) => {
+          e.stopPropagation()
+          deleteElements({ nodes: [{ id }] })
+        }}
+        className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-black/80 border border-white/20 text-white/80 hover:text-white hover:bg-red-500/80 hover:border-red-400/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-10"
+        aria-label="Delete comment"
+        title="Delete comment"
+      >
+        <X size={10} weight="bold" />
+      </button>
       {/* Avatar */}
       <div 
         className="w-6 h-6 rounded-full shrink-0 flex items-center justify-center text-[10px] font-medium"

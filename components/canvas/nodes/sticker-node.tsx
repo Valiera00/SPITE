@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { NodeProps } from '@xyflow/react'
+import { NodeProps, useReactFlow } from '@xyflow/react'
+import { X } from '@phosphor-icons/react'
 
 const LAST_STICKER_KEY = 'canvas_last_sticker'
 
@@ -19,7 +20,8 @@ const STICKER_ROWS = [
   ['💬', '❓', '🎨', '💎', '✨', '👎'],
 ]
 
-export function StickerNode({ data, selected }: NodeProps) {
+export function StickerNode({ id, data, selected }: NodeProps) {
+  const { deleteElements } = useReactFlow()
   const [sticker, setSticker] = useState(
     (data.sticker as string) || getLastSticker()
   )
@@ -39,7 +41,7 @@ export function StickerNode({ data, selected }: NodeProps) {
   }, [])
 
   return (
-    <div className="relative">
+    <div className="relative group">
       <div
         onClick={(e) => {
           e.stopPropagation()
@@ -54,6 +56,21 @@ export function StickerNode({ data, selected }: NodeProps) {
       >
         {sticker}
       </div>
+
+      {/* Hover delete — stickers have no node toolbar and the picker swallows
+          clicks, so the standard select+Delete keyboard flow doesn't reach
+          here. A persistent on-hover X is the most discoverable way out. */}
+      <button
+        onClick={(e) => {
+          e.stopPropagation()
+          deleteElements({ nodes: [{ id }] })
+        }}
+        className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-black/80 border border-white/20 text-white/80 hover:text-white hover:bg-red-500/80 hover:border-red-400/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-10 nodrag"
+        aria-label="Delete sticker"
+        title="Delete sticker"
+      >
+        <X size={10} weight="bold" />
+      </button>
 
       {showPicker && (
         <div
