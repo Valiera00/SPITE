@@ -42,14 +42,8 @@ import {
   VideoCamera,
   ShieldCheck,
   ArrowsOut,
-  Heart,
-  SlidersHorizontal,
-  Palette,
-  Sparkle,
-  Camera,
-  Cube,
-  Stack,
   Cursor,
+  Check,
 } from '@phosphor-icons/react'
 
 export type AssetCategory = 'characters' | 'props' | 'locations' | 'general'
@@ -151,6 +145,14 @@ export function LeftToolbar({
     type: 'character' | 'prop' | 'location' | 'general'
     assets: { id: string; r2_url: string; type: string; prompt: string }[]
   } | null>(null)
+
+  // Bulk-select state for the assets panel (works in both compact + expanded
+  // views). selectedIds is a Set keyed by generation_history.id.
+  const [selectMode, setSelectMode] = useState(false)
+  const [selectedAssetIds, setSelectedAssetIds] = useState<Set<string>>(new Set())
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
+  const [bulkDeleting, setBulkDeleting] = useState(false)
+  const expandedUploadRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     setHistoryOpen(showHistory)
@@ -309,19 +311,87 @@ export function LeftToolbar({
     onShowHistoryChange?.(false)
   }
 
-  // Reference categories for sidebar
-  const REFERENCE_CATEGORIES = [
-    { id: 'style', icon: Sparkle, label: 'Style', pinned: true },
-    { id: 'character', icon: User, label: 'Character', pinned: true },
-    { id: 'element', icon: Cube, label: 'Element', pinned: false },
-  ]
+  // Bulk-select helpers.
+  const toggleAssetSelected = (id: string) => {
+    setSelectedAssetIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+  const selectAllVisible = () => {
+    setSelectedAssetIds(new Set(filteredGenAssets.map(a => a.id)))
+  }
+  const exitSelectMode = () => {
+    setSelectMode(false)
+    setSelectedAssetIds(new Set())
+  }
+  const enterSelectMode = () => {
+    setSelectMode(true)
+    setSelectedAssetIds(new Set())
+    setSelectedGenAsset(null)
+  }
+
+  // Run the delete for every selected id in parallel. The single-asset
+  // /api/assets/[id] endpoint returns 403 for canvas-protected assets;
+  // we count those as "skipped" rather than failures so the user knows
+  // why a number didn't drop from the panel.
+  const performBulkDelete = async () => {
+    if (selectedAssetIds.size === 0) return
+    setBulkDeleting(true)
+    const ids = Array.from(selectedAssetIds)
+    const results = await Promise.all(
+      ids.map(id =>
+        fetch(`/api/assets/${id}`, { method: 'DELETE' })
+          .then(r => ({ id, status: r.status }))
+          .catch(() => ({ id, status: 0 }))
+      )
+    )
+    setBulkDeleting(false)
+    setBulkDeleteOpen(false)
+
+    const deleted = results.filter(r => r.status >= 200 && r.status < 300).length
+    const protectedCount = results.filter(r => r.status === 403).length
+    const failed = results.length - deleted - protectedCount
+
+    mutateAssets()
+    exitSelectMode()
+
+    if (deleted > 0) toast.success(`Deleted ${deleted} asset${deleted !== 1 ? 's' : ''}`)
+    if (protectedCount > 0) toast.warning(`${protectedCount} skipped — still used on a canvas`)
+    if (failed > 0) toast.error(`${failed} failed to delete`)
+  }
+
 
   // EXPANDED FULL-SCREEN ASSETS MODAL
   if (historyOpen && historyExpanded) {
     return (
       <>
+        {/* Bulk-delete confirmation — Radix portals it, location is moot. */}
+        <AlertDialog open={bulkDeleteOpen} onOpenChange={setBulkDeleteOpen}>
+          <AlertDialogContent className="bg-[#0D0F12] border-white/10">
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete {selectedAssetIds.size} asset{selectedAssetIds.size !== 1 ? 's' : ''}?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This permanently removes them from storage and the asset library. Any selected assets currently used on a canvas are skipped — clear them off the canvas first if you want them gone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel className="bg-white/5 border-white/10 hover:bg-white/10" disabled={bulkDeleting}>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-red-500/20 text-red-400 hover:bg-red-500/30 border-red-500/30"
+                disabled={bulkDeleting}
+                onClick={performBulkDelete}
+              >
+                {bulkDeleting ? 'Deleting…' : `Delete ${selectedAssetIds.size}`}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
         {/* Backdrop */}
-        <div 
+        <div
           className="fixed inset-0 bg-black/90 z-40"
           onClick={handleCloseHistory}
         />
@@ -333,19 +403,14 @@ export function LeftToolbar({
             <div className="px-4 py-3 border-b border-border/30">
               <span className="text-xs font-mono text-muted-foreground/60 uppercase tracking-wider">Creations</span>
             </div>
-            
-            {/* Project selector */}
-            <div className="px-3 py-2">
-              <button className="w-full flex items-center gap-2 px-3 py-2 rounded-lg bg-accent/10 border border-accent/20">
-                <div className="w-3 h-3 rounded bg-amber-500" />
-                <span className="text-sm font-medium text-foreground flex-1 text-left">Personal project</span>
-              </button>
-            </div>
-            
-            {/* Navigation */}
-            <div className="flex-1 px-2 py-1">
+
+            {/* Navigation. Filter tabs in the header switch between
+                image/video/uploads; this side-nav just toggles whether
+                generations or uploads come first conceptually — both
+                feeds use the same filteredGenAssets list. */}
+            <div className="flex-1 px-2 py-2">
               <button
-                onClick={() => setSidebarSection('history')}
+                onClick={() => { setHistoryFilter('all'); setSidebarSection('history') }}
                 className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
                   sidebarSection === 'history' ? 'bg-white/10 text-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-white/5'
                 }`}
@@ -354,7 +419,7 @@ export function LeftToolbar({
                 History
               </button>
               <button
-                onClick={() => setSidebarSection('uploads')}
+                onClick={() => { setHistoryFilter('uploads'); setSidebarSection('uploads') }}
                 className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
                   sidebarSection === 'uploads' ? 'bg-white/10 text-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-white/5'
                 }`}
@@ -362,34 +427,34 @@ export function LeftToolbar({
                 <UploadSimple size={16} />
                 Uploads
               </button>
-              
-              {/* All references section */}
-              <div className="mt-4 pt-4 border-t border-border/30">
-                <span className="px-3 text-xs font-mono text-muted-foreground/50 uppercase tracking-wider">All references</span>
-                <div className="mt-2 space-y-0.5">
-                  <button className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-white/5">
-                    <MagnifyingGlass size={16} />
-                    Stock
-                  </button>
-                  {REFERENCE_CATEGORIES.map(cat => (
-                    <button 
-                      key={cat.id}
-                      className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-white/5"
-                    >
-                      <cat.icon size={16} />
-                      <span className="flex-1 text-left">{cat.label}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
             </div>
           </div>
 
           {/* Main Content Area */}
           <div className="flex-1 flex flex-col">
             {/* Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-border/30">
-              <h2 className="text-lg font-semibold text-foreground">History</h2>
+            <div className="flex items-center justify-between px-6 py-4 border-b border-border/30 gap-4">
+              <div className="flex items-center gap-4">
+                <h2 className="text-lg font-semibold text-foreground">
+                  {sidebarSection === 'uploads' ? 'Uploads' : 'History'}
+                </h2>
+                {/* Filter tabs — same as compact view */}
+                <div className="flex gap-1">
+                  {(['all', 'image', 'video', 'uploads'] as const).map((filter) => (
+                    <button
+                      key={filter}
+                      onClick={() => setHistoryFilter(filter)}
+                      className={`px-3 py-1.5 rounded-md text-xs transition-colors ${
+                        historyFilter === filter
+                          ? 'bg-accent/20 text-accent'
+                          : 'text-muted-foreground hover:text-foreground hover:bg-white/5'
+                      }`}
+                    >
+                      {filter.charAt(0).toUpperCase() + filter.slice(1)}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <div className="flex items-center gap-3">
                 <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-input border border-border/50 w-64">
                   <MagnifyingGlass size={14} className="text-muted-foreground/60" />
@@ -401,12 +466,41 @@ export function LeftToolbar({
                     className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground/40 outline-none"
                   />
                 </div>
-                <button className="w-9 h-9 rounded-lg flex items-center justify-center hover:bg-white/10 text-muted-foreground">
-                  <SlidersHorizontal size={18} />
-                </button>
-                <button className="w-9 h-9 rounded-lg flex items-center justify-center hover:bg-white/10 text-muted-foreground">
-                  <Heart size={18} />
-                </button>
+                {/* Select-mode toggle */}
+                {!selectMode ? (
+                  <button
+                    onClick={enterSelectMode}
+                    className="px-3 py-2 rounded-lg border border-border/50 text-sm text-foreground hover:bg-white/5 transition-colors"
+                  >
+                    Select
+                  </button>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground/70">
+                      {selectedAssetIds.size} selected
+                    </span>
+                    <button
+                      onClick={selectAllVisible}
+                      className="px-3 py-1.5 rounded-md text-xs text-foreground hover:bg-white/5 transition-colors"
+                    >
+                      Select all
+                    </button>
+                    <button
+                      onClick={() => setBulkDeleteOpen(true)}
+                      disabled={selectedAssetIds.size === 0}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      <Trash size={12} />
+                      Delete
+                    </button>
+                    <button
+                      onClick={exitSelectMode}
+                      className="px-3 py-1.5 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-white/5 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -424,35 +518,55 @@ export function LeftToolbar({
               ) : (
                 Object.entries(groupedGenAssets).map(([monthYear, monthAssets]) => (
                   <div key={monthYear} className="mb-6">
-                    <h3 className="text-sm font-mono text-muted-foreground/60 mb-3">
+                    <h3 className="text-sm text-muted-foreground/60 mb-3">
                       {monthYear}
                     </h3>
                     <div className="grid grid-cols-7 gap-3">
-                      {monthAssets.map(asset => (
-                        <button
-                          key={asset.id}
-                          onClick={() => setSelectedGenAsset(asset)}
-                          className="relative aspect-square rounded-lg overflow-hidden bg-card border border-border/30 hover:border-accent/50 transition-all hover:scale-[1.02] group"
-                        >
-                          {asset.type === 'video' ? (
-                            <video src={asset.r2_url} className="w-full h-full object-cover" muted />
-                          ) : (
-                            <img src={asset.r2_url} alt="" className="w-full h-full object-cover" />
-                          )}
-                          <div className="absolute top-2 left-2 flex gap-1">
-                            {asset.type === 'video' && (
-                              <div className="w-5 h-5 rounded bg-black/60 flex items-center justify-center">
-                                <VideoCamera size={12} className="text-white" />
+                      {monthAssets.map(asset => {
+                        const isSel = selectedAssetIds.has(asset.id)
+                        return (
+                          <button
+                            key={asset.id}
+                            onClick={() => {
+                              if (selectMode) toggleAssetSelected(asset.id)
+                              else setSelectedGenAsset(asset)
+                            }}
+                            className={`relative aspect-square rounded-lg overflow-hidden bg-card border transition-all group ${
+                              isSel
+                                ? 'border-accent ring-2 ring-accent/60'
+                                : 'border-border/30 hover:border-accent/50 hover:scale-[1.02]'
+                            }`}
+                          >
+                            {asset.type === 'video' ? (
+                              <video src={asset.r2_url} className="w-full h-full object-cover" muted preload="metadata" />
+                            ) : (
+                              <img src={asset.r2_url} alt="" className="w-full h-full object-cover" loading="lazy" decoding="async" />
+                            )}
+                            <div className="absolute top-2 left-2 flex gap-1">
+                              {asset.type === 'video' && (
+                                <div className="w-5 h-5 rounded bg-black/60 flex items-center justify-center">
+                                  <VideoCamera size={12} className="text-white" />
+                                </div>
+                              )}
+                              {asset.used_in_canvas && (
+                                <div className="w-5 h-5 rounded bg-accent/80 flex items-center justify-center">
+                                  <ShieldCheck size={12} className="text-white" />
+                                </div>
+                              )}
+                            </div>
+                            {/* Selection checkmark */}
+                            {selectMode && (
+                              <div className={`absolute top-2 right-2 w-6 h-6 rounded-full flex items-center justify-center border transition-colors ${
+                                isSel
+                                  ? 'bg-accent border-accent text-white'
+                                  : 'bg-black/60 border-white/30 text-transparent'
+                              }`}>
+                                <Check size={14} weight="bold" />
                               </div>
                             )}
-                            {asset.used_in_canvas && (
-                              <div className="w-5 h-5 rounded bg-accent/80 flex items-center justify-center">
-                                <ShieldCheck size={12} className="text-white" />
-                              </div>
-                            )}
-                          </div>
-                        </button>
-                      ))}
+                          </button>
+                        )
+                      })}
                     </div>
                   </div>
                 ))
@@ -477,17 +591,19 @@ export function LeftToolbar({
                 {/* Preview */}
                 <div className="rounded-lg overflow-hidden bg-card border border-border/30 mb-4 aspect-video">
                   {selectedGenAsset.type === 'video' ? (
-                    <video src={selectedGenAsset.r2_url} controls className="w-full h-full object-cover" />
+                    <video src={selectedGenAsset.r2_url} controls className="w-full h-full object-cover" preload="metadata" />
                   ) : (
-                    <img src={selectedGenAsset.r2_url} alt="" className="w-full h-full object-cover" />
+                    <img src={selectedGenAsset.r2_url} alt="" className="w-full h-full object-cover" loading="lazy" decoding="async" />
                   )}
                 </div>
 
-                {/* Metadata */}
+                {/* Metadata — only the fields we actually have. The earlier
+                    placeholders (Workflow name / Resolution / Seed) were
+                    hardcoded strings and would have lied to the user. */}
                 <div className="space-y-3 text-sm">
                   <div className="flex justify-between text-muted-foreground/60">
-                    <span>Workflow name</span>
-                    <span className="text-foreground">Take</span>
+                    <span>Type</span>
+                    <span className="text-foreground capitalize">{selectedGenAsset.type}</span>
                   </div>
                   <div className="flex justify-between text-muted-foreground/60">
                     <span>Date Created</span>
@@ -498,22 +614,20 @@ export function LeftToolbar({
                     <span className="text-foreground">{selectedGenAsset.model.split('/').pop() || '—'}</span>
                   </div>
                   <div className="flex justify-between text-muted-foreground/60">
-                    <span>Resolution</span>
-                    <span className="text-foreground">1920 × 1080</span>
-                  </div>
-                  <div className="flex justify-between text-muted-foreground/60">
-                    <span>Seed</span>
-                    <span className="text-foreground">—</span>
+                    <span>Status</span>
+                    <span className={selectedGenAsset.used_in_canvas ? 'text-accent' : 'text-muted-foreground'}>
+                      {selectedGenAsset.used_in_canvas ? 'Protected' : 'Temporary'}
+                    </span>
                   </div>
                 </div>
 
                 {/* Prompt */}
                 <div className="mt-4">
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-mono text-muted-foreground/60 uppercase">Prompt</span>
+                    <span className="text-xs text-muted-foreground/60 uppercase">Prompt</span>
                     <button
                       onClick={() => copyPrompt(selectedGenAsset.prompt)}
-                      className="flex items-center gap-1 text-xs font-mono text-accent hover:underline"
+                      className="flex items-center gap-1 text-xs text-accent hover:underline"
                     >
                       <Copy size={12} /> Copy
                     </button>
@@ -525,8 +639,14 @@ export function LeftToolbar({
 
                 {/* Actions */}
                 <div className="flex gap-2 mt-4">
-                  <button className="flex-1 px-4 py-2 rounded-lg border border-border/30 text-sm text-foreground hover:bg-white/5 transition-colors">
-                    Share
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(window.location.origin + selectedGenAsset.r2_url)
+                      toast.success('Asset URL copied')
+                    }}
+                    className="flex-1 px-4 py-2 rounded-lg border border-border/30 text-sm text-foreground hover:bg-white/5 transition-colors"
+                  >
+                    Copy link
                   </button>
                   <a
                     href={selectedGenAsset.r2_url}
@@ -536,20 +656,95 @@ export function LeftToolbar({
                     Download
                   </a>
                 </div>
+                {/* Delete */}
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <button className="mt-2 w-full flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-red-500/15 text-red-400 text-sm hover:bg-red-500/25 transition-colors">
+                      <Trash size={14} />
+                      Delete permanently
+                    </button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent className="bg-[#0D0F12] border-white/10">
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Permanently delete asset?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        This removes the file from storage and history. Assets currently used on a canvas are skipped (mark the node as unused first).
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel className="bg-white/5 border-white/10 hover:bg-white/10">Cancel</AlertDialogCancel>
+                      <AlertDialogAction
+                        className="bg-red-500/20 text-red-400 hover:bg-red-500/30 border-red-500/30"
+                        onClick={async () => {
+                          const currentIndex = filteredGenAssets.findIndex(a => a.id === selectedGenAsset.id)
+                          const nextAsset = filteredGenAssets[currentIndex + 1] ?? filteredGenAssets[currentIndex - 1] ?? null
+                          const res = await fetch(`/api/assets/${selectedGenAsset.id}`, { method: 'DELETE' })
+                          if (res.ok) {
+                            mutateAssets()
+                            setSelectedGenAsset(nextAsset ?? null)
+                            toast.success('Asset deleted')
+                          } else if (res.status === 403) {
+                            toast.warning('Asset is still used on the canvas')
+                          } else {
+                            toast.error('Failed to delete')
+                          }
+                        }}
+                      >
+                        Delete permanently
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
               </div>
             ) : (
               <div className="flex-1 flex flex-col items-center justify-center px-4 text-center">
                 <p className="text-sm text-muted-foreground/50 mb-4">
                   Drop an image or upload<br />your own media
                 </p>
-                <button className="flex items-center gap-2 px-4 py-2 rounded-lg border border-border/30 text-sm text-foreground hover:bg-white/5">
+                <button
+                  onClick={() => expandedUploadRef.current?.click()}
+                  className="flex items-center gap-2 px-4 py-2 rounded-lg border border-border/30 text-sm text-foreground hover:bg-white/5"
+                >
                   <UploadSimple size={16} />
                   Upload media
                 </button>
-                <button className="flex items-center gap-2 px-4 py-2 mt-2 rounded-lg border border-border/30 text-sm text-foreground hover:bg-white/5">
-                  <Camera size={16} />
-                  Take photo
-                </button>
+                <input
+                  ref={expandedUploadRef}
+                  type="file"
+                  accept="image/*,video/*"
+                  className="hidden"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0]
+                    if (!file) return
+                    const formData = new FormData()
+                    formData.append('file', file)
+                    formData.append('filename', file.name)
+                    try {
+                      const up = await fetch('/api/r2-upload', { method: 'POST', body: formData })
+                      const j = await up.json()
+                      if (!j.url) throw new Error('upload failed')
+                      const r2Key = j.url.split('.r2.dev/')[1]
+                      const proxyUrl = r2Key ? `/api/r2-image/${r2Key}` : j.url
+                      await fetch('/api/assets', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          url: proxyUrl,
+                          type: file.type.startsWith('video/') ? 'video' : 'image',
+                          filename: file.name.replace(/\.[^.]+$/, ''),
+                          projectId,
+                        }),
+                      })
+                      mutateAssets()
+                      toast.success('Upload added to library')
+                    } catch (err) {
+                      console.error('[uploads] failed', err)
+                      toast.error('Upload failed')
+                    } finally {
+                      if (expandedUploadRef.current) expandedUploadRef.current.value = ''
+                    }
+                  }}
+                />
               </div>
             )}
           </div>
@@ -566,6 +761,17 @@ export function LeftToolbar({
         <div className="flex items-center justify-between px-4 py-3 border-b border-border/30">
           <h2 className="text-sm font-semibold text-foreground">Assets</h2>
           <div className="flex items-center gap-1">
+            <button
+              onClick={selectMode ? exitSelectMode : enterSelectMode}
+              className={`w-6 h-6 rounded-lg flex items-center justify-center transition-colors ${
+                selectMode
+                  ? 'bg-accent/20 text-accent'
+                  : 'hover:bg-white/10 text-muted-foreground hover:text-foreground'
+              }`}
+              title={selectMode ? 'Exit select mode' : 'Select multiple'}
+            >
+              <Check size={12} weight="bold" />
+            </button>
             <button
               onClick={() => setHistoryExpanded(true)}
               className="w-6 h-6 rounded-lg flex items-center justify-center hover:bg-white/10 text-muted-foreground hover:text-foreground transition-colors"
@@ -764,35 +970,54 @@ export function LeftToolbar({
               ) : (
                 Object.entries(groupedGenAssets).map(([monthYear, monthAssets]) => (
                   <div key={monthYear} className="mb-4">
-                    <h3 className="text-xs font-mono text-muted-foreground/50 uppercase tracking-wider px-2 mb-2">
+                    <h3 className="text-xs text-muted-foreground/50 uppercase tracking-wider px-2 mb-2">
                       {monthYear}
                     </h3>
                     <div className="grid grid-cols-6 gap-2">
-                      {monthAssets.map(asset => (
-                        <button
-                          key={asset.id}
-                          onClick={() => setSelectedGenAsset(asset)}
-                          className="relative aspect-square rounded-lg overflow-hidden bg-card border border-border/30 hover:border-accent/50 transition-colors group"
-                        >
-                          {asset.type === 'video' ? (
-                            <video src={asset.r2_url} className="w-full h-full object-cover" muted />
-                          ) : (
-                            <img src={asset.r2_url} alt="" className="w-full h-full object-cover" />
-                          )}
-                          <div className="absolute top-1 left-1 flex gap-0.5">
-                            {asset.type === 'video' && (
-                              <div className="w-4 h-4 rounded bg-black/60 flex items-center justify-center">
-                                <VideoCamera size={10} className="text-white" />
+                      {monthAssets.map(asset => {
+                        const isSel = selectedAssetIds.has(asset.id)
+                        return (
+                          <button
+                            key={asset.id}
+                            onClick={() => {
+                              if (selectMode) toggleAssetSelected(asset.id)
+                              else setSelectedGenAsset(asset)
+                            }}
+                            className={`relative aspect-square rounded-lg overflow-hidden bg-card border transition-colors group ${
+                              isSel
+                                ? 'border-accent ring-2 ring-accent/60'
+                                : 'border-border/30 hover:border-accent/50'
+                            }`}
+                          >
+                            {asset.type === 'video' ? (
+                              <video src={asset.r2_url} className="w-full h-full object-cover" muted preload="metadata" />
+                            ) : (
+                              <img src={asset.r2_url} alt="" className="w-full h-full object-cover" loading="lazy" decoding="async" />
+                            )}
+                            <div className="absolute top-1 left-1 flex gap-0.5">
+                              {asset.type === 'video' && (
+                                <div className="w-4 h-4 rounded bg-black/60 flex items-center justify-center">
+                                  <VideoCamera size={10} className="text-white" />
+                                </div>
+                              )}
+                              {asset.used_in_canvas && (
+                                <div className="w-4 h-4 rounded bg-accent/80 flex items-center justify-center">
+                                  <ShieldCheck size={10} className="text-white" />
+                                </div>
+                              )}
+                            </div>
+                            {selectMode && (
+                              <div className={`absolute top-1 right-1 w-5 h-5 rounded-full flex items-center justify-center border transition-colors ${
+                                isSel
+                                  ? 'bg-accent border-accent text-white'
+                                  : 'bg-black/60 border-white/30 text-transparent'
+                              }`}>
+                                <Check size={11} weight="bold" />
                               </div>
                             )}
-                            {asset.used_in_canvas && (
-                              <div className="w-4 h-4 rounded bg-accent/80 flex items-center justify-center">
-                                <ShieldCheck size={10} className="text-white" />
-                              </div>
-                            )}
-                          </div>
-                        </button>
-                      ))}
+                          </button>
+                        )
+                      })}
                     </div>
                   </div>
                 ))
@@ -902,8 +1127,64 @@ export function LeftToolbar({
           )}
         </div>
 
+        {/* Bulk-delete confirmation (shared between compact + expanded views;
+            Radix portals it so location in the tree doesn't matter). */}
+        <AlertDialog open={bulkDeleteOpen} onOpenChange={setBulkDeleteOpen}>
+          <AlertDialogContent className="bg-[#0D0F12] border-white/10">
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete {selectedAssetIds.size} asset{selectedAssetIds.size !== 1 ? 's' : ''}?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This permanently removes them from storage and the asset library. Any selected assets currently used on a canvas are skipped — clear them off the canvas first if you want them gone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel className="bg-white/5 border-white/10 hover:bg-white/10" disabled={bulkDeleting}>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-red-500/20 text-red-400 hover:bg-red-500/30 border-red-500/30"
+                disabled={bulkDeleting}
+                onClick={performBulkDelete}
+              >
+                {bulkDeleting ? 'Deleting…' : `Delete ${selectedAssetIds.size}`}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        {/* Bulk action bar — only visible in select mode */}
+        {selectMode && (
+          <div className="px-3 py-2 border-t border-border/30 flex items-center justify-between bg-accent/5">
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] text-foreground/90">
+                {selectedAssetIds.size} selected
+              </span>
+              <button
+                onClick={selectAllVisible}
+                className="text-[11px] text-accent hover:underline"
+              >
+                Select all
+              </button>
+            </div>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setBulkDeleteOpen(true)}
+                disabled={selectedAssetIds.size === 0}
+                className="flex items-center gap-1 px-2 py-1 rounded text-[11px] bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <Trash size={10} />
+                Delete
+              </button>
+              <button
+                onClick={exitSelectMode}
+                className="px-2 py-1 rounded text-[11px] text-muted-foreground hover:text-foreground hover:bg-white/5 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Footer */}
-        <div className="px-3 py-2 border-t border-border/30 flex justify-between text-xs font-mono text-muted-foreground/50">
+        <div className="px-3 py-2 border-t border-border/30 flex justify-between text-xs text-muted-foreground/50">
           <span>{filteredGenAssets.length} items</span>
             <span>{filteredGenAssets.filter(a => a.is_upload).length} uploads</span>
         </div>
