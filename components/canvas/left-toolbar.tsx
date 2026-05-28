@@ -136,6 +136,7 @@ export function LeftToolbar({
     character: true,
     prop: true,
     location: true,
+    general: true,
   })
   const [selectedFolder, setSelectedFolder] = useState<{ id: string; type: string } | null>(null)
   const [editingFolder, setEditingFolder] = useState<{
@@ -428,48 +429,71 @@ export function LeftToolbar({
                 Uploads
               </button>
 
-              {/* Folders — click to open in the category panel (legacy
-                  drawer behind the left toolbar's category icons). Items
-                  inside any folder are auto-protected, regardless of
-                  canvas usage, so they survive cleanup until you delete
-                  them yourself. */}
-              <div className="mt-4 pt-4 border-t border-border/30">
+              {/* Folders — always-visible category sections (Characters /
+                  Props / Locations / General), each collapsible. Inside,
+                  every folder gets a mini thumbnail of its first asset for
+                  quick visual ID, plus a count. Items inside any folder
+                  are auto-protected (the folders API sets
+                  used_in_canvas=true, expires_at=NULL on every add), so
+                  they survive cleanup until you delete them yourself. */}
+              <div className="mt-4 pt-4 border-t border-border/30 space-y-1">
                 <div className="px-3 pb-1 flex items-center justify-between">
                   <span className="text-[10px] text-muted-foreground/50 uppercase tracking-wider">Folders</span>
                   <span className="text-[10px] text-muted-foreground/40">{folders.length}</span>
                 </div>
-                {folders.length === 0 ? (
-                  <div className="px-3 py-2 text-[11px] text-muted-foreground/40">
-                    None yet. Add an asset to a Character/Prop/Location/General folder via the node toolbar's “Add to…” menu.
-                  </div>
-                ) : (
-                  <div className="space-y-0.5">
-                    {(['character', 'prop', 'location', 'general'] as const).map(t => {
-                      const ofType = folders.filter(f => f.type === t)
-                      if (ofType.length === 0) return null
-                      const Icon = t === 'character' ? User : t === 'prop' ? Package : t === 'location' ? MapPin : Folder
-                      return (
-                        <div key={t}>
-                          <div className="px-3 pt-2 pb-1 flex items-center gap-2 text-[9px] text-muted-foreground/40 uppercase tracking-wider">
-                            <Icon size={11} />
-                            {t === 'character' ? 'Characters' : t === 'prop' ? 'Props' : t === 'location' ? 'Locations' : 'General'}
-                          </div>
-                          {ofType.map(f => (
-                            <button
-                              key={f.id}
-                              onClick={() => setEditingFolder(f)}
-                              className="w-full flex items-center gap-2 px-3 py-1.5 rounded-md text-left text-[12px] text-foreground/80 hover:text-foreground hover:bg-white/5 transition-colors"
-                              title="Edit folder"
-                            >
-                              <span className="flex-1 truncate">{f.name}</span>
-                              <span className="text-[10px] text-muted-foreground/50">{f.assets.length}</span>
-                            </button>
-                          ))}
+                {(['character', 'prop', 'location', 'general'] as const).map(t => {
+                  const ofType = folders.filter(f => f.type === t)
+                  const Icon = t === 'character' ? User : t === 'prop' ? Package : t === 'location' ? MapPin : Folder
+                  const label = t === 'character' ? 'Characters' : t === 'prop' ? 'Props' : t === 'location' ? 'Locations' : 'General'
+                  const isOpen = expandedFolderSections[t]
+                  return (
+                    <div key={t}>
+                      <button
+                        onClick={() => setExpandedFolderSections(s => ({ ...s, [t]: !s[t] }))}
+                        className="w-full flex items-center gap-2 px-3 py-1.5 rounded-md hover:bg-white/5 transition-colors group"
+                      >
+                        {isOpen ? <CaretDown size={9} className="text-muted-foreground/60" /> : <CaretRight size={9} className="text-muted-foreground/60" />}
+                        <Icon size={12} className="text-accent" />
+                        <span className="text-[11px] text-foreground/80 group-hover:text-foreground tracking-wide flex-1 text-left">{label}</span>
+                        <span className="text-[10px] text-muted-foreground/50">{ofType.length}</span>
+                      </button>
+                      {isOpen && (
+                        <div className="pl-2 mt-0.5 space-y-0.5">
+                          {ofType.length === 0 ? (
+                            <div className="px-3 py-1.5 text-[10px] text-muted-foreground/30 italic">
+                              No {label.toLowerCase()} yet
+                            </div>
+                          ) : (
+                            ofType.map(f => (
+                              <button
+                                key={f.id}
+                                onClick={() => setEditingFolder(f)}
+                                className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-white/5 transition-colors text-left"
+                                title="Edit folder"
+                              >
+                                <div className="w-7 h-7 rounded overflow-hidden bg-card border border-border/30 shrink-0 flex items-center justify-center">
+                                  {f.assets[0]?.r2_url ? (
+                                    <img
+                                      src={f.assets[0].r2_url}
+                                      alt=""
+                                      className="w-full h-full object-cover"
+                                      loading="lazy"
+                                      decoding="async"
+                                    />
+                                  ) : (
+                                    <Icon size={11} className="text-muted-foreground/30" />
+                                  )}
+                                </div>
+                                <span className="flex-1 truncate text-[12px] text-foreground/80">{f.name}</span>
+                                <span className="text-[10px] text-muted-foreground/50 shrink-0">{f.assets.length}</span>
+                              </button>
+                            ))
+                          )}
                         </div>
-                      )
-                    })}
-                  </div>
-                )}
+                      )}
+                    </div>
+                  )
+                })}
               </div>
             </div>
           </div>
