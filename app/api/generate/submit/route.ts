@@ -41,6 +41,14 @@ export async function POST(request: NextRequest) {
   const usesSeparateRefEndpoint = hasRefs && !!model.referenceModel
   const hasFrame = !!(referenceImageUrl || endImageUrl) && model.inputTypes.includes('image')
 
+  // Kling v3 carries refs as `elements` on the image-to-video endpoint, which
+  // still requires start_image_url. If the user supplied refs but no first
+  // frame, reuse the first ref as the first frame so the request is valid.
+  let effectiveImageSigned: string | null | undefined = referenceImageSigned
+  if (hasRefs && !effectiveImageSigned && model.referenceParam === 'elements' && !model.referenceModel) {
+    effectiveImageSigned = refsSigned[0]
+  }
+
   // fal only uses references the prompt cites (@Image1 / @Element1). Auto-append
   // citations if the user didn't write any.
   let finalPrompt: string = prompt
@@ -57,7 +65,7 @@ export async function POST(request: NextRequest) {
     enableAudio: settings?.enableAudio,
     enableLoop: settings?.enableLoop,
     // Separate reference endpoints don't accept first/end frame inputs.
-    imageUrl: usesSeparateRefEndpoint ? undefined : (referenceImageSigned || undefined),
+    imageUrl: usesSeparateRefEndpoint ? undefined : (effectiveImageSigned || undefined),
     endImageUrl: usesSeparateRefEndpoint ? undefined : (endImageSigned || undefined),
     referenceImageUrls: hasRefs ? refsSigned : undefined,
   })
