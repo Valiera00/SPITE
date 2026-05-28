@@ -198,7 +198,7 @@ export function ProjectCard({ id, name, thumbnail, lastModified, genre, onMutate
           <AlertDialogHeader>
             <AlertDialogTitle>Delete this project?</AlertDialogTitle>
             <AlertDialogDescription>
-              This permanently removes <span className="text-foreground font-medium">{name}</span> and its canvas. Generated assets in your library are kept.
+              This permanently removes <span className="text-foreground font-medium">{name}</span>, its canvas, and any generated/uploaded assets used <em>only</em> in this project. Assets that another project also uses are kept and reassigned to that project.
               <br />
               Type the project name to confirm — this can&apos;t be undone.
             </AlertDialogDescription>
