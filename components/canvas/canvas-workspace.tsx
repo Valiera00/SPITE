@@ -292,7 +292,9 @@ function CanvasInner({ projectId }: { projectId: string }) {
           shots.push({
             id: `shot-${n.id}`,
             nodeId: n.id,
-            thumbnail: (n.data.outputUrl || n.data.thumbnail || n.data.assetUrl) as string | undefined,
+            thumbnail: (n.type === 'videoGen'
+              ? (n.data.videoThumbnail || n.data.thumbnail || n.data.assetUrl)
+              : (n.data.outputUrl || n.data.thumbnail || n.data.assetUrl)) as string | undefined,
             label: n.data.label as string,
             hasVideo: n.type === 'videoGen',
             order: i,

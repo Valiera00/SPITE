@@ -8,6 +8,7 @@ import { toast } from 'sonner'
 import { NodeActionToolbar } from './node-toolbar'
 import { ShotSelector, type ShotOption } from './shot-selector'
 import { getVideoModels, getModelById, buildModelInput, type ModelConfig } from '@/lib/fal-models'
+import { captureVideoThumbnail } from '@/lib/video-thumbnail'
 
 const VIDEO_MODELS = getVideoModels()
 
@@ -220,6 +221,24 @@ export function VideoNode({ id, data, selected }: NodeProps) {
       data: { ...n.data, prompt, modelId, duration, aspectRatio, resolution, enableAudio, enableLoop, numVideos, outputUrl }
     } : n))
   }, [prompt, modelId, duration, aspectRatio, resolution, enableAudio, enableLoop, numVideos, outputUrl, id, setNodes])
+
+  // Capture a freeze-frame from the rendered video so the scene-shot bar
+  // can show a thumbnail (an <img> can't render an mp4). Re-captures when
+  // outputUrl changes (new generation); skips when the stored thumbnail
+  // already matches the current outputUrl (after reload).
+  useEffect(() => {
+    if (!outputUrl) return
+    if (data.videoThumbnailFor === outputUrl && data.videoThumbnail) return
+    let cancelled = false
+    captureVideoThumbnail(outputUrl).then(thumb => {
+      if (cancelled || !thumb) return
+      setNodes(ns => ns.map(n => n.id === id ? {
+        ...n,
+        data: { ...n.data, videoThumbnail: thumb, videoThumbnailFor: outputUrl }
+      } : n))
+    })
+    return () => { cancelled = true }
+  }, [outputUrl, data.videoThumbnail, data.videoThumbnailFor, id, setNodes])
 
   // If this node was spawned for a batch generation, resume polling its job.
   useEffect(() => {
