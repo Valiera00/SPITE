@@ -30,22 +30,23 @@ export async function GET(request: NextRequest) {
     // first, then fetch all their items in one round trip and stitch them
     // together client-side. Cheap because folder counts stay small.
     //
-    // NOTE: project_id is a uuid column in the deployed schema, so we cast
-    // the bound parameter to uuid to match — the prior text-cast attempt
-    // didn't take effect (still 500'd with `operator does not exist:
-    // uuid = text`), possibly because Neon binds the parameter before the
-    // ::text cast applies. Casting the parameter side directly is reliable.
+    // NOTE: asset_folders.project_id is text in the deployed schema (the
+    // error flipped from "uuid = text" to "text = uuid" when we tried the
+    // ::uuid cast, confirming the column type). Neon's driver appears to
+    // heuristically bind a uuid-looking string as uuid type when left
+    // untyped, so we MUST cast the bound parameter to ::text to match
+    // the actual column type.
     const folderRows = type
       ? await sql`
           SELECT id, project_id, name, description, type, created_at, updated_at
           FROM asset_folders
-          WHERE project_id = ${projectId}::uuid AND type = ${type}
+          WHERE project_id = ${projectId}::text AND type = ${type}
           ORDER BY name ASC
         `
       : await sql`
           SELECT id, project_id, name, description, type, created_at, updated_at
           FROM asset_folders
-          WHERE project_id = ${projectId}::uuid
+          WHERE project_id = ${projectId}::text
           ORDER BY type, name ASC
         `
 
@@ -112,11 +113,12 @@ export async function POST(request: NextRequest) {
 
     const id = uuidv4()
 
-    // Create the folder. Cast project_id to whatever the column actually is
-    // — schemas in the wild have it as uuid in some installs, text in others.
+    // Create the folder. project_id column is text — cast the bound
+    // parameter to text so Neon's driver doesn't bind it as uuid (it
+    // does that heuristically for uuid-looking strings).
     await sql`
       INSERT INTO asset_folders (id, project_id, name, description, type)
-      VALUES (${id}, ${projectId}::uuid, ${name}, ${description || null}, ${type})
+      VALUES (${id}, ${projectId}::text, ${name}, ${description || null}, ${type})
     `
 
     // Add initial assets if provided
