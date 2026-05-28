@@ -79,22 +79,26 @@ CREATE TABLE IF NOT EXISTS canvas_edges (
 );
 
 -- Asset folders: named groups (Characters / Props / Locations / General).
+-- All columns are plain text so we never run into uuid-vs-text comparison
+-- pitfalls with parameter binding (the prior schema had project_id end up
+-- as uuid in some installs, which broke every WHERE filter).
 CREATE TABLE IF NOT EXISTS asset_folders (
     id          text PRIMARY KEY,
     project_id  text NOT NULL,
+    type        text NOT NULL,
     name        text NOT NULL,
     description text,
-    type        text NOT NULL,
-    created_at  timestamptz DEFAULT now(),
-    updated_at  timestamptz DEFAULT now()
+    created_at  timestamptz NOT NULL DEFAULT now(),
+    updated_at  timestamptz NOT NULL DEFAULT now()
 );
 
--- Asset folder items: which generation_history assets live in which folder.
+-- Asset folder items: composite key on (folder_id, asset_id) — same asset
+-- can't be added twice to the same folder.
 CREATE TABLE IF NOT EXISTS asset_folder_items (
-    id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     folder_id  text NOT NULL REFERENCES asset_folders(id) ON DELETE CASCADE,
     asset_id   text NOT NULL,
-    created_at timestamptz DEFAULT now()
+    added_at   timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (folder_id, asset_id)
 );
 
 -- Camera bag: saved style presets. (You said you don't need this feature, but

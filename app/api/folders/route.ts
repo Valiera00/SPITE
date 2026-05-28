@@ -9,135 +9,127 @@ function getDb() {
   return neon(process.env.DATABASE_URL)
 }
 
-// Get all folders with their assets
+// GET /api/folders?projectId=<id>[&type=character|prop|location|general]
+//
+// Two-step query. First pull all folder rows for the project, then pull
+// every asset_folder_items row that belongs to one of those folders
+// (joined to generation_history for the thumbnail URL etc.), then stitch
+// items into their folder client-side. This avoids the json_agg /
+// COALESCE pattern that was 500'ing on prod, and the schema is all text
+// so no type-cast contortions are needed.
 export async function GET(request: NextRequest) {
   try {
     const sql = getDb()
     const { searchParams } = new URL(request.url)
-    const type = searchParams.get('type') // character, prop, location, general
     const projectId = searchParams.get('projectId')
-    if (!projectId) {
-      // Return an empty list rather than silently leaking another project's
-      // folders via the old proj-001 fallback. Callers always know their
-      // project context.
-      return NextResponse.json([])
-    }
+    const type = searchParams.get('type')
 
-    // Two-step query — simpler + more robust than a single join with an
-    // aggregating COALESCE(json_agg(...), '[]') which started 500'ing on
-    // some PostgreSQL setups (the '[]' literal failed to implicit-cast to
-    // json against the aggregated json result). Fetch the folder rows
-    // first, then fetch all their items in one round trip and stitch them
-    // together client-side. Cheap because folder counts stay small.
-    //
-    // NOTE: asset_folders.project_id is text in the deployed schema (the
-    // error flipped from "uuid = text" to "text = uuid" when we tried the
-    // ::uuid cast, confirming the column type). Neon's driver appears to
-    // heuristically bind a uuid-looking string as uuid type when left
-    // untyped, so we MUST cast the bound parameter to ::text to match
-    // the actual column type.
-    const folderRows = type
+    // Callers always know their project context — refuse to leak across.
+    if (!projectId) return NextResponse.json([])
+
+    const folders = type
       ? await sql`
-          SELECT id, project_id, name, description, type, created_at, updated_at
+          SELECT id, project_id, type, name, description, created_at, updated_at
           FROM asset_folders
-          WHERE project_id = ${projectId}::text AND type = ${type}
+          WHERE project_id = ${projectId} AND type = ${type}
           ORDER BY name ASC
         `
       : await sql`
-          SELECT id, project_id, name, description, type, created_at, updated_at
+          SELECT id, project_id, type, name, description, created_at, updated_at
           FROM asset_folders
-          WHERE project_id = ${projectId}::text
+          WHERE project_id = ${projectId}
           ORDER BY type, name ASC
         `
 
-    let itemsByFolder = new Map<string, any[]>()
-    if (folderRows.length > 0) {
-      const folderIds = folderRows.map(f => String(f.id))
-      const items = await sql`
-        SELECT fi.folder_id, fi.asset_id, fi.created_at AS item_created_at,
-               gh.r2_url, gh.type AS asset_type, gh.prompt
-        FROM asset_folder_items fi
-        LEFT JOIN generation_history gh ON fi.asset_id = gh.id
-        WHERE fi.folder_id::text = ANY(${folderIds}::text[])
-        ORDER BY fi.created_at DESC
-      `
-      for (const row of items) {
-        const fid = String(row.folder_id)
-        if (!itemsByFolder.has(fid)) itemsByFolder.set(fid, [])
-        itemsByFolder.get(fid)!.push({
-          id: row.asset_id,
-          r2_url: row.r2_url,
-          type: row.asset_type,
-          prompt: row.prompt,
-        })
-      }
+    if (folders.length === 0) {
+      console.log('[folders] GET', { projectId, type, returned: 0 })
+      return NextResponse.json([])
     }
 
-    const folders = folderRows.map(f => ({
+    const folderIds = folders.map(f => String(f.id))
+    const items = await sql`
+      SELECT i.folder_id, i.asset_id, i.added_at,
+             g.r2_url, g.type AS asset_type, g.prompt
+      FROM asset_folder_items i
+      LEFT JOIN generation_history g ON g.id = i.asset_id
+      WHERE i.folder_id = ANY(${folderIds}::text[])
+      ORDER BY i.added_at DESC
+    `
+
+    const itemsByFolder = new Map<string, any[]>()
+    for (const row of items) {
+      const fid = String(row.folder_id)
+      if (!itemsByFolder.has(fid)) itemsByFolder.set(fid, [])
+      itemsByFolder.get(fid)!.push({
+        id: row.asset_id,
+        r2_url: row.r2_url,
+        type: row.asset_type,
+        prompt: row.prompt,
+      })
+    }
+
+    const result = folders.map(f => ({
       ...f,
-      assets: itemsByFolder.get(f.id as string) || [],
+      assets: itemsByFolder.get(String(f.id)) || [],
     }))
 
-    console.log('[folders] GET', { projectId, type, returned: folders.length })
-    return NextResponse.json(folders)
-  } catch (error: any) {
-    console.error('[folders] GET error:', error)
-    // Surface the actual error message in the response body so we can see
-    // it in browser devtools instead of just a generic 500.
+    console.log('[folders] GET', { projectId, type, returned: result.length })
+    return NextResponse.json(result)
+  } catch (err: any) {
+    console.error('[folders] GET error:', err)
     return NextResponse.json(
-      { error: 'Failed to fetch folders', detail: error?.message || String(error) },
+      { error: 'Failed to fetch folders', detail: err?.message || String(err) },
       { status: 500 },
     )
   }
 }
 
-// Create a new folder
+// POST /api/folders
+// Body: { name, type, description?, projectId, assetIds? }
 export async function POST(request: NextRequest) {
   try {
     const sql = getDb()
-    const body = await request.json()
-    const { name, description, type, projectId, assetIds = [] } = body
+    const { name, description, type, projectId, assetIds = [] } = await request.json()
 
     if (!name || !type) {
-      return NextResponse.json({ error: 'Name and type are required' }, { status: 400 })
+      return NextResponse.json({ error: 'name and type are required' }, { status: 400 })
     }
     if (!projectId) {
-      // Reject explicitly instead of silently falling back to a default
-      // "proj-001" project — that's what hid created folders from the
-      // sidebar (which fetches scoped to the real project id).
-      console.error('[folders] POST missing projectId', { name, type })
       return NextResponse.json({ error: 'projectId is required' }, { status: 400 })
     }
 
-    console.log('[folders] creating', { name, type, projectId, assetCount: assetIds.length })
-
     const id = uuidv4()
+    console.log('[folders] POST creating', { id, name, type, projectId, assetCount: assetIds.length })
 
-    // Create the folder. project_id column is text — cast the bound
-    // parameter to text so Neon's driver doesn't bind it as uuid (it
-    // does that heuristically for uuid-looking strings).
     await sql`
-      INSERT INTO asset_folders (id, project_id, name, description, type)
-      VALUES (${id}, ${projectId}::text, ${name}, ${description || null}, ${type})
+      INSERT INTO asset_folders (id, project_id, type, name, description)
+      VALUES (${id}, ${projectId}, ${type}, ${name}, ${description || null})
     `
 
-    // Add initial assets if provided
     for (const assetId of assetIds) {
+      if (!assetId) continue
+      // INSERT … ON CONFLICT DO NOTHING — same asset can't appear twice in
+      // the same folder thanks to the composite primary key.
       await sql`
         INSERT INTO asset_folder_items (folder_id, asset_id)
         VALUES (${id}, ${assetId})
+        ON CONFLICT (folder_id, asset_id) DO NOTHING
       `
-      // Mark asset as protected
+      // Auto-protect the asset so it survives canvas cleanup until the
+      // user explicitly deletes it from the library.
       await sql`
-        UPDATE generation_history 
-        SET used_in_canvas = true, expires_at = NULL 
+        UPDATE generation_history
+        SET used_in_canvas = true, expires_at = NULL
         WHERE id = ${assetId}
       `
     }
 
     return NextResponse.json({ success: true, id })
-  } catch (error) {
-    console.error('[folders] POST error:', error)
-    return NextResponse.json({ error: 'Failed to create folder' }, { status: 500 })
+  } catch (err: any) {
+    console.error('[folders] POST error:', err)
+    return NextResponse.json(
+      { error: 'Failed to create folder', detail: err?.message || String(err) },
+      { status: 500 },
+    )
   }
 }
