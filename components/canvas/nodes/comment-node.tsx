@@ -1,10 +1,10 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { memo, useState, useRef, useEffect } from 'react'
 import { NodeProps, useReactFlow } from '@xyflow/react'
 import { X } from '@phosphor-icons/react'
 
-export function CommentNode({ id, data, selected }: NodeProps) {
+function CommentNodeImpl({ id, data, selected }: NodeProps) {
   const [text, setText] = useState((data.text as string) || '')
   const [isEditing, setIsEditing] = useState(!data.text)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -107,3 +107,6 @@ export function CommentNode({ id, data, selected }: NodeProps) {
     </div>
   )
 }
+
+export const CommentNode = memo(CommentNodeImpl)
+CommentNode.displayName = 'CommentNode'

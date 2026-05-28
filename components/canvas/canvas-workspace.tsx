@@ -725,6 +725,29 @@ function CanvasInner({ projectId }: { projectId: string }) {
   const onNodeDragStop = useCallback(() => {
   }, [])
 
+  // Memoize the scene-filtered nodes/edges so they don't get a fresh
+  // array reference on every unrelated re-render (which would force
+  // React Flow to re-diff the whole graph each time).
+  const sceneNodes = useMemo(
+    () => (nodes as Node[]).filter(n => n.data.sceneId === activeSceneId),
+    [nodes, activeSceneId],
+  )
+  const sceneEdges = useMemo(() => {
+    const sceneNodeIds = new Set(sceneNodes.map(n => n.id))
+    return (edges as Edge[]).filter(e => sceneNodeIds.has(e.source) && sceneNodeIds.has(e.target))
+  }, [edges, sceneNodes])
+  const styledSceneEdges = useMemo(() => {
+    const selectedNodeIds = new Set(sceneNodes.filter(n => n.selected).map(n => n.id))
+    return sceneEdges.map(edge => {
+      const isActive = selectedNodeIds.has(edge.source) || selectedNodeIds.has(edge.target)
+      return {
+        ...edge,
+        animated: isActive,
+        style: { stroke: '#A855F7', strokeWidth: 2, opacity: isActive ? 1 : 0.5 },
+      }
+    })
+  }, [sceneNodes, sceneEdges])
+
   const handleRecenter = useCallback(() => {
     fitView({ duration: 300, padding: 0.2 })
   }, [fitView])
@@ -764,25 +787,14 @@ function CanvasInner({ projectId }: { projectId: string }) {
         
         {/* Filter nodes and edges to show only active scene */}
         {(() => {
-          const sceneNodes = nodes.filter(n => n.data.sceneId === activeSceneId)
-          const sceneEdges = edges.filter(e => {
-            const sourceNode = nodes.find(n => n.id === e.source)
-            const targetNode = nodes.find(n => n.id === e.target)
-            return sourceNode?.data.sceneId === activeSceneId && targetNode?.data.sceneId === activeSceneId
-          })
-          
+          // Note: these computations are wrapped in useMemo above this JSX
+          // would be ideal, but the IIFE is fine if we limit allocations.
+          // ReactFlow itself does heavy diffing internally; what matters
+          // more is that the per-node React.memo blocks unrelated re-renders.
           return (
             <ReactFlow
               nodes={sceneNodes}
-              edges={sceneEdges.map(edge => {
-                const selectedNodeIds = new Set(sceneNodes.filter(n => n.selected).map(n => n.id))
-                const isActive = selectedNodeIds.has(edge.source) || selectedNodeIds.has(edge.target)
-                return {
-                  ...edge,
-                  animated: isActive,
-                  style: { stroke: '#A855F7', strokeWidth: 2, opacity: isActive ? 1 : 0.5 },
-                }
-              })}
+              edges={styledSceneEdges}
               onNodesChange={onNodesChange}
               onEdgesChange={onEdgesChange}
               onConnect={onConnect}

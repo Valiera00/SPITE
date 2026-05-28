@@ -1,12 +1,13 @@
 'use client'
 
-import { Position, NodeProps, Handle, useReactFlow, useNodes } from '@xyflow/react'
+import { Position, NodeProps, Handle, useReactFlow } from '@xyflow/react'
 import { useParams } from 'next/navigation'
 import { Play, CaretDown, SpeakerHigh, SpeakerSlash, TextT, Image as ImageIcon, FilmStrip, CircleNotch, X, Check, ArrowsClockwise, Minus, Plus } from '@phosphor-icons/react'
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { memo, useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { toast } from 'sonner'
 import { NodeActionToolbar } from './node-toolbar'
 import { ShotSelector, type ShotOption } from './shot-selector'
+import { useSceneShots } from './use-scene-shots'
 import { Lightbox } from '../lightbox'
 import { labelFromPrompt, DEFAULT_VIDEO_LABEL } from '@/lib/auto-name'
 import { getVideoModels, getModelById, buildModelInput, type ModelConfig } from '@/lib/fal-models'
@@ -124,7 +125,7 @@ function StatusBadge({ status, progress }: { status: GenerationStatus; progress?
   )
 }
 
-export function VideoNode({ id, data, selected }: NodeProps) {
+function VideoNodeImpl({ id, data, selected }: NodeProps) {
   const params = useParams()
   // Route segment is [id], so the param is `id` (not `projectId`).
   const projectId = params.id as string
@@ -201,41 +202,10 @@ export function VideoNode({ id, data, selected }: NodeProps) {
   }, [currentModel])
 
   const selectedShotId = data.shotId as string | undefined
-  const allNodes = useNodes()
-
-  // Build the shot list for this scene: 1..max with thumbnails on the slots
-  // that have a tagged node. Empty slots stay selectable so the user can
-  // claim a gap (e.g. add a node at shot 5 between existing shots 1 and 10).
-  const shots: ShotOption[] = useMemo(() => {
-    const self = allNodes.find((n: any) => n.id === id)
-    const sceneId = (self?.data as any)?.sceneId
-    const byShot = new Map<number, { thumb?: string; hasVideo: boolean }>()
-    let maxNum = 0
-    for (const n of allNodes) {
-      if (sceneId && (n.data as any)?.sceneId !== sceneId) continue
-      const m = String((n.data as any)?.shotId || '').match(/^shot-(\d+)$/)
-      if (!m) continue
-      const num = parseInt(m[1])
-      if (num > maxNum) maxNum = num
-      const candidateThumb = n.type === 'videoGen'
-        ? ((n.data as any)?.videoThumbnail || (n.data as any)?.thumbnail) as string | undefined
-        : ((n.data as any)?.outputUrl || (n.data as any)?.thumbnail) as string | undefined
-      const candidateHasVideo = n.type === 'videoGen'
-      const existing = byShot.get(num)
-      if (!existing) {
-        byShot.set(num, { thumb: candidateThumb, hasVideo: candidateHasVideo })
-      } else if (!existing.thumb && candidateThumb) {
-        byShot.set(num, { thumb: candidateThumb, hasVideo: existing.hasVideo || candidateHasVideo })
-      }
-    }
-    if (maxNum === 0) return [{ id: 'shot-1', label: 'Shot 1' }]
-    const list: ShotOption[] = []
-    for (let i = 1; i <= maxNum; i++) {
-      const info = byShot.get(i)
-      list.push({ id: `shot-${i}`, label: `Shot ${i}`, thumbnail: info?.thumb, hasVideo: info?.hasVideo })
-    }
-    return list
-  }, [allNodes, id])
+  // useNodes() would re-render this component on every sibling node change
+  // (prompt keystrokes, generation status updates, etc.). useSceneShots
+  // subscribes only to a string signature of shot-relevant fields.
+  const shots = useSceneShots(id)
 
   const handleShotSelect = (shotId: string) => {
     setNodes(ns => ns.map(n => n.id === id ? { ...n, data: { ...n.data, shotId } } : n))
@@ -767,9 +737,9 @@ export function VideoNode({ id, data, selected }: NodeProps) {
             <video
               src={outputUrl}
               controls
-              autoPlay
               loop={enableLoop}
               muted={!enableAudio}
+              preload="metadata"
               controlsList="nofullscreen"
               onDoubleClick={(e) => {
                 // The browser's built-in video controls trigger native
@@ -959,4 +929,5 @@ export function VideoNode({ id, data, selected }: NodeProps) {
   )
 }
 
+export const VideoNode = memo(VideoNodeImpl)
 VideoNode.displayName = 'VideoNode'

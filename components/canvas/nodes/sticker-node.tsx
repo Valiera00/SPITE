@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { memo, useState, useEffect, useCallback } from 'react'
 import { NodeProps, useReactFlow } from '@xyflow/react'
 import { X } from '@phosphor-icons/react'
 
@@ -20,7 +20,7 @@ const STICKER_ROWS = [
   ['💬', '❓', '🎨', '💎', '✨', '👎'],
 ]
 
-export function StickerNode({ id, data, selected }: NodeProps) {
+function StickerNodeImpl({ id, data, selected }: NodeProps) {
   const { deleteElements } = useReactFlow()
   const [sticker, setSticker] = useState(
     (data.sticker as string) || getLastSticker()
@@ -102,3 +102,6 @@ export function StickerNode({ id, data, selected }: NodeProps) {
     </div>
   )
 }
+
+export const StickerNode = memo(StickerNodeImpl)
+StickerNode.displayName = 'StickerNode'

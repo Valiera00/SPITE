@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { memo, useState, useEffect } from 'react'
 import { Position, NodeProps, Handle, useReactFlow } from '@xyflow/react'
 import { TextT } from '@phosphor-icons/react'
 import { NodeActionToolbar } from './node-toolbar'
@@ -26,7 +26,7 @@ function HandleIcon({ icon: Icon, color, style }: { icon: React.ElementType; col
   )
 }
 
-export function PromptNode({ id, data, selected }: NodeProps) {
+function PromptNodeImpl({ id, data, selected }: NodeProps) {
   const [text, setText] = useState((data.text as string) || '')
   const { setNodes } = useReactFlow()
 
@@ -70,4 +70,9 @@ export function PromptNode({ id, data, selected }: NodeProps) {
   )
 }
 
+// React.memo skips re-renders when the props (id, data, selected, etc.)
+// from React Flow are referentially equal. ReactFlow only swaps a node's
+// `data` reference when *that* node's data is mutated, so unrelated changes
+// to other nodes no longer re-render this one.
+export const PromptNode = memo(PromptNodeImpl)
 PromptNode.displayName = 'PromptNode'

@@ -2,12 +2,12 @@
 
 import { Position, NodeProps, Handle, useReactFlow } from '@xyflow/react'
 import { Image as ImageIcon, UploadSimple, CircleNotch, VideoCamera } from '@phosphor-icons/react'
-import { useState, useEffect, useRef } from 'react'
+import { memo, useState, useEffect, useRef } from 'react'
 import { NodeActionToolbar } from './node-toolbar'
 import { ShotSelector, type ShotOption } from './shot-selector'
 import { AddToFolderModal } from '../add-to-folder-modal'
 
-export function ReferenceNode({ id, data, selected }: NodeProps) {
+function ReferenceNodeImpl({ id, data, selected }: NodeProps) {
   const { setNodes } = useReactFlow()
   const [imageWidth, setImageWidth] = useState<number>((data.width as number) || 320)
   const [thumbnail, setThumbnail] = useState<string | null>((data.thumbnail as string) || null)
@@ -154,9 +154,9 @@ export function ReferenceNode({ id, data, selected }: NodeProps) {
         {thumbnail ? (
           <div className="relative">
             {isVideo ? (
-              <video src={thumbnail} className="w-full h-auto block" muted loop controls playsInline />
+              <video src={thumbnail} className="w-full h-auto block" muted loop controls playsInline preload="metadata" />
             ) : (
-              <img src={thumbnail} alt="" className="w-full h-auto block" />
+              <img src={thumbnail} alt="" className="w-full h-auto block" loading="lazy" decoding="async" />
             )}
             {isUploading && (
               <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
@@ -209,5 +209,8 @@ export function ReferenceNode({ id, data, selected }: NodeProps) {
     </div>
   )
 }
+
+export const ReferenceNode = memo(ReferenceNodeImpl)
+ReferenceNode.displayName = 'ReferenceNode'
 
 ReferenceNode.displayName = 'ReferenceNode'
