@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { X } from '@phosphor-icons/react'
 
 interface LightboxProps {
@@ -28,41 +29,47 @@ export function Lightbox({ open, url, type, onClose }: LightboxProps) {
   }, [open, onClose])
 
   if (!open || !url) return null
+  if (typeof document === 'undefined') return null
 
-  return (
+  // Render to document.body so the overlay isn't trapped inside React Flow's
+  // transformed pane (which would make position:fixed scope to that pane
+  // instead of the viewport — letting the user pan the canvas underneath).
+  return createPortal(
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/85 backdrop-blur-sm"
+      className="fixed inset-0 z-[100] flex items-center justify-center cursor-zoom-out"
+      style={{ background: 'rgba(0,0,0,0.96)' }}
       onClick={onClose}
+      onWheel={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
+      onMouseMove={(e) => e.stopPropagation()}
     >
       <button
         onClick={(e) => { e.stopPropagation(); onClose() }}
-        className="absolute top-6 right-6 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 backdrop-blur flex items-center justify-center text-white/90 transition-colors"
+        className="absolute top-4 right-4 w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white/70 hover:text-white transition-colors"
         aria-label="Close"
       >
-        <X size={18} weight="bold" />
+        <X size={14} weight="bold" />
       </button>
 
-      <div
-        className="max-w-[92vw] max-h-[92vh] flex items-center justify-center"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {type === 'video' ? (
-          <video
-            src={url}
-            controls
-            autoPlay
-            playsInline
-            className="max-w-[92vw] max-h-[92vh] object-contain rounded-lg shadow-2xl"
-          />
-        ) : (
-          <img
-            src={url}
-            alt="Preview"
-            className="max-w-[92vw] max-h-[92vh] object-contain rounded-lg shadow-2xl"
-            draggable={false}
-          />
-        )}
-      </div>
-    </div>
+      {type === 'video' ? (
+        <video
+          src={url}
+          controls
+          autoPlay
+          playsInline
+          onClick={(e) => e.stopPropagation()}
+          className="max-w-[95vw] max-h-[95vh] object-contain cursor-default"
+        />
+      ) : (
+        <img
+          src={url}
+          alt="Preview"
+          onClick={(e) => e.stopPropagation()}
+          className="max-w-[95vw] max-h-[95vh] object-contain cursor-default"
+          draggable={false}
+        />
+      )}
+    </div>,
+    document.body,
   )
 }
