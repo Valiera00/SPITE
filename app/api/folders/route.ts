@@ -30,20 +30,22 @@ export async function GET(request: NextRequest) {
     // first, then fetch all their items in one round trip and stitch them
     // together client-side. Cheap because folder counts stay small.
     //
-    // NOTE: project_id is a uuid column in the deployed schema, so we
-    // explicitly cast to text on both sides — Postgres won't implicit-cast
-    // uuid = text and 500'd here with `operator does not exist: uuid = text`.
+    // NOTE: project_id is a uuid column in the deployed schema, so we cast
+    // the bound parameter to uuid to match — the prior text-cast attempt
+    // didn't take effect (still 500'd with `operator does not exist:
+    // uuid = text`), possibly because Neon binds the parameter before the
+    // ::text cast applies. Casting the parameter side directly is reliable.
     const folderRows = type
       ? await sql`
           SELECT id, project_id, name, description, type, created_at, updated_at
           FROM asset_folders
-          WHERE project_id::text = ${projectId}::text AND type = ${type}
+          WHERE project_id = ${projectId}::uuid AND type = ${type}
           ORDER BY name ASC
         `
       : await sql`
           SELECT id, project_id, name, description, type, created_at, updated_at
           FROM asset_folders
-          WHERE project_id::text = ${projectId}::text
+          WHERE project_id = ${projectId}::uuid
           ORDER BY type, name ASC
         `
 
