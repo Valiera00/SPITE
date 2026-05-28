@@ -608,6 +608,17 @@ function CanvasInner({ projectId }: { projectId: string }) {
         })
         const assetData = await assetRes.json()
         console.log('[v0] Asset recorded:', { assetData, status: assetRes.status })
+
+        // Stash the asset's generation_history id on the node so the
+        // node toolbar's "Add to folder" flow can pre-select it without
+        // needing the modal to look it up by URL.
+        if (assetData?.id) {
+          setNodes(ns => ns.map(node =>
+            node.id === n.id
+              ? { ...node, data: { ...node.data, assetId: assetData.id } }
+              : node
+          ))
+        }
         
         // Asset is now recorded and protected (used_in_canvas = true)
         // Notify assets panel to refresh immediately

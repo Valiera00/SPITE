@@ -85,8 +85,25 @@ export function AddToFolderModal({ open, onClose, folderType, assetId, assetUrl,
       setNewName(editFolder.name)
       setNewDescription(editFolder.description || '')
       setSelectedAssets(editFolder.assets.map(a => ({ id: a.id, url: a.r2_url })))
-    } else if (assetId && assetUrl) {
+      return
+    }
+    if (assetId && assetUrl) {
       setSelectedAssets([{ id: assetId, url: assetUrl }])
+      return
+    }
+    // Legacy reference nodes don't have data.assetId saved, so the caller
+    // passes only assetUrl. Look the asset id up by URL so it can still be
+    // pre-selected (and later added to a folder properly).
+    if (assetUrl) {
+      let cancelled = false
+      fetch(`/api/assets/by-url?url=${encodeURIComponent(assetUrl)}`)
+        .then(r => r.json())
+        .then(data => {
+          if (cancelled || !data?.id) return
+          setSelectedAssets([{ id: data.id, url: assetUrl }])
+        })
+        .catch(() => {})
+      return () => { cancelled = true }
     }
   }, [open, editFolder, assetId, assetUrl])
 
@@ -117,20 +134,30 @@ export function AddToFolderModal({ open, onClose, folderType, assetId, assetUrl,
       const uploadRes = await fetch('/api/r2-upload', { method: 'POST', body: formData })
       const { url: r2Url } = await uploadRes.json()
 
+      // r2-upload returns the direct R2 URL (e.g. https://bucket.account.r2.dev/...).
+      // That URL isn't readable from the browser (R2 isn't public), so switch
+      // it to the cookie-auth'd proxy URL like the rest of the app does —
+      // otherwise the thumbnail in the modal renders as a broken image.
+      const r2Key = typeof r2Url === 'string' ? r2Url.split('.r2.dev/')[1] : null
+      const proxyUrl = r2Key ? `/api/r2-image/${r2Key}` : r2Url
+
       // Record in assets DB
+      const isVideo = file.type.startsWith('video/')
       const assetRes = await fetch('/api/assets', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: r2Url, type: 'image', filename: file.name })
+        body: JSON.stringify({ url: proxyUrl, type: isVideo ? 'video' : 'image', filename: file.name }),
       })
       const assetData = await assetRes.json()
 
-      // Replace placeholder with real asset
+      // Replace placeholder with real asset (using proxy URL so the thumbnail
+      // actually resolves), revoke the temp blob.
+      URL.revokeObjectURL(tempUrl)
       setSelectedAssets(prev => prev.map(a =>
-        a.id === tempId ? { id: assetData.id, url: r2Url, isUploading: false } : a
+        a.id === tempId ? { id: assetData.id, url: proxyUrl, isUploading: false } : a
       ))
-      setAvailableAssets(prev => [...prev, { id: assetData.id, r2_url: r2Url, prompt: file.name }])
-      return { id: assetData.id, url: r2Url }
+      setAvailableAssets(prev => [...prev, { id: assetData.id, r2_url: proxyUrl, prompt: file.name }])
+      return { id: assetData.id, url: proxyUrl }
     } catch (err) {
       console.error('[v0] Upload failed:', err)
       setSelectedAssets(prev => prev.filter(a => a.id !== tempId))
@@ -139,8 +166,8 @@ export function AddToFolderModal({ open, onClose, folderType, assetId, assetUrl,
   }, [])
 
   const handleFiles = useCallback(async (files: FileList | File[]) => {
-    const imageFiles = Array.from(files).filter(f => f.type.startsWith('image/'))
-    for (const file of imageFiles) {
+    const media = Array.from(files).filter(f => f.type.startsWith('image/') || f.type.startsWith('video/'))
+    for (const file of media) {
       await uploadFile(file)
     }
   }, [uploadFile])
@@ -225,7 +252,39 @@ export function AddToFolderModal({ open, onClose, folderType, assetId, assetUrl,
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="bg-[#1A1D21] border-white/10 max-w-md">
+      <DialogContent
+        className="bg-[#1A1D21] border-white/10 max-w-md relative"
+        // Whole modal accepts drag-and-drop of files. The small "+" tile
+        // also still works for direct clicks.
+        onDragOver={e => {
+          if (e.dataTransfer.types.includes('Files')) {
+            e.preventDefault()
+            setIsDraggingOver(true)
+          }
+        }}
+        onDragLeave={e => {
+          // dragleave fires every time we cross a child boundary; only clear
+          // the overlay when the pointer actually exits the modal.
+          if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+            setIsDraggingOver(false)
+          }
+        }}
+        onDrop={e => {
+          if (e.dataTransfer.files.length === 0) return
+          e.preventDefault()
+          setIsDraggingOver(false)
+          handleFiles(e.dataTransfer.files)
+        }}
+      >
+        {/* Big drop overlay (only while a file is being dragged over) */}
+        {isDraggingOver && (
+          <div className="pointer-events-none absolute inset-0 z-50 rounded-lg border-2 border-dashed border-accent/60 bg-accent/10 backdrop-blur-sm flex items-center justify-center">
+            <div className="flex flex-col items-center gap-2 text-accent">
+              <UploadSimple size={32} weight="bold" />
+              <span className="text-sm font-medium">Drop to upload</span>
+            </div>
+          </div>
+        )}
 
         {/* ── New / Edit form ── */}
         {showNewForm ? (

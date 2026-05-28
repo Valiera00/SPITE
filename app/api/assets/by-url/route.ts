@@ -8,6 +8,35 @@ function getDb() {
   return neon(process.env.DATABASE_URL)
 }
 
+// Look up the generation_history asset id for a given r2 url, so the
+// "Add to folder" flow can pre-select an asset on a legacy reference
+// node that doesn't have data.assetId stored. Matches by key suffix to
+// tolerate both proxy-form (/api/r2-image/...) and direct r2.dev URLs.
+export async function GET(request: NextRequest) {
+  try {
+    const sql = getDb()
+    const url = request.nextUrl.searchParams.get('url')
+    if (!url) {
+      return NextResponse.json({ error: 'url is required' }, { status: 400 })
+    }
+    const key = url.includes('/api/r2-image/')
+      ? url.split('/api/r2-image/')[1]
+      : url.includes('.r2.dev/')
+      ? url.split('.r2.dev/')[1]
+      : null
+    const rows = key
+      ? await sql`SELECT id FROM generation_history WHERE r2_url LIKE ${'%' + key} ORDER BY created_at DESC LIMIT 1`
+      : await sql`SELECT id FROM generation_history WHERE r2_url = ${url} ORDER BY created_at DESC LIMIT 1`
+    if (rows.length === 0) {
+      return NextResponse.json({ id: null })
+    }
+    return NextResponse.json({ id: rows[0].id })
+  } catch (error) {
+    console.error('[assets/by-url] GET error:', error)
+    return NextResponse.json({ error: 'lookup failed' }, { status: 500 })
+  }
+}
+
 // Update asset status by URL (used when assetId is not stored on node)
 export async function POST(request: NextRequest) {
   try {
