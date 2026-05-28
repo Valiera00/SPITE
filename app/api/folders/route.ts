@@ -29,33 +29,37 @@ export async function GET(request: NextRequest) {
     // json against the aggregated json result). Fetch the folder rows
     // first, then fetch all their items in one round trip and stitch them
     // together client-side. Cheap because folder counts stay small.
+    //
+    // NOTE: project_id is a uuid column in the deployed schema, so we
+    // explicitly cast to text on both sides — Postgres won't implicit-cast
+    // uuid = text and 500'd here with `operator does not exist: uuid = text`.
     const folderRows = type
       ? await sql`
           SELECT id, project_id, name, description, type, created_at, updated_at
           FROM asset_folders
-          WHERE project_id = ${projectId} AND type = ${type}
+          WHERE project_id::text = ${projectId}::text AND type = ${type}
           ORDER BY name ASC
         `
       : await sql`
           SELECT id, project_id, name, description, type, created_at, updated_at
           FROM asset_folders
-          WHERE project_id = ${projectId}
+          WHERE project_id::text = ${projectId}::text
           ORDER BY type, name ASC
         `
 
     let itemsByFolder = new Map<string, any[]>()
     if (folderRows.length > 0) {
-      const folderIds = folderRows.map(f => f.id as string)
+      const folderIds = folderRows.map(f => String(f.id))
       const items = await sql`
         SELECT fi.folder_id, fi.asset_id, fi.created_at AS item_created_at,
                gh.r2_url, gh.type AS asset_type, gh.prompt
         FROM asset_folder_items fi
         LEFT JOIN generation_history gh ON fi.asset_id = gh.id
-        WHERE fi.folder_id = ANY(${folderIds}::text[])
+        WHERE fi.folder_id::text = ANY(${folderIds}::text[])
         ORDER BY fi.created_at DESC
       `
       for (const row of items) {
-        const fid = row.folder_id as string
+        const fid = String(row.folder_id)
         if (!itemsByFolder.has(fid)) itemsByFolder.set(fid, [])
         itemsByFolder.get(fid)!.push({
           id: row.asset_id,
@@ -106,10 +110,11 @@ export async function POST(request: NextRequest) {
 
     const id = uuidv4()
 
-    // Create the folder
+    // Create the folder. Cast project_id to whatever the column actually is
+    // — schemas in the wild have it as uuid in some installs, text in others.
     await sql`
       INSERT INTO asset_folders (id, project_id, name, description, type)
-      VALUES (${id}, ${projectId}, ${name}, ${description || null}, ${type})
+      VALUES (${id}, ${projectId}::uuid, ${name}, ${description || null}, ${type})
     `
 
     // Add initial assets if provided
