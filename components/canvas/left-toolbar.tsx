@@ -152,6 +152,11 @@ export function LeftToolbar({
   const [selectMode, setSelectMode] = useState(false)
   const [selectedAssetIds, setSelectedAssetIds] = useState<Set<string>>(new Set())
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
+
+  // Category panel: which folder is inline-expanded (asset grid visible),
+  // and which folder-type's "+ New" button opens the create modal.
+  const [expandedFolderId, setExpandedFolderId] = useState<string | null>(null)
+  const [creatingFolderType, setCreatingFolderType] = useState<'character' | 'prop' | 'location' | 'general' | null>(null)
   const [bulkDeleting, setBulkDeleting] = useState(false)
   const expandedUploadRef = useRef<HTMLInputElement>(null)
 
@@ -1452,46 +1457,119 @@ export function LeftToolbar({
 
               return (
                 <div className="space-y-1">
-                  {categoryFolders.map((folder) => (
-                    <button
-                      key={folder.id}
-                      onClick={() => setEditingFolder(folder)}
-                      className="w-full flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-white/5 transition-colors group text-left"
-                    >
-                      <div className="w-10 h-10 rounded overflow-hidden shrink-0 bg-card border border-border/30">
-                        {folder.assets[0] ? (
-                          <img src={folder.assets[0].r2_url} alt="" className="w-full h-full object-cover" />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center">
-                            <cat.icon size={14} className="text-muted-foreground/30" />
+                  {categoryFolders.map((folder) => {
+                    const isOpen = expandedFolderId === folder.id
+                    return (
+                      <div key={folder.id} className="rounded-lg overflow-hidden">
+                        {/* Folder row — clicking toggles inline expand. The
+                            whole row is also draggable: dropping it on the
+                            canvas spawns one reference node per asset. */}
+                        <div
+                          draggable
+                          onDragStart={(e) => {
+                            e.dataTransfer.setData('folder-assets', JSON.stringify({
+                              folderName: folder.name,
+                              assets: folder.assets.map(a => ({
+                                id: a.id, r2_url: a.r2_url, type: a.type, prompt: a.prompt,
+                              })),
+                            }))
+                            e.dataTransfer.effectAllowed = 'copy'
+                          }}
+                          onClick={() => setExpandedFolderId(isOpen ? null : folder.id)}
+                          className="w-full flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-white/5 transition-colors group cursor-pointer"
+                        >
+                          {isOpen
+                            ? <CaretDown size={9} className="text-muted-foreground/60 shrink-0" />
+                            : <CaretRight size={9} className="text-muted-foreground/60 shrink-0" />}
+                          <div className="w-10 h-10 rounded overflow-hidden shrink-0 bg-card border border-border/30">
+                            {folder.assets[0]?.r2_url ? (
+                              <img src={folder.assets[0].r2_url} alt="" className="w-full h-full object-cover" loading="lazy" decoding="async" />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center">
+                                <cat.icon size={14} className="text-muted-foreground/30" />
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0 text-left">
+                            <div className="text-[10px] text-foreground/80 truncate">{folder.name}</div>
+                            <div className="text-[9px] text-muted-foreground/50">
+                              {folder.assets.length} asset{folder.assets.length !== 1 ? 's' : ''}
+                            </div>
+                          </div>
+                          {/* Edit pencil — visible on hover. Stops propagation
+                              so clicking the icon doesn't also toggle expand. */}
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setEditingFolder(folder) }}
+                            className="opacity-0 group-hover:opacity-100 w-5 h-5 rounded flex items-center justify-center hover:bg-white/10 text-muted-foreground hover:text-foreground transition-opacity"
+                            title="Edit folder"
+                          >
+                            <Tag size={10} />
+                          </button>
+                        </div>
+
+                        {/* Inline asset grid (only when expanded). Each
+                            thumbnail is its own drag source — drop on the
+                            canvas spawns a single reference node. */}
+                        {isOpen && folder.assets.length > 0 && (
+                          <div className="px-2 pb-2 pt-1 grid grid-cols-3 gap-1.5">
+                            {folder.assets.map((asset) => (
+                              <div
+                                key={asset.id}
+                                draggable
+                                onDragStart={(e) => {
+                                  e.dataTransfer.setData('asset', JSON.stringify({
+                                    id: asset.id, r2_url: asset.r2_url, type: asset.type, prompt: asset.prompt,
+                                  }))
+                                  e.dataTransfer.effectAllowed = 'copy'
+                                }}
+                                className="aspect-square rounded overflow-hidden bg-card border border-border/30 hover:border-accent/50 cursor-grab active:cursor-grabbing"
+                                title={asset.prompt || 'Drag to canvas'}
+                              >
+                                {asset.type === 'video' ? (
+                                  <video src={asset.r2_url} className="w-full h-full object-cover" muted preload="metadata" />
+                                ) : (
+                                  <img src={asset.r2_url} alt="" className="w-full h-full object-cover" loading="lazy" decoding="async" />
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {isOpen && folder.assets.length === 0 && (
+                          <div className="px-3 pb-2 text-[10px] text-muted-foreground/40 italic">
+                            No assets yet
                           </div>
                         )}
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-[10px] font-mono text-foreground/80 truncate">{folder.name}</div>
-                        <div className="text-[9px] text-muted-foreground/50">
-                          {folder.assets.length} asset{folder.assets.length !== 1 ? 's' : ''}
-                        </div>
-                      </div>
-                    </button>
-                  ))}
+                    )
+                  })}
                 </div>
               )
             })()}
           </div>
 
-          {expandedCategory && (
-            <div className="px-2 py-2 border-t border-border/30">
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                disabled={uploading}
-                className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg bg-accent/10 hover:bg-accent/20 text-accent text-[10px] font-mono transition-colors disabled:opacity-50"
-              >
-                <UploadSimple size={10} weight={uploading ? 'fill' : 'bold'} />
-                {uploading ? 'Uploading...' : 'Upload Asset'}
-              </button>
-            </div>
-          )}
+          {expandedCategory && (() => {
+            const folderType: 'character' | 'prop' | 'location' | 'general' =
+              expandedCategory === 'characters' ? 'character'
+              : expandedCategory === 'props' ? 'prop'
+              : expandedCategory === 'locations' ? 'location'
+              : 'general'
+            const newLabel =
+              folderType === 'character' ? 'New Character'
+              : folderType === 'prop' ? 'New Prop'
+              : folderType === 'location' ? 'New Location'
+              : 'New Folder'
+            return (
+              <div className="px-2 py-2 border-t border-border/30">
+                <button
+                  onClick={() => setCreatingFolderType(folderType)}
+                  className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg bg-accent/10 hover:bg-accent/20 text-accent text-[10px] transition-colors"
+                >
+                  <Plus size={10} weight="bold" />
+                  {newLabel}
+                </button>
+              </div>
+            )
+          })()}
         </div>
       )}
 
@@ -1514,6 +1592,21 @@ export function LeftToolbar({
           assetId=""
           assetUrl=""
           editFolder={editingFolder}
+        />
+      )}
+
+      {/* Create-new folder modal, fired from the category panel's
+          "+ New Character/Prop/…" buttons. defaultNew skips straight
+          to the name+assets form. */}
+      {creatingFolderType && (
+        <AddToFolderModal
+          open={!!creatingFolderType}
+          onClose={() => { setCreatingFolderType(null); mutateFolders() }}
+          folderType={creatingFolderType}
+          projectId={projectId}
+          assetId=""
+          assetUrl=""
+          defaultNew
         />
       )}
     </div>

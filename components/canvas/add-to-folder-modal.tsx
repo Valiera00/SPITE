@@ -37,6 +37,11 @@ interface AddToFolderModalProps {
   assetId?: string
   assetUrl?: string
   editFolder?: Folder | null
+  // When true, open straight into the "new folder" form instead of the
+  // pick-an-existing-folder list. Used by the category panel's "+ New
+  // Character/Prop/…" buttons so the user doesn't have to click an extra
+  // step before naming a new folder.
+  defaultNew?: boolean
 }
 
 const typeLabels: Record<FolderType, string> = {
@@ -53,7 +58,7 @@ const typeIcons = {
   general: Package,
 }
 
-export function AddToFolderModal({ open, onClose, folderType, projectId, assetId, assetUrl, editFolder }: AddToFolderModalProps) {
+export function AddToFolderModal({ open, onClose, folderType, projectId, assetId, assetUrl, editFolder, defaultNew }: AddToFolderModalProps) {
   const [folders, setFolders] = useState<Folder[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -96,6 +101,11 @@ export function AddToFolderModal({ open, onClose, folderType, projectId, assetId
       setSelectedAssets(editFolder.assets.map(a => ({ id: a.id, url: a.r2_url })))
       return
     }
+    // Category panel's "+ New Character/Prop/…" buttons set defaultNew so
+    // we skip straight to the create form instead of the existing-folder list.
+    if (defaultNew) {
+      setShowNewForm(true)
+    }
     if (assetId && assetUrl) {
       setSelectedAssets([{ id: assetId, url: assetUrl }])
       return
@@ -114,7 +124,7 @@ export function AddToFolderModal({ open, onClose, folderType, projectId, assetId
         .catch(() => {})
       return () => { cancelled = true }
     }
-  }, [open, editFolder, assetId, assetUrl])
+  }, [open, editFolder, assetId, assetUrl, defaultNew])
 
   // Reset on close
   useEffect(() => {

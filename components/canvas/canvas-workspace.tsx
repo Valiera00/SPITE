@@ -422,6 +422,52 @@ function CanvasInner({ projectId }: { projectId: string }) {
       return
     }
 
+    // Whole-folder drop from the sidebar's category panel: spawn one
+    // reference node per asset, laid out as a small grid so they don't
+    // stack on top of each other.
+    const folderData = e.dataTransfer.getData('folder-assets')
+    if (folderData) {
+      try {
+        const payload = JSON.parse(folderData) as {
+          folderName?: string
+          assets: { id: string; r2_url: string; type?: string; prompt?: string }[]
+        }
+        const flowPos = screenToFlowPosition({ x: e.clientX, y: e.clientY })
+        const cols = Math.min(3, Math.max(1, payload.assets.length))
+        const gap = 360
+        const stamp = Date.now()
+        const newNodes: Node[] = payload.assets.map((asset, i) => {
+          const col = i % cols
+          const row = Math.floor(i / cols)
+          return {
+            id: `ref-${stamp}-${i}`,
+            type: 'reference',
+            position: { x: flowPos.x + col * gap, y: flowPos.y + row * gap },
+            data: {
+              assetId: asset.id,
+              thumbnail: asset.r2_url,
+              label: payload.folderName || asset.prompt || 'Reference',
+              mediaType: asset.type === 'video' ? 'video' : 'image',
+            },
+          } as Node
+        })
+        setNodes((ns: Node[]) => [...ns, ...newNodes] as Node[])
+        // Auto-protect every asset we just dropped.
+        for (const asset of payload.assets) {
+          if (!asset.id) continue
+          fetch(`/api/assets/${asset.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ used_in_canvas: true }),
+          }).catch(() => {})
+        }
+        window.dispatchEvent(new CustomEvent('asset-status-changed'))
+        return
+      } catch (error) {
+        console.error('[v0] Folder drop error:', error)
+      }
+    }
+
     // Internal asset drop from assets panel
     const assetData = e.dataTransfer.getData('asset')
     if (!assetData) return
@@ -429,7 +475,7 @@ function CanvasInner({ projectId }: { projectId: string }) {
     try {
       const asset = JSON.parse(assetData)
       const flowPos = screenToFlowPosition({ x: e.clientX, y: e.clientY })
-      
+
       // Create node for this asset
       const newNode: Node = {
         id: `ref-${Date.now()}`,
@@ -442,9 +488,9 @@ function CanvasInner({ projectId }: { projectId: string }) {
           mediaType: asset.type === 'video' ? 'video' : 'image',
         },
       }
-      
+
       setNodes((ns: Node[]) => [...ns, newNode] as Node[])
-      
+
       // Mark asset as protected
       fetch(`/api/assets/${asset.id}`, {
         method: 'PATCH',
