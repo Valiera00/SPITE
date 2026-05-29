@@ -425,7 +425,13 @@ export function buildModelInput(
         .filter((g) => g.urls.length > 0)
         .map((g) => ({
           frontal_image_url: g.urls[0],
-          reference_image_urls: g.urls.slice(1),
+          // Kling v3's schema demands reference_image_urls be a non-empty
+          // array. If the user only put one photo in this folder, reuse
+          // the same URL so the request is well-formed — the model just
+          // gets one image's worth of info, which is the same as having
+          // a single reference anyway.
+          reference_image_urls:
+            g.urls.length > 1 ? g.urls.slice(1) : [g.urls[0]],
         }))
       if (elements.length > 0) input.elements = elements
     } else if (model.referenceParam === 'subject_reference_image_url') {
