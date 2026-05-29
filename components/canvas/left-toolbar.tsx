@@ -784,6 +784,29 @@ export function LeftToolbar({
                           <PencilSimple size={11} weight="bold" />
                           Edit folder
                         </button>
+                        <button
+                          onClick={async () => {
+                            if (!window.confirm(`Delete the folder "${activeFolder.name}"? Assets inside stay in the library.`)) return
+                            try {
+                              const res = await fetch(`/api/folders/${activeFolder.id}`, { method: 'DELETE' })
+                              if (!res.ok) throw new Error(`HTTP ${res.status}`)
+                              toast.success(`Deleted "${activeFolder.name}"`)
+                              // Pop back up to the parent category so the
+                              // user lands somewhere sensible.
+                              setExpandedView({ kind: 'category', type: activeFolder.type })
+                              mutateFolders()
+                              mutateAssets()
+                            } catch (err: any) {
+                              console.error('[folder] delete failed', err)
+                              toast.error(`Couldn't delete folder: ${err?.message || 'unknown error'}`)
+                            }
+                          }}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-red-500/15 hover:bg-red-500/25 text-red-400 text-xs transition-colors"
+                          title="Delete this folder. Assets inside it stay in the library."
+                        >
+                          <Trash size={11} weight="bold" />
+                          Delete folder
+                        </button>
                       </div>
                     </div>
 
