@@ -1016,11 +1016,19 @@ export function LeftToolbar({
                           const nextAsset = filteredGenAssets[currentIndex + 1] ?? filteredGenAssets[currentIndex - 1] ?? null
                           const res = await fetch(`/api/assets/${selectedGenAsset.id}`, { method: 'DELETE' })
                           if (res.ok) {
+                            const body = await res.json().catch(() => null) as
+                              | { kept?: boolean; reason?: string; removed_from_folders?: number }
+                              | null
                             mutateAssets()
+                            mutateFolders()
                             setSelectedGenAsset(nextAsset ?? null)
-                            toast.success('Asset deleted')
-                          } else if (res.status === 403) {
-                            toast.warning('Asset is still used on the canvas')
+                            if (body?.kept) {
+                              toast.info('Removed from folders. Asset kept because it’s still on the canvas.')
+                            } else if ((body?.removed_from_folders ?? 0) > 0) {
+                              toast.success('Asset deleted (and removed from its folders)')
+                            } else {
+                              toast.success('Asset deleted')
+                            }
                           } else {
                             toast.error('Failed to delete')
                           }
@@ -1444,13 +1452,26 @@ export function LeftToolbar({
                           const currentIndex = filteredGenAssets.findIndex(a => a.id === selectedGenAsset.id)
                           const nextAsset = filteredGenAssets[currentIndex + 1] ?? filteredGenAssets[currentIndex - 1] ?? null
 
-                          await fetch(`/api/assets/${selectedGenAsset.id}`, {
-                            method: 'DELETE'
-                          })
+                          const res = await fetch(`/api/assets/${selectedGenAsset.id}`, { method: 'DELETE' })
+                          const body = res.ok
+                            ? (await res.json().catch(() => null)) as
+                                | { kept?: boolean; removed_from_folders?: number }
+                                | null
+                            : null
 
                           mutateAssets()
+                          mutateFolders()
                           setSelectedGenAsset(nextAsset ?? null)
-                          toast.success('Asset deleted from storage')
+
+                          if (!res.ok) {
+                            toast.error('Failed to delete')
+                          } else if (body?.kept) {
+                            toast.info('Removed from folders. Asset kept because it’s still on the canvas.')
+                          } else if ((body?.removed_from_folders ?? 0) > 0) {
+                            toast.success('Asset deleted (and removed from its folders)')
+                          } else {
+                            toast.success('Asset deleted from storage')
+                          }
                         }}
                       >
                         Delete permanently

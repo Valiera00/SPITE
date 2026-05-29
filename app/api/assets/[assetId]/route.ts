@@ -46,52 +46,108 @@ export async function PATCH(
   }
 }
 
+// DELETE /api/assets/[assetId]
+//
+// Behaviour requested by the user:
+//   - Always succeed if invoked.
+//   - First, remove the asset from every folder it sits in. Folder
+//     membership alone is no longer a reason to refuse deletion.
+//   - Then look at the actual canvas_nodes for this project: is the
+//     asset's r2_url (outputUrl/thumbnail) or id referenced by any node?
+//       * Yes → keep the generation_history row + R2 file alive. The
+//         response surfaces { kept: true, removed_from_folders }.
+//       * No  → hard-delete the row + the R2 object.
+//
+// (used_in_canvas is no longer the gate. That flag also goes true for
+// folder members via the folder API, which made the gate fire even
+// when the asset wasn't on a node — see the user report.)
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: Promise<{ assetId: string }> }
+  { params }: { params: Promise<{ assetId: string }> },
 ) {
   try {
     const sql = getDb()
     const { assetId } = await params
 
-    // Get asset details to find R2 URL
-    const asset = await sql`SELECT used_in_canvas, r2_url FROM generation_history WHERE id = ${assetId}`
-    
+    const asset = await sql`
+      SELECT r2_url FROM generation_history WHERE id = ${assetId}
+    ` as { r2_url: string | null }[]
+
     if (!asset[0]) {
       return NextResponse.json({ error: 'Asset not found' }, { status: 404 })
     }
-    
-    if (asset[0]?.used_in_canvas) {
-      return NextResponse.json({ error: 'Cannot delete assets used in canvases' }, { status: 403 })
+    const r2Url = asset[0].r2_url
+
+    // Step 1: drop folder memberships unconditionally.
+    const removedRows = await sql`
+      DELETE FROM asset_folder_items WHERE asset_id = ${assetId}
+      RETURNING folder_id
+    ` as { folder_id: string }[]
+    const removedFromFolders = removedRows.length
+
+    // Step 2: is the asset still referenced by a canvas node anywhere?
+    // We check both the assetId match and any of the two URL fields that
+    // node data uses to point at media (outputUrl on generated nodes,
+    // thumbnail on uploaded/reference nodes).
+    const canvasRefs = r2Url
+      ? await sql`
+          SELECT 1 FROM canvas_nodes
+          WHERE data->>'assetId'   = ${assetId}
+             OR data->>'outputUrl' = ${r2Url}
+             OR data->>'thumbnail' = ${r2Url}
+          LIMIT 1
+        `
+      : await sql`
+          SELECT 1 FROM canvas_nodes
+          WHERE data->>'assetId' = ${assetId}
+          LIMIT 1
+        `
+
+    if (canvasRefs.length > 0) {
+      // Still on a node — keep the asset so the node doesn't lose its
+      // media. Folder rows are already gone above. Demote protection
+      // so it can age out normally if the node is later removed.
+      await sql`
+        UPDATE generation_history
+        SET used_in_canvas = true, expires_at = NULL
+        WHERE id = ${assetId}
+      `
+      return NextResponse.json({
+        success: true,
+        kept: true,
+        reason: 'still_on_canvas',
+        removed_from_folders: removedFromFolders,
+      })
     }
 
-    // Delete from database first
+    // Step 3: not on a canvas — hard delete.
     await sql`DELETE FROM generation_history WHERE id = ${assetId}`
 
-    // Delete from R2 storage
-    if (asset[0]?.r2_url) {
+    if (r2Url) {
       try {
         // r2_url format: /api/r2-image/uploads/filename.png
-        // R2 key format: uploads/filename.png
-        const r2Url = asset[0].r2_url as string
         const key = r2Url.replace('/api/r2-image/', '')
-        
-        const s3Client = getR2Client()
-        await s3Client.send(
-          new DeleteObjectCommand({
-            Bucket: process.env.R2_BUCKET_NAME!,
-            Key: key,
-          })
-        )
+        const s3 = getR2Client()
+        await s3.send(new DeleteObjectCommand({
+          Bucket: process.env.R2_BUCKET_NAME!,
+          Key: key,
+        }))
       } catch (r2Error) {
         console.error('[assets] R2 deletion failed:', r2Error)
-        // Continue anyway - DB record is already deleted
+        // DB row is gone already; leftover R2 object is acceptable.
       }
     }
 
-    return NextResponse.json({ success: true })
-  } catch (error) {
+    return NextResponse.json({
+      success: true,
+      kept: false,
+      removed_from_folders: removedFromFolders,
+    })
+  } catch (error: any) {
     console.error('[assets] Delete error:', error)
-    return NextResponse.json({ error: 'Failed to delete asset' }, { status: 500 })
+    return NextResponse.json(
+      { error: 'Failed to delete asset', detail: error?.message || String(error) },
+      { status: 500 },
+    )
   }
 }

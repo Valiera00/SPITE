@@ -593,18 +593,48 @@ export function AddToFolderModal({ open, onClose, folderType, projectId, assetId
                 )}
               </div>
 
-              <div className="flex justify-end gap-2 pt-1">
-                <Button variant="ghost" size="sm" onClick={editFolder ? onClose : () => setShowNewForm(false)}>
-                  Cancel
-                </Button>
-                <Button
-                  size="sm"
-                  onClick={handleSave}
-                  disabled={!newName.trim() || creating}
-                  className="bg-white/10 hover:bg-white/20"
-                >
-                  {creating ? (editFolder ? 'Saving...' : 'Creating...') : (editFolder ? 'Save' : 'Create')}
-                </Button>
+              <div className="flex items-center gap-2 pt-1">
+                {/* Delete folder lives on the left when editing — destructive,
+                    but no membership has to be touched first; the folder
+                    items table has ON DELETE CASCADE. */}
+                {editFolder && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={creating}
+                    onClick={async () => {
+                      if (!editFolder) return
+                      if (!window.confirm(`Delete "${editFolder.name}"? Assets inside the folder stay in the library.`)) return
+                      try {
+                        const res = await fetch(`/api/folders/${editFolder.id}`, { method: 'DELETE' })
+                        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+                        toast.success(`Deleted "${editFolder.name}"`)
+                        window.dispatchEvent(new CustomEvent('folders-changed'))
+                        window.dispatchEvent(new CustomEvent('asset-status-changed'))
+                        onClose()
+                      } catch (err: any) {
+                        console.error('[folder] delete failed', err)
+                        toast.error(`Couldn't delete folder: ${err?.message || 'unknown error'}`)
+                      }
+                    }}
+                    className="text-red-400 hover:text-red-300 hover:bg-red-500/10"
+                  >
+                    Delete folder
+                  </Button>
+                )}
+                <div className="ml-auto flex items-center gap-2">
+                  <Button variant="ghost" size="sm" onClick={editFolder ? onClose : () => setShowNewForm(false)}>
+                    Cancel
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={handleSave}
+                    disabled={!newName.trim() || creating}
+                    className="bg-white/10 hover:bg-white/20"
+                  >
+                    {creating ? (editFolder ? 'Saving...' : 'Creating...') : (editFolder ? 'Save' : 'Create')}
+                  </Button>
+                </div>
               </div>
             </div>
           </>
