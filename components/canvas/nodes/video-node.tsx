@@ -9,10 +9,11 @@ import { NodeActionToolbar } from './node-toolbar'
 import { ShotSelector, type ShotOption } from './shot-selector'
 import { useSceneShots } from './use-scene-shots'
 import { Lightbox } from '../lightbox'
-import { MentionTextarea, resolveMentionRefs, type Mention } from '../mention-textarea'
+import { MentionTextarea, type Mention } from '../mention-textarea'
 import { useProjectFolders } from '@/hooks/use-project-folders'
 import { labelFromPrompt, DEFAULT_VIDEO_LABEL } from '@/lib/auto-name'
 import { getVideoModels, getModelById, buildModelInput, type ModelConfig } from '@/lib/fal-models'
+import { compileMentionsForModel } from '@/lib/mention-prompt'
 import { captureVideoThumbnail } from '@/lib/video-thumbnail'
 
 const VIDEO_MODELS = getVideoModels()
@@ -504,14 +505,26 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
     // pink reference-in handle. Local mentions are authoritative; @tags
     // appearing only in the compiled prompt (e.g. forwarded by a connected
     // prompt-node) fall back to "use every asset in the matched folder".
-    const folderRefs = resolveMentionRefs(compiledPrompt, mentions, folders)
-    const allReferenceUrls = [...connectedReferenceUrls, ...folderRefs]
+    //
+    // compileMentionsForModel rewrites the prompt so each @FolderTag is
+    // replaced with the citation the target model understands
+    // ("@Image1 @Image2" for Kling/Seedance, plain English for others).
+    // Wired refs occupy the leading slots in the array, so mentions start
+    // at position connectedReferenceUrls.length.
+    const compiled = compileMentionsForModel(
+      compiledPrompt,
+      mentions,
+      folders,
+      currentModel,
+      connectedReferenceUrls.length,
+    )
+    const allReferenceUrls = [...connectedReferenceUrls, ...compiled.refs]
 
     try {
       // Send RAW settings; the server builds the model-specific payload.
       const body = JSON.stringify({
         modelId,
-        prompt: compiledPrompt,
+        prompt: compiled.prompt,
         referenceImageUrl: connectedImageUrl,
         endImageUrl: connectedEndImageUrl,
         referenceImageUrls: allReferenceUrls.length ? allReferenceUrls : undefined,

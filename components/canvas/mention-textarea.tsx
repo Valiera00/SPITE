@@ -610,49 +610,6 @@ export const MentionTextarea = forwardRef<MentionTextareaRef, Props>(function Me
   )
 })
 
-// ---------------------------------------------------------------------------
-// Resolution helper used by image-node / video-node at generate time.
-// Unchanged contract from the previous implementation.
-// ---------------------------------------------------------------------------
-
-export function resolveMentionRefs(
-  text: string,
-  mentions: Mention[],
-  folders: MentionFolder[],
-): string[] {
-  const out: string[] = []
-  const seen = new Set<string>()
-
-  for (const m of mentions) {
-    if (seen.has(m.folderId)) continue
-    const folder = folders.find((f) => f.id === m.folderId)
-    if (!folder) continue
-    seen.add(folder.id)
-    // If the mention has no per-asset selection (or it captured the
-    // folder while still empty), use every current asset in the folder.
-    // Otherwise filter to the intersection so removed assets drop out.
-    const useAll = m.selectedAssetIds.length === 0
-    const idSet = new Set(m.selectedAssetIds)
-    for (const asset of folder.assets) {
-      if (useAll || idSet.has(asset.id)) {
-        if (asset.r2_url) out.push(asset.r2_url)
-      }
-    }
-  }
-
-  const tagRe = /@([\w-]+)/g
-  let match: RegExpExecArray | null
-  while ((match = tagRe.exec(text))) {
-    const tag = match[1].toLowerCase()
-    const folder = folders.find(
-      (f) => tagFromName(f.name).toLowerCase() === tag,
-    )
-    if (folder && !seen.has(folder.id)) {
-      seen.add(folder.id)
-      for (const asset of folder.assets) {
-        if (asset.r2_url) out.push(asset.r2_url)
-      }
-    }
-  }
-  return out
-}
+// Resolution + prompt-rewrite for generate time lives in
+// `lib/mention-prompt.ts` (compileMentionsForModel). It supersedes the
+// old resolveMentionRefs helper that lived here.

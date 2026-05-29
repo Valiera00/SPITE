@@ -9,10 +9,11 @@ import { NodeActionToolbar } from './node-toolbar'
 import { ShotSelector, type ShotOption } from './shot-selector'
 import { useSceneShots } from './use-scene-shots'
 import { Lightbox } from '../lightbox'
-import { MentionTextarea, resolveMentionRefs, type Mention } from '../mention-textarea'
+import { MentionTextarea, type Mention } from '../mention-textarea'
 import { useProjectFolders } from '@/hooks/use-project-folders'
 import { labelFromPrompt, DEFAULT_IMAGE_LABEL } from '@/lib/auto-name'
 import { getImageModels, getModelById, buildModelInput, type ModelConfig } from '@/lib/fal-models'
+import { compileMentionsForModel } from '@/lib/mention-prompt'
 
 const IMAGE_MODELS = getImageModels()
 
@@ -510,10 +511,27 @@ function ImageNodeImpl({ id, data, selected }: NodeProps) {
 
     // Folder-mention refs: every selected asset URL across all local
     // @mentions, plus any @Folder tokens appearing in the compiled prompt
-    // (which is how prompt-node-forwarded mentions reach us — those use
-    // the folder's full asset list since the prompt-node has no per-asset
-    // picker yet).
-    const folderRefs = resolveMentionRefs(compiledPrompt, mentions, folders)
+    // (forwarded from a connected prompt-node — those use the folder's
+    // full asset list since the prompt-node has no per-asset picker).
+    //
+    // compileMentionsForModel both collects the URLs in mention order AND
+    // rewrites each @FolderTag in the prompt to the model's binding form:
+    //   - Kling/Seedance (citation models)  → "@Image1 @Image2 ..."
+    //   - Nano Banana / FLUX (no citation)  → "the character shown in
+    //                                          reference image 1"
+    // The first slot is reserved for the connected primary frame on
+    // image_urls-style models (Nano Banana etc.), so mentions start at
+    // slot 1 when connectedImageUrl is present.
+    const primaryInImageUrls =
+      !!connectedImageUrl && currentModel?.imageParam === 'image_urls'
+    const compiled = compileMentionsForModel(
+      compiledPrompt,
+      mentions,
+      folders,
+      currentModel,
+      primaryInImageUrls ? 1 : 0,
+    )
+    const folderRefs = compiled.refs
 
     try {
       // Fan out one fal job per requested image, mirroring how video-node
@@ -521,7 +539,7 @@ function ImageNodeImpl({ id, data, selected }: NodeProps) {
       // num_images cap (typically 4) — `numImages` now goes up to 12.
       const body = JSON.stringify({
         modelId,
-        prompt: compiledPrompt,
+        prompt: compiled.prompt,
         referenceImageUrl: connectedImageUrl,
         referenceImageUrls: folderRefs.length > 0 ? folderRefs : undefined,
         settings: { aspectRatio, resolution, numImages: 1 },
