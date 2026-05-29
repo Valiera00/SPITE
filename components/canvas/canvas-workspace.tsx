@@ -623,58 +623,65 @@ function CanvasInner({ projectId }: { projectId: string }) {
     n.data = { ...n.data, thumbnail: tempUrl, isUploading: true, mediaType: isVideoFile ? 'video' : 'image' }
     setNodes(ns => [...ns, n])
     
-    // Upload to R2 in background
+    // Upload to R2 in background — presigned-PUT flow, so file bytes
+    // go straight to R2 and never hit Vercel's 4.5MB function body limit.
     try {
-      const formData = new FormData()
-      formData.append('file', file)
-      formData.append('filename', file.name)
-      
-      const uploadRes = await fetch('/api/r2-upload', { method: 'POST', body: formData })
-      const uploadData = await uploadRes.json()
-      
-      if (uploadData.url) {
-        // Convert direct R2 URL to proxy URL so it's accessible
-        // R2 URL format: https://{bucket}.{accountId}.r2.dev/{key}
-        // Proxy format: /api/r2-image/{key}
-        const r2Key = uploadData.url.split('.r2.dev/')[1]
-        const proxyUrl = r2Key ? `/api/r2-image/${r2Key}` : uploadData.url
-        
-        // Update node with proxy URL
+      const presignRes = await fetch('/api/r2-presign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          filename: file.name,
+          contentType: file.type || 'application/octet-stream',
+        }),
+      })
+      if (!presignRes.ok) {
+        const detail = await presignRes.text().catch(() => '')
+        throw new Error(`presign failed: ${presignRes.status} ${detail}`)
+      }
+      const { presignedUrl, proxyUrl } = await presignRes.json() as { presignedUrl: string; proxyUrl: string }
+
+      const putRes = await fetch(presignedUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': file.type || 'application/octet-stream' },
+        body: file,
+      })
+      if (!putRes.ok) {
+        const detail = await putRes.text().catch(() => '')
+        throw new Error(`R2 PUT failed: ${putRes.status} ${detail}`)
+      }
+
+      // Update node with proxy URL
+      setNodes(ns => ns.map(node =>
+        node.id === n.id
+          ? { ...node, data: { ...node.data, thumbnail: proxyUrl, isUploading: false } }
+          : node
+      ))
+
+      // Record in assets with proxy URL and mark as protected (used in canvas)
+      const assetRes = await fetch('/api/assets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: proxyUrl, type: isVideoFile ? 'video' : 'image', filename: nodeLabel, projectId }),
+      })
+      const assetData = await assetRes.json()
+      console.log('[v0] Asset recorded:', { assetData, status: assetRes.status })
+
+      // Stash the asset's generation_history id on the node so the
+      // node toolbar's "Add to folder" flow can pre-select it without
+      // needing the modal to look it up by URL.
+      if (assetData?.id) {
         setNodes(ns => ns.map(node =>
           node.id === n.id
-            ? { ...node, data: { ...node.data, thumbnail: proxyUrl, isUploading: false } }
+            ? { ...node, data: { ...node.data, assetId: assetData.id } }
             : node
         ))
-
-        // Record in assets with proxy URL and mark as protected (used in canvas)
-        const assetRes = await fetch('/api/assets', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url: proxyUrl, type: isVideoFile ? 'video' : 'image', filename: nodeLabel, projectId })
-        })
-        const assetData = await assetRes.json()
-        console.log('[v0] Asset recorded:', { assetData, status: assetRes.status })
-
-        // Stash the asset's generation_history id on the node so the
-        // node toolbar's "Add to folder" flow can pre-select it without
-        // needing the modal to look it up by URL.
-        if (assetData?.id) {
-          setNodes(ns => ns.map(node =>
-            node.id === n.id
-              ? { ...node, data: { ...node.data, assetId: assetData.id } }
-              : node
-          ))
-        }
-        
-        // Asset is now recorded and protected (used_in_canvas = true)
-        // Notify assets panel to refresh immediately
-        window.dispatchEvent(new CustomEvent('asset-status-changed'))
-        
-        // Revoke temp blob URL
-        URL.revokeObjectURL(tempUrl)
-      } else {
-        // Keep temp URL if upload fails - user can still work with it
       }
+
+      // Asset is now recorded and protected (used_in_canvas = true)
+      window.dispatchEvent(new CustomEvent('asset-status-changed'))
+
+      // Revoke temp blob URL
+      URL.revokeObjectURL(tempUrl)
     } catch (error) {
       console.error('[v0] Failed to upload image:', error)
       // Keep temp URL if upload fails - user can still work with it

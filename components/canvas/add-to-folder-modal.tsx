@@ -152,24 +152,43 @@ export function AddToFolderModal({ open, onClose, folderType, projectId, assetId
     setSelectedAssets(prev => [...prev, { id: tempId, url: tempUrl, isUploading: true }])
 
     try {
-      const formData = new FormData()
-      formData.append('file', file)
-      formData.append('filename', file.name)
-      const uploadRes = await fetch('/api/r2-upload', { method: 'POST', body: formData })
-      if (!uploadRes.ok) throw new Error(`r2-upload returned ${uploadRes.status}`)
-      const { url: r2Url } = await uploadRes.json()
+      // 1) Ask the server for a presigned PUT URL. This route is tiny —
+      //    just signing — so it never hits Vercel's body-size limit.
+      const presignRes = await fetch('/api/r2-presign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          filename: file.name,
+          contentType: file.type || 'application/octet-stream',
+        }),
+      })
+      if (!presignRes.ok) {
+        const detail = await presignRes.text().catch(() => '')
+        throw new Error(`presign failed: ${presignRes.status} ${detail}`)
+      }
+      const { presignedUrl, proxyUrl } = await presignRes.json() as {
+        presignedUrl: string
+        key: string
+        proxyUrl: string
+      }
+      if (!presignedUrl || !proxyUrl) throw new Error('presign response missing fields')
 
-      // r2-upload returns the direct R2 URL (e.g. https://bucket.account.r2.dev/...).
-      // That URL isn't readable from the browser (R2 isn't public), so switch
-      // it to the cookie-auth'd proxy URL like the rest of the app does —
-      // otherwise the thumbnail in the modal renders as a broken image.
-      const r2Key = typeof r2Url === 'string' ? r2Url.split('.r2.dev/')[1] : null
-      const proxyUrl = r2Key ? `/api/r2-image/${r2Key}` : r2Url
+      // 2) PUT the file straight to R2. This bypasses the Vercel
+      //    function entirely, so we're not bound by the 4.5 MB body
+      //    limit that was returning 413s for everything bigger.
+      const putRes = await fetch(presignedUrl, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': file.type || 'application/octet-stream',
+        },
+        body: file,
+      })
+      if (!putRes.ok) {
+        const detail = await putRes.text().catch(() => '')
+        throw new Error(`R2 PUT failed: ${putRes.status} ${detail}`)
+      }
 
-      // Record in assets DB. projectId is REQUIRED — the API responds 400
-      // without it, which used to leave the upload as a thumbnail-only
-      // ghost row in selectedAssets (id: undefined) that the folder save
-      // then silently dropped.
+      // 3) Record the asset (projectId required).
       const isVideo = file.type.startsWith('video/')
       const assetRes = await fetch('/api/assets', {
         method: 'POST',
@@ -180,18 +199,19 @@ export function AddToFolderModal({ open, onClose, folderType, projectId, assetId
       const assetData = await assetRes.json()
       if (!assetData?.id) throw new Error('assets POST returned no id')
 
-      // Replace placeholder with real asset (using proxy URL so the thumbnail
-      // actually resolves), revoke the temp blob.
+      // Swap the placeholder for the real asset (proxy URL renders the
+      // thumbnail via cookie auth), and free the temp blob.
       URL.revokeObjectURL(tempUrl)
       setSelectedAssets(prev => prev.map(a =>
         a.id === tempId ? { id: assetData.id, url: proxyUrl, isUploading: false } : a
       ))
       setAvailableAssets(prev => [...prev, { id: assetData.id, r2_url: proxyUrl, prompt: file.name }])
       return { id: assetData.id, url: proxyUrl }
-    } catch (err) {
-      console.error('[v0] Upload failed:', err)
+    } catch (err: any) {
+      console.error('[folder-modal] Upload failed:', err)
       URL.revokeObjectURL(tempUrl)
       setSelectedAssets(prev => prev.filter(a => a.id !== tempId))
+      toast.error(`Upload of "${file.name}" failed: ${err?.message || 'unknown error'}`)
       return null
     }
   }, [projectId])
