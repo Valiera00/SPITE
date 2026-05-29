@@ -330,15 +330,27 @@ export function AddToFolderModal({ open, onClose, folderType, projectId, assetId
         // them here, every drop also fires canvas-workspace's onDrop and
         // the file gets added to the canvas as a reference node in
         // addition to landing in the folder.
+        //
+        // We accept three drag sources:
+        //   - desktop files (dataTransfer.types.includes('Files'))
+        //   - one existing asset dragged from the sidebar ('asset')
+        //   - a whole folder dragged from the sidebar ('folder-assets')
+        //
+        // For the internal channels we MUST preventDefault on dragover
+        // so the browser allows the drop — otherwise the drag preview
+        // just snaps back to the source ("pop up for a second then
+        // disappears").
         onDragOver={e => {
-          if (e.dataTransfer.types.includes('Files')) {
+          const t = e.dataTransfer.types
+          if (t.includes('Files') || t.includes('asset') || t.includes('folder-assets')) {
             e.preventDefault()
             e.stopPropagation()
             setIsDraggingOver(true)
           }
         }}
         onDragEnter={e => {
-          if (e.dataTransfer.types.includes('Files')) {
+          const t = e.dataTransfer.types
+          if (t.includes('Files') || t.includes('asset') || t.includes('folder-assets')) {
             e.stopPropagation()
           }
         }}
@@ -351,11 +363,46 @@ export function AddToFolderModal({ open, onClose, folderType, projectId, assetId
           }
         }}
         onDrop={e => {
-          if (e.dataTransfer.files.length === 0) return
           e.preventDefault()
           e.stopPropagation()
           setIsDraggingOver(false)
-          handleFiles(e.dataTransfer.files)
+
+          // 1) Desktop files → upload + add.
+          if (e.dataTransfer.files.length > 0) {
+            handleFiles(e.dataTransfer.files)
+            return
+          }
+
+          // 2) Single existing asset from the sidebar.
+          const assetJson = e.dataTransfer.getData('asset')
+          if (assetJson) {
+            try {
+              const a = JSON.parse(assetJson) as { id?: string; r2_url?: string }
+              if (a?.id && a?.r2_url) {
+                setSelectedAssets(prev => prev.find(x => x.id === a.id)
+                  ? prev
+                  : [...prev, { id: a.id!, url: a.r2_url! }])
+              }
+            } catch {}
+            return
+          }
+
+          // 3) A whole folder's worth of assets at once.
+          const folderJson = e.dataTransfer.getData('folder-assets')
+          if (folderJson) {
+            try {
+              const payload = JSON.parse(folderJson) as { assets?: { id?: string; r2_url?: string }[] }
+              if (Array.isArray(payload?.assets)) {
+                setSelectedAssets(prev => {
+                  const existingIds = new Set(prev.map(p => p.id))
+                  const additions = payload.assets!
+                    .filter(a => a?.id && a?.r2_url && !existingIds.has(a.id))
+                    .map(a => ({ id: a.id!, url: a.r2_url! }))
+                  return [...prev, ...additions]
+                })
+              }
+            } catch {}
+          }
         }}
       >
         {/* Big drop overlay (only while a file is being dragged over) */}
