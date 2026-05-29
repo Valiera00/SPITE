@@ -3,13 +3,14 @@
 import {
   useState,
   useRef,
+  useEffect,
+  useCallback,
   forwardRef,
   useImperativeHandle,
-  type KeyboardEvent,
-  type ChangeEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
 } from 'react'
 import { createPortal } from 'react-dom'
-import { X, User, Package, MapPin, Folder, Check } from '@phosphor-icons/react'
+import { X, User, Package, MapPin, Folder, Check, PencilSimple, Trash } from '@phosphor-icons/react'
 
 export type FolderType = 'character' | 'prop' | 'location' | 'general'
 
@@ -21,11 +22,10 @@ export interface MentionFolder {
   assets: { id: string; r2_url: string; type: string }[]
 }
 
-// One inserted mention: a folder + the subset of its assets the user chose
-// at insert time. Stored on the node and used at generate-time to attach
-// reference images. We keep the folder name so the @tag in the text can
-// be matched back to its folder even if the folder is renamed later
-// (re-resolution by id wins; name is the in-text token).
+// One inserted mention: a folder + the subset of its assets the user chose.
+// We keep the folder name so the @tag rendered into the text can be matched
+// back to its folder even if the folder is renamed later (re-resolution by
+// id wins; name is the token in the text).
 export interface Mention {
   folderId: string
   name: string
@@ -55,324 +55,588 @@ const ICONS: Record<FolderType, any> = {
 }
 
 const COLOR: Record<FolderType, string> = {
-  character: 'bg-purple-500/20 text-purple-300 border-purple-500/30',
-  prop: 'bg-blue-500/20 text-blue-300 border-blue-500/30',
-  location: 'bg-green-500/20 text-green-300 border-green-500/30',
-  general: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30',
+  character: 'bg-purple-500/20 text-purple-200 border-purple-400/40',
+  prop: 'bg-blue-500/20 text-blue-200 border-blue-400/40',
+  location: 'bg-green-500/20 text-green-200 border-green-400/40',
+  general: 'bg-yellow-500/20 text-yellow-200 border-yellow-400/40',
 }
 
-// Folder names can have spaces; the @tag in the text can't. Use dashes as
-// the on-the-wire convention. Resolution is also case-insensitive at parse
-// time, so casing in the prompt doesn't matter.
+// Folder names can have spaces; the @tag in the prompt text can't. Use
+// dashes as the on-the-wire convention.
 export function tagFromName(name: string): string {
   return name.replace(/\s+/g, '-')
 }
+
+// ---------------------------------------------------------------------------
+// DOM <-> value serialization
+//
+// The editor is a contentEditable div. Each mention is rendered as a
+// non-editable <span data-mention="1" data-folder-id="..." data-name="..."
+// data-asset-ids="csv">. To read the value back out for the parent we walk
+// the editor's child nodes, emitting `@FolderName` text for each chip span
+// and the literal text for everything else.
+// ---------------------------------------------------------------------------
+
+function serializeEditor(el: HTMLElement): { text: string; mentions: Mention[] } {
+  let text = ''
+  const mentions: Mention[] = []
+  const seen = new Set<string>()
+  el.childNodes.forEach((node) => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      text += node.textContent ?? ''
+    } else if (node.nodeType === Node.ELEMENT_NODE) {
+      const e = node as HTMLElement
+      if (e.dataset?.mention === '1') {
+        const folderId = e.dataset.folderId || ''
+        const name = e.dataset.name || ''
+        const assetIds = (e.dataset.assetIds || '').split(',').filter(Boolean)
+        text += `@${tagFromName(name)}`
+        if (folderId && !seen.has(folderId)) {
+          seen.add(folderId)
+          mentions.push({ folderId, name, selectedAssetIds: assetIds })
+        }
+      } else if (e.tagName === 'BR') {
+        text += '\n'
+      } else {
+        text += e.textContent ?? ''
+      }
+    }
+  })
+  return { text, mentions }
+}
+
+// Read DOM mentions only (without normalised text) — used inside event
+// handlers where we only want the current mention IDs.
+function listDomMentions(el: HTMLElement): Mention[] {
+  return serializeEditor(el).mentions
+}
+
+// Build the chip span for a mention.
+function makeChipElement(
+  folder: MentionFolder | { id: string; name: string; type: FolderType },
+  selectedAssetIds: string[],
+  doc: Document,
+): HTMLSpanElement {
+  const span = doc.createElement('span')
+  span.dataset.mention = '1'
+  span.dataset.folderId = folder.id
+  span.dataset.name = folder.name
+  span.dataset.type = folder.type
+  span.dataset.assetIds = selectedAssetIds.join(',')
+  // contentEditable=false makes the chip behave like a single atomic unit:
+  // arrow keys jump over it, backspace deletes the whole thing.
+  span.contentEditable = 'false'
+  const cls = COLOR[folder.type]
+  span.className =
+    'mention-chip inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[11px] border align-middle select-none cursor-pointer hover:opacity-90 ' +
+    cls
+  // Chip content is just the name. Icon would require nested HTML; for
+  // simplicity (and to keep selection/cursor stable) we omit it from the
+  // DOM and rely on color coding + the hover popover for the icon affordance.
+  span.textContent = folder.name
+  // Add a zero-width space after the chip so the cursor can land safely
+  // immediately after it without merging into the next text node weirdly.
+  return span
+}
+
+function renderInitial(
+  el: HTMLElement,
+  value: string,
+  mentions: Mention[],
+  folders: MentionFolder[],
+) {
+  // Build segments by scanning `value` for @FolderName tokens. Each token
+  // that resolves to a known folder turns into a chip; everything else is
+  // plain text. We resolve folders by name (case-insensitive, dashes ←→
+  // spaces) so that the parent can hand us a value+mentions snapshot
+  // round-tripped from serializeEditor and we'll faithfully reproduce it.
+  el.innerHTML = ''
+  const re = /@([\w-]+)/g
+  let lastIndex = 0
+  let match: RegExpExecArray | null
+  while ((match = re.exec(value))) {
+    if (match.index > lastIndex) {
+      el.appendChild(document.createTextNode(value.slice(lastIndex, match.index)))
+    }
+    const tag = match[1].replace(/-/g, ' ').toLowerCase()
+    const folder =
+      folders.find((f) => f.name.toLowerCase() === tag) ||
+      // Allow rendering a chip for a mention whose folder hasn't been loaded
+      // yet — pull the name from the mention list if any matches.
+      (mentions.find((m) => m.name.toLowerCase() === tag)
+        ? {
+            id: mentions.find((m) => m.name.toLowerCase() === tag)!.folderId,
+            name: mentions.find((m) => m.name.toLowerCase() === tag)!.name,
+            type: 'general' as FolderType,
+          }
+        : null)
+    if (folder) {
+      const m =
+        mentions.find((x) => x.folderId === folder.id) ||
+        {
+          folderId: folder.id,
+          name: folder.name,
+          selectedAssetIds:
+            'assets' in folder ? folder.assets.map((a) => a.id) : [],
+        }
+      el.appendChild(makeChipElement(folder, m.selectedAssetIds, document))
+    } else {
+      // Unresolved tag — keep the literal text so the user can fix it.
+      el.appendChild(document.createTextNode(match[0]))
+    }
+    lastIndex = re.lastIndex
+  }
+  if (lastIndex < value.length) {
+    el.appendChild(document.createTextNode(value.slice(lastIndex)))
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Selection helpers
+// ---------------------------------------------------------------------------
+
+// Find the @query the cursor is currently sitting in, scanning back from
+// the caret through the current text node. Returns null if there's a
+// space/newline before the next @, or no @ at all.
+function findActiveAtQuery(): {
+  range: Range
+  query: string
+  atOffset: number
+  textNode: Text
+} | null {
+  const sel = window.getSelection()
+  if (!sel || sel.rangeCount === 0) return null
+  const range = sel.getRangeAt(0)
+  const node = range.startContainer
+  if (node.nodeType !== Node.TEXT_NODE) return null
+  const textNode = node as Text
+  const offset = range.startOffset
+  const text = textNode.data.slice(0, offset)
+  const at = text.lastIndexOf('@')
+  if (at < 0) return null
+  const between = text.slice(at + 1)
+  if (/\s/.test(between)) return null
+  return { range, query: between, atOffset: at, textNode }
+}
+
+// Place the caret at the end of `node`.
+function placeCaretAfter(node: Node) {
+  const sel = window.getSelection()
+  if (!sel) return
+  const range = document.createRange()
+  range.setStartAfter(node)
+  range.collapse(true)
+  sel.removeAllRanges()
+  sel.addRange(range)
+}
+
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
 
 export const MentionTextarea = forwardRef<MentionTextareaRef, Props>(function MentionTextarea(
   { value, mentions, onChange, folders, placeholder, className, disabled, rows = 2 },
   outerRef,
 ) {
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const editorRef = useRef<HTMLDivElement>(null)
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [hi, setHi] = useState(0)
-  // When non-null, the asset-picker popover is showing for this folder.
+  // Whether to show the empty-state placeholder text.
+  const [showPlaceholder, setShowPlaceholder] = useState(!value)
+
+  // Hover popover state — anchored to a specific chip element.
+  const [popover, setPopover] = useState<{
+    anchor: HTMLElement
+    folderId: string
+  } | null>(null)
+
+  // Full-screen asset picker (when the user clicks "Choose assets" inside
+  // the popover). Same modal as the v1.
   const [picker, setPicker] = useState<{
-    folder: MentionFolder
+    folderId: string
     selected: Set<string>
-    // The cursor at the time the picker opened — we re-target this when
-    // committing the pick, in case the user typed elsewhere meanwhile.
-    insertAt: number
-    insertEnd: number
   } | null>(null)
 
   useImperativeHandle(outerRef, () => ({
-    focus: () => textareaRef.current?.focus(),
+    focus: () => editorRef.current?.focus(),
   }))
 
-  const matches = (query
+  // Initial DOM render. We only re-render the editor from `value`+`mentions`
+  // when the parent changes them out-of-band (e.g. loaded from data). Once
+  // mounted, the user types and we emit onChange, but we don't sync back
+  // from props — that would clobber the caret on every keystroke.
+  const lastSerialized = useRef<string>('')
+  useEffect(() => {
+    const el = editorRef.current
+    if (!el) return
+    // Skip if the incoming value matches what we last emitted (parent
+    // bounced our own update back). This stops the editor from being
+    // re-rendered on every keystroke.
+    if (value === lastSerialized.current) return
+    renderInitial(el, value, mentions, folders)
+    setShowPlaceholder(el.textContent === '')
+    lastSerialized.current = value
+    // We deliberately depend on folders too so chips can pick up their
+    // proper type/colour once the SWR fetch resolves.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value, mentions.length, folders.length])
+
+  // Read the current DOM state and bubble it up.
+  const emit = useCallback(() => {
+    const el = editorRef.current
+    if (!el) return
+    const { text, mentions } = serializeEditor(el)
+    lastSerialized.current = text
+    setShowPlaceholder(el.textContent === '')
+    onChange(text, mentions)
+  }, [onChange])
+
+  const filteredFolders = (query
     ? folders.filter((f) => f.name.toLowerCase().includes(query.toLowerCase()))
     : folders
   ).slice(0, 8)
 
-  // After any text edit, drop mentions whose @tag no longer appears.
-  function syncMentions(text: string): Mention[] {
-    return mentions.filter((m) => text.includes(`@${tagFromName(m.name)}`))
-  }
-
-  function handleChange(e: ChangeEvent<HTMLTextAreaElement>) {
-    const newText = e.target.value
-    const cursor = e.target.selectionStart
-    const before = newText.slice(0, cursor)
-    const atIdx = before.lastIndexOf('@')
-    const hasSpaceAfterAt = atIdx >= 0 && /\s/.test(before.slice(atIdx + 1))
-    if (atIdx >= 0 && !hasSpaceAfterAt) {
-      setQuery(before.slice(atIdx + 1))
+  // Input handler — detects @query and shows the dropdown, then emits the
+  // serialized value.
+  const handleInput = () => {
+    const q = findActiveAtQuery()
+    if (q) {
+      setQuery(q.query)
       setOpen(true)
       setHi(0)
     } else {
       setOpen(false)
     }
-    onChange(newText, syncMentions(newText))
+    emit()
   }
 
-  function pickFolder(folder: MentionFolder) {
-    const ta = textareaRef.current
-    if (!ta) return
-    const cursor = ta.selectionStart
-    const before = value.slice(0, cursor)
-    const atIdx = before.lastIndexOf('@')
-    setPicker({
-      folder,
-      // All selected by default; user can fine-tune via the popover.
-      selected: new Set(folder.assets.map((a) => a.id)),
-      insertAt: atIdx >= 0 ? atIdx : cursor,
-      insertEnd: cursor,
-    })
+  function insertChipAtCursor(folder: MentionFolder, selected: Set<string>) {
+    const q = findActiveAtQuery()
+    const el = editorRef.current
+    if (!el) return
+
+    if (q) {
+      // Replace the @query in the text node with a chip + trailing space.
+      const before = q.textNode.data.slice(0, q.atOffset)
+      const after = q.textNode.data.slice(q.atOffset + 1 + q.query.length)
+      const parent = q.textNode.parentNode
+      if (!parent) return
+      // Split: text-before | chip | text-after (with leading space if missing)
+      const chip = makeChipElement(folder, Array.from(selected), document)
+      const afterText = after.startsWith(' ') ? after : ` ${after}`
+
+      parent.insertBefore(document.createTextNode(before), q.textNode)
+      parent.insertBefore(chip, q.textNode)
+      parent.insertBefore(document.createTextNode(afterText), q.textNode)
+      parent.removeChild(q.textNode)
+
+      // Place caret right after the inserted chip's trailing space.
+      const inserted = chip.nextSibling
+      if (inserted) placeCaretAfter(inserted)
+    } else {
+      // No @query (user clicked the dropdown without typing) — just append
+      // at the end of the editor.
+      const chip = makeChipElement(folder, Array.from(selected), document)
+      const space = document.createTextNode(' ')
+      el.appendChild(chip)
+      el.appendChild(space)
+      placeCaretAfter(space)
+    }
+
     setOpen(false)
+    setQuery('')
+    emit()
   }
 
-  function commitPick() {
+  function commitPicker() {
     if (!picker) return
-    const { folder, selected, insertAt, insertEnd } = picker
-    const tag = `@${tagFromName(folder.name)}`
-    const newText = value.slice(0, insertAt) + tag + ' ' + value.slice(insertEnd)
-    const newMentions: Mention[] = [
-      ...mentions.filter((m) => m.folderId !== folder.id),
-      { folderId: folder.id, name: folder.name, selectedAssetIds: Array.from(selected) },
-    ]
-    onChange(newText, newMentions)
-    setPicker(null)
-    setTimeout(() => {
-      const ta = textareaRef.current
-      if (!ta) return
-      const pos = insertAt + tag.length + 1
-      ta.selectionStart = ta.selectionEnd = pos
-      ta.focus()
-    })
-  }
-
-  function editExistingMention(m: Mention) {
-    const folder = folders.find((f) => f.id === m.folderId)
+    const folder = folders.find((f) => f.id === picker.folderId)
     if (!folder) return
-    setPicker({
-      folder,
-      selected: new Set(m.selectedAssetIds),
-      // No text replacement needed — we'll patch the mention in place.
-      insertAt: -1,
-      insertEnd: -1,
-    })
-  }
-
-  function commitEdit() {
-    if (!picker || picker.insertAt !== -1) return commitPick()
-    const newMentions = mentions.map((m) =>
-      m.folderId === picker.folder.id ? { ...m, selectedAssetIds: Array.from(picker.selected) } : m,
-    )
-    onChange(value, newMentions)
+    // Update the chip in place if it's already in the editor — otherwise
+    // insert it.
+    const el = editorRef.current
+    const chip = el?.querySelector<HTMLElement>(`[data-mention="1"][data-folder-id="${folder.id}"]`)
+    if (chip) {
+      chip.dataset.assetIds = Array.from(picker.selected).join(',')
+      emit()
+      setPicker(null)
+      setPopover(null)
+      return
+    }
+    insertChipAtCursor(folder, picker.selected)
     setPicker(null)
+    setPopover(null)
   }
 
-  function removeMention(m: Mention) {
-    const tag = `@${tagFromName(m.name)}`
-    // Strip every occurrence of the tag (and a trailing space if present)
-    // and collapse the resulting double-spaces.
-    const cleaned = value
-      .split(new RegExp(`${tag}\\s?`, 'g'))
-      .join('')
-      .replace(/[ \t]{2,}/g, ' ')
-    onChange(cleaned, mentions.filter((x) => x.folderId !== m.folderId))
+  function removeChip(folderId: string) {
+    const el = editorRef.current
+    if (!el) return
+    el.querySelectorAll<HTMLElement>(`[data-mention="1"][data-folder-id="${folderId}"]`).forEach((c) => {
+      // Also nuke a single leading/trailing space so we don't leave a gap.
+      const next = c.nextSibling
+      if (next?.nodeType === Node.TEXT_NODE) {
+        const t = next as Text
+        if (t.data.startsWith(' ')) t.data = t.data.slice(1)
+      }
+      c.remove()
+    })
+    setPopover(null)
+    setPicker(null)
+    emit()
   }
 
-  function handleKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
+  function handleKeyDown(e: ReactKeyboardEvent<HTMLDivElement>) {
     if (!open) return
     if (e.key === 'ArrowDown') {
       e.preventDefault()
-      setHi((i) => (matches.length ? (i + 1) % matches.length : 0))
+      setHi((i) => (filteredFolders.length ? (i + 1) % filteredFolders.length : 0))
     } else if (e.key === 'ArrowUp') {
       e.preventDefault()
-      setHi((i) => (matches.length ? (i - 1 + matches.length) % matches.length : 0))
+      setHi((i) => (filteredFolders.length ? (i - 1 + filteredFolders.length) % filteredFolders.length : 0))
     } else if (e.key === 'Enter' || e.key === 'Tab') {
-      if (matches[hi]) {
+      const folder = filteredFolders[hi]
+      if (folder) {
         e.preventDefault()
-        pickFolder(matches[hi])
+        insertChipAtCursor(folder, new Set(folder.assets.map((a) => a.id)))
       }
     } else if (e.key === 'Escape') {
       setOpen(false)
     }
   }
 
-  // Asset picker modal — portal'd to body so it isn't clipped by React Flow's
-  // transformed node container.
-  const pickerModal = picker && typeof document !== 'undefined'
-    ? createPortal(
-        <div
-          className="fixed inset-0 z-[120] flex items-center justify-center bg-black/70 backdrop-blur-sm"
-          onClick={() => setPicker(null)}
-        >
+  // Click handler on the editor — if the user clicked a chip, open its
+  // hover popover. (We do this on click instead of true hover so it sticks.)
+  function handleClick(e: React.MouseEvent<HTMLDivElement>) {
+    const target = e.target as HTMLElement
+    const chip = target.closest<HTMLElement>('[data-mention="1"]')
+    if (chip) {
+      e.preventDefault()
+      e.stopPropagation()
+      setPopover({ anchor: chip, folderId: chip.dataset.folderId || '' })
+    } else {
+      setPopover(null)
+    }
+  }
+
+  // Close popover on outside click. (Click on chip is handled above.)
+  useEffect(() => {
+    if (!popover) return
+    const onDoc = (ev: MouseEvent) => {
+      const t = ev.target as HTMLElement
+      if (t.closest('[data-mention-popover]')) return
+      if (t.closest('[data-mention="1"]')) return
+      setPopover(null)
+    }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [popover])
+
+  // ---------------- Popover ----------------
+
+  const popoverEl = popover && typeof document !== 'undefined'
+    ? (() => {
+        const folder = folders.find((f) => f.id === popover.folderId)
+        if (!folder) return null
+        // Read the chip's current selectedAssetIds (so opening doesn't reset).
+        const ids = (popover.anchor.dataset.assetIds || '').split(',').filter(Boolean)
+        const rect = popover.anchor.getBoundingClientRect()
+        return createPortal(
           <div
-            className="w-[480px] max-w-[92vw] rounded-xl bg-[#0E1014] border border-white/10 p-4"
-            onClick={(e) => e.stopPropagation()}
+            data-mention-popover
+            className="fixed z-[70] w-64 rounded-lg border border-white/10 bg-[#0E1014] shadow-xl p-2"
+            style={{
+              left: Math.min(rect.left, window.innerWidth - 270),
+              top: Math.min(rect.bottom + 6, window.innerHeight - 200),
+            }}
             onMouseDown={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between mb-3">
-              <div>
-                <div className="text-sm font-medium text-foreground">{picker.folder.name}</div>
-                <div className="text-[11px] text-muted-foreground/60 capitalize">
-                  {picker.folder.type} · {picker.selected.size} of {picker.folder.assets.length} selected
+            <div className="flex items-center gap-2 px-2 py-1.5 mb-1 border-b border-white/5">
+              {(() => {
+                const Icon = ICONS[folder.type]
+                return <Icon size={12} className="text-accent" />
+              })()}
+              <span className="text-[12px] text-foreground/90 truncate flex-1">{folder.name}</span>
+              <span className="text-[10px] text-muted-foreground/60">
+                {ids.length}/{folder.assets.length}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setPicker({ folderId: folder.id, selected: new Set(ids) })
+              }}
+              className="w-full flex items-center gap-2 px-2 py-1.5 rounded hover:bg-white/5 text-left"
+            >
+              <PencilSimple size={11} className="text-muted-foreground" />
+              <span className="text-[11px] text-foreground/80">Choose assets</span>
+              <span className="ml-auto text-[10px] text-muted-foreground/60">{ids.length} selected</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => removeChip(folder.id)}
+              className="w-full flex items-center gap-2 px-2 py-1.5 rounded hover:bg-red-500/10 text-left text-red-400 mt-0.5"
+            >
+              <Trash size={11} />
+              <span className="text-[11px]">Remove mention</span>
+            </button>
+          </div>,
+          document.body,
+        )
+      })()
+    : null
+
+  // ---------------- Asset picker modal ----------------
+
+  const pickerModal = picker && typeof document !== 'undefined'
+    ? (() => {
+        const folder = folders.find((f) => f.id === picker.folderId)
+        if (!folder) return null
+        return createPortal(
+          <div
+            className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 backdrop-blur-sm"
+            onClick={() => setPicker(null)}
+          >
+            <div
+              className="w-[480px] max-w-[92vw] rounded-xl bg-[#0E1014] border border-white/10 p-4"
+              onClick={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <div className="text-sm font-medium text-foreground">{folder.name}</div>
+                  <div className="text-[11px] text-muted-foreground/60 capitalize">
+                    {folder.type} · {picker.selected.size} of {folder.assets.length} selected
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPicker((p) => p ? { ...p, selected: new Set(folder.assets.map((a) => a.id)) } : p)}
+                    className="text-[11px] text-accent hover:underline"
+                  >
+                    Select all
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPicker((p) => p ? { ...p, selected: new Set() } : p)}
+                    className="text-[11px] text-muted-foreground hover:text-foreground hover:underline"
+                  >
+                    Clear
+                  </button>
                 </div>
               </div>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() =>
-                    setPicker((p) =>
-                      p ? { ...p, selected: new Set(p.folder.assets.map((a) => a.id)) } : p,
+              {folder.assets.length === 0 ? (
+                <div className="py-12 text-center text-sm text-muted-foreground/50">
+                  This folder is empty — add assets to it first.
+                </div>
+              ) : (
+                <div className="grid grid-cols-4 gap-2 max-h-80 overflow-y-auto pr-1">
+                  {folder.assets.map((asset) => {
+                    const isSel = picker.selected.has(asset.id)
+                    return (
+                      <button
+                        type="button"
+                        key={asset.id}
+                        onClick={() =>
+                          setPicker((p) => {
+                            if (!p) return p
+                            const next = new Set(p.selected)
+                            if (next.has(asset.id)) next.delete(asset.id)
+                            else next.add(asset.id)
+                            return { ...p, selected: next }
+                          })
+                        }
+                        className={`relative aspect-square rounded-lg overflow-hidden border transition ${
+                          isSel ? 'border-accent ring-2 ring-accent/60' : 'border-white/10 hover:border-white/30'
+                        }`}
+                      >
+                        {asset.type === 'video' ? (
+                          <video src={asset.r2_url} className="w-full h-full object-cover" muted preload="metadata" />
+                        ) : (
+                          <img src={asset.r2_url} alt="" className="w-full h-full object-cover" loading="lazy" decoding="async" />
+                        )}
+                        {isSel && (
+                          <div className="absolute top-1 right-1 w-5 h-5 rounded-full bg-accent flex items-center justify-center">
+                            <Check size={11} weight="bold" className="text-white" />
+                          </div>
+                        )}
+                      </button>
                     )
-                  }
-                  className="text-[11px] text-accent hover:underline"
+                  })}
+                </div>
+              )}
+              <div className="flex justify-end gap-2 mt-4">
+                <button
+                  type="button"
+                  onClick={() => setPicker(null)}
+                  className="px-3 py-1.5 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-white/5"
                 >
-                  Select all
+                  Cancel
                 </button>
                 <button
                   type="button"
-                  onClick={() => setPicker((p) => (p ? { ...p, selected: new Set() } : p))}
-                  className="text-[11px] text-muted-foreground hover:text-foreground hover:underline"
+                  onClick={commitPicker}
+                  disabled={picker.selected.size === 0}
+                  className="px-3 py-1.5 rounded-md text-xs bg-accent text-accent-foreground hover:bg-accent/90 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
-                  Clear
+                  Use {picker.selected.size}
                 </button>
               </div>
             </div>
-            {picker.folder.assets.length === 0 ? (
-              <div className="py-12 text-center text-sm text-muted-foreground/50">
-                This folder is empty — add assets to it first.
-              </div>
-            ) : (
-              <div className="grid grid-cols-4 gap-2 max-h-80 overflow-y-auto pr-1">
-                {picker.folder.assets.map((asset) => {
-                  const isSel = picker.selected.has(asset.id)
-                  return (
-                    <button
-                      type="button"
-                      key={asset.id}
-                      onClick={() =>
-                        setPicker((p) => {
-                          if (!p) return p
-                          const next = new Set(p.selected)
-                          if (next.has(asset.id)) next.delete(asset.id)
-                          else next.add(asset.id)
-                          return { ...p, selected: next }
-                        })
-                      }
-                      className={`relative aspect-square rounded-lg overflow-hidden border transition ${
-                        isSel ? 'border-accent ring-2 ring-accent/60' : 'border-white/10 hover:border-white/30'
-                      }`}
-                    >
-                      {asset.type === 'video' ? (
-                        <video src={asset.r2_url} className="w-full h-full object-cover" muted preload="metadata" />
-                      ) : (
-                        <img
-                          src={asset.r2_url}
-                          alt=""
-                          className="w-full h-full object-cover"
-                          loading="lazy"
-                          decoding="async"
-                        />
-                      )}
-                      {isSel && (
-                        <div className="absolute top-1 right-1 w-5 h-5 rounded-full bg-accent flex items-center justify-center">
-                          <Check size={11} weight="bold" className="text-white" />
-                        </div>
-                      )}
-                    </button>
-                  )
-                })}
-              </div>
-            )}
-            <div className="flex justify-end gap-2 mt-4">
-              <button
-                type="button"
-                onClick={() => setPicker(null)}
-                className="px-3 py-1.5 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-white/5"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={commitEdit}
-                disabled={picker.selected.size === 0}
-                className="px-3 py-1.5 rounded-md text-xs bg-accent text-accent-foreground hover:bg-accent/90 disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                Use {picker.selected.size}
-              </button>
-            </div>
-          </div>
-        </div>,
-        document.body,
-      )
+          </div>,
+          document.body,
+        )
+      })()
     : null
+
+  // ---------------- Render ----------------
+
+  const minH = `${Math.max(1, rows) * 1.4}em`
 
   return (
     <div className="relative">
-      <textarea
-        ref={textareaRef}
-        value={value}
-        onChange={handleChange}
-        onKeyDown={handleKeyDown}
-        placeholder={placeholder}
-        disabled={disabled}
-        rows={rows}
-        className={className}
-      />
+      <div className="relative">
+        {/* contentEditable surface. */}
+        <div
+          ref={editorRef}
+          contentEditable={!disabled}
+          suppressContentEditableWarning
+          onInput={handleInput}
+          onKeyDown={handleKeyDown}
+          onClick={handleClick}
+          onPaste={(e) => {
+            // Paste as plain text so users can't smuggle in arbitrary HTML.
+            e.preventDefault()
+            const t = e.clipboardData.getData('text/plain')
+            document.execCommand('insertText', false, t)
+          }}
+          className={`${className || ''} whitespace-pre-wrap break-words [&_*]:select-text`}
+          style={{ minHeight: minH, outline: 'none' }}
+          data-mention-editor
+        />
+        {/* Empty-state placeholder. The contentEditable div itself can't
+            host one natively, so we overlay a span. */}
+        {showPlaceholder && (
+          <div
+            className="absolute inset-0 px-0 py-0 pointer-events-none text-muted-foreground/40 select-none"
+            style={{ minHeight: minH }}
+          >
+            {placeholder}
+          </div>
+        )}
+      </div>
 
-      {/* Mention chips */}
-      {mentions.length > 0 && (
-        <div className="flex flex-wrap gap-1 mt-1.5">
-          {mentions.map((m) => {
-            const folder = folders.find((f) => f.id === m.folderId)
-            const type = folder?.type || 'general'
-            const Icon = ICONS[type]
-            const total = folder?.assets.length || 0
-            const sel = m.selectedAssetIds.length
-            return (
-              <span
-                key={m.folderId}
-                className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] border ${COLOR[type]}`}
-              >
-                <Icon size={10} weight="fill" />
-                <button
-                  type="button"
-                  onClick={() => editExistingMention(m)}
-                  className="hover:underline"
-                  title="Pick which assets to use"
-                >
-                  {m.name}
-                  {total > 0 && <span className="opacity-70"> ({sel}/{total})</span>}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => removeMention(m)}
-                  className="ml-0.5 hover:opacity-70"
-                  title="Remove mention"
-                >
-                  <X size={9} weight="bold" />
-                </button>
-              </span>
-            )
-          })}
-        </div>
-      )}
-
-      {/* Folder dropdown */}
-      {open && matches.length > 0 && (
+      {/* Folder suggestion dropdown */}
+      {open && filteredFolders.length > 0 && (
         <div className="absolute left-0 bottom-full mb-1 z-50 w-64 max-h-60 overflow-y-auto rounded-lg border border-white/10 bg-[#0E1014] py-1 shadow-xl">
-          {matches.map((f, i) => {
+          {filteredFolders.map((f, i) => {
             const Icon = ICONS[f.type]
             return (
               <button
                 key={f.id}
                 type="button"
-                onClick={() => pickFolder(f)}
+                onClick={() => insertChipAtCursor(f, new Set(f.assets.map((a) => a.id)))}
                 onMouseEnter={() => setHi(i)}
                 className={`w-full flex items-center gap-2 px-2 py-1.5 text-left ${
                   i === hi ? 'bg-white/10' : 'hover:bg-white/5'
@@ -393,16 +657,17 @@ export const MentionTextarea = forwardRef<MentionTextareaRef, Props>(function Me
         </div>
       )}
 
+      {popoverEl}
       {pickerModal}
     </div>
   )
 })
 
-// Resolve every folder-mention in a prompt + explicit mentions array into
-// the list of r2_urls that should be attached as references at generate
-// time. Local `mentions` (with a user-picked subset) take precedence; tags
-// that only appear in the text (e.g. forwarded by a prompt node) fall back
-// to "use all assets in the matched folder".
+// ---------------------------------------------------------------------------
+// Resolution helper used by image-node / video-node at generate time.
+// Unchanged contract from the previous implementation.
+// ---------------------------------------------------------------------------
+
 export function resolveMentionRefs(
   text: string,
   mentions: Mention[],
