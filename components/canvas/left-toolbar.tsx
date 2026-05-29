@@ -31,6 +31,8 @@ import {
   X,
   CaretDown,
   CaretRight,
+  CaretLeft,
+  PencilSimple,
   UploadSimple,
   Image as ImageIcon,
   DotsThree,
@@ -131,7 +133,16 @@ export function LeftToolbar({
   const [historyFilter, setHistoryFilter] = useState<'all' | 'image' | 'video' | 'uploads'>('all')
   const [historySearch, setHistorySearch] = useState('')
   const [selectedGenAsset, setSelectedGenAsset] = useState<GeneratedAsset | null>(null)
-  const [sidebarSection, setSidebarSection] = useState<'history' | 'uploads'>('history')
+  // What the expanded panel's main area is showing. The sidebar drives this.
+  type ExpandedView =
+    | { kind: 'history' }
+    | { kind: 'uploads' }
+    | { kind: 'category'; type: 'character' | 'prop' | 'location' | 'general' }
+    | { kind: 'folder'; folderId: string }
+  const [expandedView, setExpandedView] = useState<ExpandedView>({ kind: 'history' })
+  // Kept for back-compat with the existing header label switching.
+  const sidebarSection: 'history' | 'uploads' =
+    expandedView.kind === 'uploads' ? 'uploads' : 'history'
   const [expandedFolderSections, setExpandedFolderSections] = useState<Record<string, boolean>>({
     character: true,
     prop: true,
@@ -443,18 +454,18 @@ export function LeftToolbar({
                 feeds use the same filteredGenAssets list. */}
             <div className="flex-1 px-2 py-2 overflow-y-auto">
               <button
-                onClick={() => { setHistoryFilter('all'); setSidebarSection('history') }}
+                onClick={() => { setHistoryFilter('all'); setExpandedView({ kind: 'history' }); setSelectedGenAsset(null) }}
                 className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
-                  sidebarSection === 'history' ? 'bg-white/10 text-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-white/5'
+                  expandedView.kind === 'history' ? 'bg-white/10 text-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-white/5'
                 }`}
               >
                 <ClockCounterClockwise size={16} />
                 History
               </button>
               <button
-                onClick={() => { setHistoryFilter('uploads'); setSidebarSection('uploads') }}
+                onClick={() => { setHistoryFilter('uploads'); setExpandedView({ kind: 'uploads' }); setSelectedGenAsset(null) }}
                 className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
-                  sidebarSection === 'uploads' ? 'bg-white/10 text-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-white/5'
+                  expandedView.kind === 'uploads' ? 'bg-white/10 text-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-white/5'
                 }`}
               >
                 <UploadSimple size={16} />
@@ -478,17 +489,31 @@ export function LeftToolbar({
                   const Icon = t === 'character' ? User : t === 'prop' ? Package : t === 'location' ? MapPin : Folder
                   const label = t === 'character' ? 'Characters' : t === 'prop' ? 'Props' : t === 'location' ? 'Locations' : 'General'
                   const isOpen = expandedFolderSections[t]
+                  const isActive = expandedView.kind === 'category' && expandedView.type === t
                   return (
                     <div key={t}>
-                      <button
-                        onClick={() => setExpandedFolderSections(s => ({ ...s, [t]: !s[t] }))}
-                        className="w-full flex items-center gap-2 px-3 py-1.5 rounded-md hover:bg-white/5 transition-colors group"
-                      >
-                        {isOpen ? <CaretDown size={9} className="text-muted-foreground/60" /> : <CaretRight size={9} className="text-muted-foreground/60" />}
-                        <Icon size={12} className="text-accent" />
-                        <span className="text-[11px] text-foreground/80 group-hover:text-foreground tracking-wide flex-1 text-left">{label}</span>
-                        <span className="text-[10px] text-muted-foreground/50">{ofType.length}</span>
-                      </button>
+                      {/* Whole row navigates to the category overview. The
+                          caret zone (separate click target) just toggles
+                          inline expand without changing the view. */}
+                      <div className={`w-full flex items-center gap-2 px-3 py-1.5 rounded-md transition-colors group ${
+                        isActive ? 'bg-white/10' : 'hover:bg-white/5'
+                      }`}>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setExpandedFolderSections(s => ({ ...s, [t]: !s[t] })) }}
+                          className="text-muted-foreground/60 hover:text-foreground"
+                          aria-label={isOpen ? 'Collapse' : 'Expand'}
+                        >
+                          {isOpen ? <CaretDown size={9} /> : <CaretRight size={9} />}
+                        </button>
+                        <button
+                          onClick={() => { setExpandedView({ kind: 'category', type: t }); setSelectedGenAsset(null) }}
+                          className="flex-1 flex items-center gap-2 text-left"
+                        >
+                          <Icon size={12} className={isActive ? 'text-accent' : 'text-accent/80'} />
+                          <span className="text-[11px] text-foreground/80 group-hover:text-foreground tracking-wide flex-1">{label}</span>
+                          <span className="text-[10px] text-muted-foreground/50">{ofType.length}</span>
+                        </button>
+                      </div>
                       {isOpen && (
                         <div className="pl-2 mt-0.5 space-y-0.5">
                           {ofType.length === 0 ? (
@@ -496,30 +521,35 @@ export function LeftToolbar({
                               No {label.toLowerCase()} yet
                             </div>
                           ) : (
-                            ofType.map(f => (
-                              <button
-                                key={f.id}
-                                onClick={() => setEditingFolder(f)}
-                                className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-white/5 transition-colors text-left"
-                                title="Edit folder"
-                              >
-                                <div className="w-7 h-7 rounded overflow-hidden bg-card border border-border/30 shrink-0 flex items-center justify-center">
-                                  {f.assets[0]?.r2_url ? (
-                                    <img
-                                      src={f.assets[0].r2_url}
-                                      alt=""
-                                      className="w-full h-full object-cover"
-                                      loading="lazy"
-                                      decoding="async"
-                                    />
-                                  ) : (
-                                    <Icon size={11} className="text-muted-foreground/30" />
-                                  )}
-                                </div>
-                                <span className="flex-1 truncate text-[12px] text-foreground/80">{f.name}</span>
-                                <span className="text-[10px] text-muted-foreground/50 shrink-0">{f.assets.length}</span>
-                              </button>
-                            ))
+                            ofType.map(f => {
+                              const folderActive = expandedView.kind === 'folder' && expandedView.folderId === f.id
+                              return (
+                                <button
+                                  key={f.id}
+                                  onClick={() => { setExpandedView({ kind: 'folder', folderId: f.id }); setSelectedGenAsset(null) }}
+                                  className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md transition-colors text-left ${
+                                    folderActive ? 'bg-white/10' : 'hover:bg-white/5'
+                                  }`}
+                                  title="View folder"
+                                >
+                                  <div className="w-7 h-7 rounded overflow-hidden bg-card border border-border/30 shrink-0 flex items-center justify-center">
+                                    {f.assets[0]?.r2_url ? (
+                                      <img
+                                        src={f.assets[0].r2_url}
+                                        alt=""
+                                        className="w-full h-full object-cover"
+                                        loading="lazy"
+                                        decoding="async"
+                                      />
+                                    ) : (
+                                      <Icon size={11} className="text-muted-foreground/30" />
+                                    )}
+                                  </div>
+                                  <span className="flex-1 truncate text-[12px] text-foreground/80">{f.name}</span>
+                                  <span className="text-[10px] text-muted-foreground/50 shrink-0">{f.assets.length}</span>
+                                </button>
+                              )
+                            })
                           )}
                         </div>
                       )}
@@ -531,29 +561,60 @@ export function LeftToolbar({
           </div>
 
           {/* Main Content Area */}
+          {(() => {
+            const activeFolder = expandedView.kind === 'folder'
+              ? folders.find(f => f.id === expandedView.folderId) || null
+              : null
+            const activeCategory = expandedView.kind === 'category'
+              ? expandedView.type
+              : activeFolder ? activeFolder.type : null
+            const categoryLabel = activeCategory === 'character' ? 'Characters'
+              : activeCategory === 'prop' ? 'Props'
+              : activeCategory === 'location' ? 'Locations'
+              : activeCategory === 'general' ? 'General' : null
+            const headerTitle = activeFolder
+              ? activeFolder.name
+              : expandedView.kind === 'category' ? (categoryLabel || 'Folders')
+              : expandedView.kind === 'uploads' ? 'Uploads'
+              : 'History'
+            // Filter tabs only make sense for the history/uploads feed —
+            // folders + category overviews have nothing to filter by media type.
+            const showFilterTabs = expandedView.kind === 'history' || expandedView.kind === 'uploads'
+            return (
           <div className="flex-1 flex flex-col">
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-border/30 gap-4">
-              <div className="flex items-center gap-4">
-                <h2 className="text-lg font-semibold text-foreground">
-                  {sidebarSection === 'uploads' ? 'Uploads' : 'History'}
+              <div className="flex items-center gap-4 min-w-0">
+                {/* Breadcrumb back-to-category from a folder view */}
+                {activeFolder && categoryLabel && (
+                  <button
+                    onClick={() => setExpandedView({ kind: 'category', type: activeFolder.type })}
+                    className="flex items-center gap-1 text-xs text-muted-foreground/70 hover:text-foreground transition-colors"
+                  >
+                    <CaretLeft size={10} weight="bold" />
+                    {categoryLabel}
+                  </button>
+                )}
+                <h2 className="text-lg font-semibold text-foreground truncate">
+                  {headerTitle}
                 </h2>
-                {/* Filter tabs — same as compact view */}
-                <div className="flex gap-1">
-                  {(['all', 'image', 'video', 'uploads'] as const).map((filter) => (
-                    <button
-                      key={filter}
-                      onClick={() => setHistoryFilter(filter)}
-                      className={`px-3 py-1.5 rounded-md text-xs transition-colors ${
-                        historyFilter === filter
-                          ? 'bg-accent/20 text-accent'
-                          : 'text-muted-foreground hover:text-foreground hover:bg-white/5'
-                      }`}
-                    >
-                      {filter.charAt(0).toUpperCase() + filter.slice(1)}
-                    </button>
-                  ))}
-                </div>
+                {showFilterTabs && (
+                  <div className="flex gap-1">
+                    {(['all', 'image', 'video', 'uploads'] as const).map((filter) => (
+                      <button
+                        key={filter}
+                        onClick={() => setHistoryFilter(filter)}
+                        className={`px-3 py-1.5 rounded-md text-xs transition-colors ${
+                          historyFilter === filter
+                            ? 'bg-accent/20 text-accent'
+                            : 'text-muted-foreground hover:text-foreground hover:bg-white/5'
+                        }`}
+                      >
+                        {filter.charAt(0).toUpperCase() + filter.slice(1)}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
               <div className="flex items-center gap-3">
                 <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-input border border-border/50 w-64">
@@ -606,7 +667,168 @@ export function LeftToolbar({
 
             {/* Grid Area */}
             <div className="flex-1 overflow-y-auto p-6">
-              {loadingHistory ? (
+              {expandedView.kind === 'category' ? (() => {
+                // Category overview — grid of folder cards for this type.
+                const ofType = folders.filter(f => f.type === expandedView.type)
+                if (ofType.length === 0) {
+                  const TypeIcon = expandedView.type === 'character' ? User
+                    : expandedView.type === 'prop' ? Package
+                    : expandedView.type === 'location' ? MapPin : Folder
+                  return (
+                    <div className="flex flex-col items-center gap-4 py-24 text-center">
+                      <TypeIcon size={48} className="text-muted-foreground/30" />
+                      <span className="text-sm text-muted-foreground/50">
+                        No {(categoryLabel || '').toLowerCase()} yet
+                      </span>
+                      <button
+                        onClick={() => setCreatingFolderType(expandedView.kind === 'category' ? expandedView.type : null)}
+                        className="px-4 py-2 rounded-lg bg-accent/20 text-accent text-sm hover:bg-accent/30 transition-colors"
+                      >
+                        + New {expandedView.type === 'character' ? 'Character' : expandedView.type === 'prop' ? 'Prop' : expandedView.type === 'location' ? 'Location' : 'Folder'}
+                      </button>
+                    </div>
+                  )
+                }
+                return (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+                    {ofType.map(f => (
+                      <button
+                        key={f.id}
+                        onClick={() => setExpandedView({ kind: 'folder', folderId: f.id })}
+                        className="text-left rounded-xl overflow-hidden bg-card border border-border/30 hover:border-accent/50 transition-all group"
+                      >
+                        <div className="aspect-video bg-[#0D0F12] relative overflow-hidden">
+                          {f.assets[0]?.r2_url ? (
+                            <img
+                              src={f.assets[0].r2_url}
+                              alt=""
+                              className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-300"
+                              loading="lazy"
+                              decoding="async"
+                            />
+                          ) : (
+                            <div className="absolute inset-0 flex items-center justify-center text-muted-foreground/30">
+                              {(() => {
+                                const TypeIcon = f.type === 'character' ? User : f.type === 'prop' ? Package : f.type === 'location' ? MapPin : Folder
+                                return <TypeIcon size={40} />
+                              })()}
+                            </div>
+                          )}
+                        </div>
+                        <div className="px-4 py-3 border-t border-white/5 flex items-center justify-between">
+                          <div className="min-w-0">
+                            <div className="text-sm text-foreground truncate">{f.name}</div>
+                            <div className="text-[11px] text-muted-foreground/60">
+                              {f.assets.length} asset{f.assets.length !== 1 ? 's' : ''}
+                            </div>
+                          </div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )
+              })()
+              : expandedView.kind === 'folder' ? (() => {
+                // Folder detail view — metadata + edit button + asset grid.
+                if (!activeFolder) {
+                  return (
+                    <div className="flex flex-col items-center gap-3 py-24 text-center">
+                      <Folder size={48} className="text-muted-foreground/30" />
+                      <span className="text-sm text-muted-foreground/50">Folder not found</span>
+                    </div>
+                  )
+                }
+                const createdAt = (activeFolder as any).created_at as string | undefined
+                const updatedAt = (activeFolder as any).updated_at as string | undefined
+                return (
+                  <div>
+                    {/* Folder metadata strip */}
+                    <div className="flex flex-wrap items-center gap-x-6 gap-y-2 mb-6 text-xs text-muted-foreground/70">
+                      <div>
+                        <span className="text-muted-foreground/50">Assets:</span>{' '}
+                        <span className="text-foreground">{activeFolder.assets.length}</span>
+                      </div>
+                      {createdAt && (
+                        <div>
+                          <span className="text-muted-foreground/50">Created:</span>{' '}
+                          <span className="text-foreground">{formatDate(createdAt)}</span>
+                        </div>
+                      )}
+                      {updatedAt && (
+                        <div>
+                          <span className="text-muted-foreground/50">Updated:</span>{' '}
+                          <span className="text-foreground">{formatDate(updatedAt)}</span>
+                        </div>
+                      )}
+                      {activeFolder.description && (
+                        <div className="basis-full text-foreground/80 italic">{activeFolder.description}</div>
+                      )}
+                      <div className="ml-auto flex items-center gap-2">
+                        <button
+                          onClick={() => setEditingFolder(activeFolder)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-accent/15 hover:bg-accent/25 text-accent text-xs transition-colors"
+                          title="Add or remove assets, rename, edit description"
+                        >
+                          <PencilSimple size={11} weight="bold" />
+                          Edit folder
+                        </button>
+                      </div>
+                    </div>
+
+                    {activeFolder.assets.length === 0 ? (
+                      <div className="flex flex-col items-center gap-3 py-16 text-center">
+                        <Folder size={40} className="text-muted-foreground/30" />
+                        <span className="text-sm text-muted-foreground/50">No assets in this folder yet</span>
+                        <button
+                          onClick={() => setEditingFolder(activeFolder)}
+                          className="text-xs text-accent hover:underline"
+                        >
+                          Add some via the editor →
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 gap-3">
+                        {activeFolder.assets.map(a => {
+                          // Try to find the full asset in generatedAssets so
+                          // clicking opens the existing detail panel + delete
+                          // flow. Falls back to a basic open if the asset
+                          // isn't in this project's loaded history.
+                          const full = generatedAssets.find(g => g.id === a.id)
+                          return (
+                            <button
+                              key={a.id}
+                              onClick={() => {
+                                if (full) setSelectedGenAsset(full)
+                              }}
+                              draggable
+                              onDragStart={(e) => {
+                                e.dataTransfer.setData('asset', JSON.stringify({
+                                  id: a.id, r2_url: a.r2_url, type: a.type, prompt: a.prompt,
+                                }))
+                                e.dataTransfer.effectAllowed = 'copy'
+                              }}
+                              className="relative aspect-square rounded-lg overflow-hidden bg-card border border-border/30 hover:border-accent/50 transition-all hover:scale-[1.02] group cursor-grab active:cursor-grabbing"
+                              title="Click to view · drag to canvas"
+                            >
+                              {a.type === 'video' ? (
+                                <video src={a.r2_url} className="w-full h-full object-cover" muted preload="metadata" />
+                              ) : (
+                                <img src={a.r2_url} alt="" className="w-full h-full object-cover" loading="lazy" decoding="async" />
+                              )}
+                              {a.type === 'video' && (
+                                <div className="absolute top-2 left-2 w-5 h-5 rounded bg-black/60 flex items-center justify-center">
+                                  <VideoCamera size={12} className="text-white" />
+                                </div>
+                              )}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )
+              })()
+              : loadingHistory ? (
                 <div className="flex items-center justify-center py-24">
                   <span className="text-sm font-mono text-muted-foreground/50">Loading...</span>
                 </div>
@@ -673,6 +895,8 @@ export function LeftToolbar({
               )}
             </div>
           </div>
+            )
+          })()}
 
           {/* Right Detail Panel */}
           <div className="w-72 border-l border-border/30 flex flex-col bg-card">
