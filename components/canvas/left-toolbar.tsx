@@ -781,12 +781,63 @@ export function LeftToolbar({
                           : activeFolder.type === 'prop' ? 'Prop'
                           : activeFolder.type === 'location' ? 'Location'
                           : 'General'
+                        const inSelect = selectMode
+                        const folderAssetIds = activeFolder.assets.map(a => a.id)
+                        const selectedInFolder = folderAssetIds.filter(id => selectedAssetIds.has(id))
                         return (
                           <div className="ml-auto flex items-center gap-2">
+                            {/* Quick-select: click thumbnails to toggle,
+                                bulk-delete from the action bar at the
+                                bottom of the panel. Edit {Type} still
+                                opens the full modal for name / description
+                                changes. */}
+                            {!inSelect ? (
+                              <button
+                                onClick={() => {
+                                  setSelectMode(true)
+                                  // Reset previous selections so we don't
+                                  // accidentally bulk-delete history assets
+                                  // when entering select-in-folder mode.
+                                  setSelectedAssetIds(new Set())
+                                  setSelectedGenAsset(null)
+                                }}
+                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-white/5 hover:bg-white/10 text-foreground text-xs transition-colors"
+                                title="Pick multiple assets to delete or rearrange"
+                              >
+                                <Check size={11} weight="bold" />
+                                Select
+                              </button>
+                            ) : (
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs text-muted-foreground/70">
+                                  {selectedInFolder.length} selected
+                                </span>
+                                <button
+                                  onClick={() => setSelectedAssetIds(new Set(folderAssetIds))}
+                                  className="px-3 py-1.5 rounded-md text-xs text-foreground hover:bg-white/5 transition-colors"
+                                >
+                                  Select all
+                                </button>
+                                <button
+                                  onClick={() => setBulkDeleteOpen(true)}
+                                  disabled={selectedInFolder.length === 0}
+                                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                                >
+                                  <Trash size={12} />
+                                  Delete
+                                </button>
+                                <button
+                                  onClick={() => { setSelectMode(false); setSelectedAssetIds(new Set()) }}
+                                  className="px-3 py-1.5 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-white/5 transition-colors"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            )}
                             <button
                               onClick={() => setEditingFolder(activeFolder)}
                               className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-accent/15 hover:bg-accent/25 text-accent text-xs transition-colors"
-                              title="Add or remove assets, rename, edit description"
+                              title="Rename, edit description, add/remove assets"
                             >
                               <PencilSimple size={11} weight="bold" />
                               Edit {typeLabel}
@@ -838,21 +889,28 @@ export function LeftToolbar({
                           // flow. Falls back to a basic open if the asset
                           // isn't in this project's loaded history.
                           const full = generatedAssets.find(g => g.id === a.id)
+                          const isSel = selectedAssetIds.has(a.id)
                           return (
                             <button
                               key={a.id}
                               onClick={() => {
-                                if (full) setSelectedGenAsset(full)
+                                if (selectMode) toggleAssetSelected(a.id)
+                                else if (full) setSelectedGenAsset(full)
                               }}
-                              draggable
+                              draggable={!selectMode}
                               onDragStart={(e) => {
+                                if (selectMode) { e.preventDefault(); return }
                                 e.dataTransfer.setData('asset', JSON.stringify({
                                   id: a.id, r2_url: a.r2_url, type: a.type, prompt: a.prompt,
                                 }))
                                 e.dataTransfer.effectAllowed = 'copy'
                               }}
-                              className="relative aspect-square rounded-lg overflow-hidden bg-card border border-border/30 hover:border-accent/50 transition-all hover:scale-[1.02] group cursor-grab active:cursor-grabbing"
-                              title="Click to view · drag to canvas"
+                              className={`relative aspect-square rounded-lg overflow-hidden bg-card border transition-all group ${
+                                selectMode
+                                  ? (isSel ? 'border-accent ring-2 ring-accent/60 cursor-pointer' : 'border-border/30 hover:border-accent/50 cursor-pointer')
+                                  : 'border-border/30 hover:border-accent/50 hover:scale-[1.02] cursor-grab active:cursor-grabbing'
+                              }`}
+                              title={selectMode ? 'Click to toggle selection' : 'Click to view · drag to canvas'}
                             >
                               {a.type === 'video' ? (
                                 <video src={a.r2_url} className="w-full h-full object-cover" muted preload="metadata" />
@@ -862,6 +920,15 @@ export function LeftToolbar({
                               {a.type === 'video' && (
                                 <div className="absolute top-2 left-2 w-5 h-5 rounded bg-black/60 flex items-center justify-center">
                                   <VideoCamera size={12} className="text-white" />
+                                </div>
+                              )}
+                              {selectMode && (
+                                <div className={`absolute top-2 right-2 w-6 h-6 rounded-full flex items-center justify-center border transition-colors ${
+                                  isSel
+                                    ? 'bg-accent border-accent text-white'
+                                    : 'bg-black/60 border-white/30 text-transparent'
+                                }`}>
+                                  <Check size={14} weight="bold" />
                                 </div>
                               )}
                             </button>

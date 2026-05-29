@@ -336,7 +336,11 @@ export function AddToFolderModal({ open, onClose, folderType, projectId, assetId
         // overwrite the base `fixed` and the dialog would lose its centered
         // viewport positioning. `fixed` is already a positioning context
         // for the absolute-positioned drop overlay below.
-        className="bg-[#1A1D21] border-white/10 max-w-md max-h-[85vh] overflow-y-auto"
+        //
+        // z-[60] sits this modal above the expanded assets panel
+        // (z-50), which is otherwise the same layer and was hiding the
+        // modal entirely when opened from inside the folder detail view.
+        className="bg-[#1A1D21] border-white/10 max-w-md max-h-[85vh] overflow-y-auto z-[60]"
         // Block every Radix auto-dismiss path. Each of these was
         // independently firing in the wild and closing the dialog:
         //   - pointerdown outside (starting a drag from the sidebar)
