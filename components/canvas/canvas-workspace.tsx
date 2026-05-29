@@ -695,9 +695,21 @@ function CanvasInner({ projectId }: { projectId: string }) {
 
   // Keyboard shortcuts
   useEffect(() => {
+    function isEditingText(target: EventTarget | null): boolean {
+      const el = target as HTMLElement | null
+      if (!el || !el.tagName) return false
+      if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') return true
+      // contentEditable elements (the mention-textarea editor surface) have
+      // tagName 'DIV', so the older INPUT/TEXTAREA check missed them — that's
+      // why Backspace inside a prompt was bubbling up and deleting the node.
+      if (el.isContentEditable) return true
+      // Also bail if we're inside one (e.g. an inline chip inside the editor).
+      if (el.closest?.('[contenteditable="true"]')) return true
+      return false
+    }
+
     function onKeyDown(e: KeyboardEvent) {
-      const tag = (e.target as HTMLElement).tagName
-      if (tag === 'INPUT' || tag === 'TEXTAREA') return
+      if (isEditingText(e.target)) return
 
       const ctrl = e.ctrlKey || e.metaKey
 
@@ -740,16 +752,18 @@ function CanvasInner({ projectId }: { projectId: string }) {
       }
       if (ctrl && e.key === 'd') { e.preventDefault(); duplicateSelected() }
 
-      // Delete
-      if (e.key === 'Backspace' || e.key === 'Delete') deleteSelected()
+      // Delete — only the dedicated Delete key (NOT Backspace). Backspace
+      // is too easy to hit by accident while editing prompts and was
+      // wiping nodes; users can still use the toolbar's trash button or
+      // the Delete key for explicit removal.
+      if (e.key === 'Delete') deleteSelected()
 
       if (e.key === 'Escape') setContextMenu(null)
     }
 
     // Paste — image from system clipboard takes priority; falls back to node clipboard
     function onPaste(e: ClipboardEvent) {
-      const tag = (e.target as HTMLElement).tagName
-      if (tag === 'INPUT' || tag === 'TEXTAREA') return
+      if (isEditingText(e.target)) return
       const items = Array.from(e.clipboardData?.items ?? [])
       const imageItem = items.find(i => i.type.startsWith('image/'))
       if (imageItem) {
