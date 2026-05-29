@@ -61,10 +61,12 @@ const COLOR: Record<FolderType, string> = {
   general: 'bg-yellow-500/20 text-yellow-200 border-yellow-400/40',
 }
 
-// Folder names can have spaces; the @tag in the prompt text can't. Use
-// dashes as the on-the-wire convention.
+// Folder names can have spaces, apostrophes, accents, etc.; the @tag in
+// the prompt text must be limited to chars our regex picker can match
+// (\w + dashes). Collapse any run of non-word chars to a single dash and
+// trim leading/trailing dashes. "Elias' Horse" → "Elias-Horse".
 export function tagFromName(name: string): string {
-  return name.replace(/\s+/g, '-')
+  return name.replace(/[^\w]+/g, '-').replace(/^-+|-+$/g, '')
 }
 
 // ---------------------------------------------------------------------------
@@ -154,15 +156,21 @@ function renderInitial(
     if (match.index > lastIndex) {
       el.appendChild(document.createTextNode(value.slice(lastIndex, match.index)))
     }
-    const tag = match[1].replace(/-/g, ' ').toLowerCase()
+    // Compare on sanitized tag (lowercased), since the on-the-wire @tag
+    // collapses spaces/apostrophes/etc. into dashes. "Elias' Horse" and
+    // "Elias Horse" both serialize to "Elias-Horse" and must round-trip.
+    const tag = match[1].toLowerCase()
+    const mentionMatch = mentions.find(
+      (m) => tagFromName(m.name).toLowerCase() === tag,
+    )
     const folder =
-      folders.find((f) => f.name.toLowerCase() === tag) ||
-      // Allow rendering a chip for a mention whose folder hasn't been loaded
-      // yet — pull the name from the mention list if any matches.
-      (mentions.find((m) => m.name.toLowerCase() === tag)
+      folders.find((f) => tagFromName(f.name).toLowerCase() === tag) ||
+      // Allow rendering a chip for a mention whose folder hasn't been
+      // loaded yet — pull the name from the mention list if any matches.
+      (mentionMatch
         ? {
-            id: mentions.find((m) => m.name.toLowerCase() === tag)!.folderId,
-            name: mentions.find((m) => m.name.toLowerCase() === tag)!.name,
+            id: mentionMatch.folderId,
+            name: mentionMatch.name,
             type: 'general' as FolderType,
           }
         : null)
@@ -256,18 +264,22 @@ export const MentionTextarea = forwardRef<MentionTextareaRef, Props>(function Me
   // mounted, the user types and we emit onChange, but we don't sync back
   // from props — that would clobber the caret on every keystroke.
   const lastSerialized = useRef<string>('')
+  const lastFoldersLen = useRef<number>(0)
   useEffect(() => {
     const el = editorRef.current
     if (!el) return
     // Skip if the incoming value matches what we last emitted (parent
     // bounced our own update back). This stops the editor from being
     // re-rendered on every keystroke.
-    if (value === lastSerialized.current) return
+    // EXCEPT: if folders just resolved from empty, re-render so chips that
+    // were drawn with the type='general' fallback (because no folder was
+    // available at mount) get upgraded to their proper type/colour.
+    const foldersJustResolved = lastFoldersLen.current === 0 && folders.length > 0
+    if (value === lastSerialized.current && !foldersJustResolved) return
     renderInitial(el, value, mentions, folders)
     setShowPlaceholder(el.textContent === '')
     lastSerialized.current = value
-    // We deliberately depend on folders too so chips can pick up their
-    // proper type/colour once the SWR fetch resolves.
+    lastFoldersLen.current = folders.length
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value, mentions.length, folders.length])
 
@@ -631,8 +643,10 @@ export function resolveMentionRefs(
   const tagRe = /@([\w-]+)/g
   let match: RegExpExecArray | null
   while ((match = tagRe.exec(text))) {
-    const tag = match[1].replace(/-/g, ' ').toLowerCase()
-    const folder = folders.find((f) => f.name.toLowerCase() === tag)
+    const tag = match[1].toLowerCase()
+    const folder = folders.find(
+      (f) => tagFromName(f.name).toLowerCase() === tag,
+    )
     if (folder && !seen.has(folder.id)) {
       seen.add(folder.id)
       for (const asset of folder.assets) {
