@@ -588,7 +588,11 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
             position: { x: baseX + col * colGap, y: baseY + row * rowGap },
             data: {
               ...restData,
-              prompt: compiledPrompt,
+              // Local prompt only — incoming edges are mirrored below so
+              // the upstream chain still feeds in at generate time.
+              // Storing the merged compiledPrompt here would double-apply
+              // the upstream every cycle and the text would grow.
+              prompt,
               pendingRequestId: res.request_id,
               pendingFalEndpoint: res.model || currentModel.falModel,
             },

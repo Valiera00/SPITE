@@ -597,7 +597,14 @@ function ImageNodeImpl({ id, data, selected }: NodeProps) {
             position: { x: baseX + col * colGap, y: baseY + row * rowGap },
             data: {
               ...restData,
-              prompt: compiledPrompt,
+              // Duplicates carry this node's LOCAL prompt only — the
+              // upstream chain is preserved by mirroring incoming edges
+              // below, so the next generation merges upstream + local
+              // again exactly like the original. Storing the merged
+              // compiledPrompt here would double-apply the upstream
+              // (upstream + (upstream + local) + …) and the text would
+              // grow every cycle.
+              prompt,
               pendingRequestId: res.request_id,
               pendingFalEndpoint: res.model || currentModel.falModel,
             },
