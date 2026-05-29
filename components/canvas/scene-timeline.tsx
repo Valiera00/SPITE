@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef } from 'react'
-import { Plus, CaretDown, Play, CaretLeft, CaretRight, Image as ImageIcon, ArrowsOutSimple, ArrowsInSimple } from '@phosphor-icons/react'
+import { Plus, CaretDown, Play, CaretLeft, CaretRight, Image as ImageIcon } from '@phosphor-icons/react'
 
 export interface Shot {
   id: string
@@ -209,7 +209,9 @@ export function SceneTimeline({
                   )}
                 </div>
 
-                {/* Collapse / expand toggle (per scene). Click stops
+                {/* Collapse / expand toggle (per scene). Arrow points
+                    LEFT when expanded ("pull the filmstrip closed") and
+                    RIGHT when collapsed ("open it up"). Click stops
                     propagation so it doesn't also change the active scene. */}
                 <button
                   onClick={(e) => {
@@ -220,7 +222,7 @@ export function SceneTimeline({
                   aria-label={isCollapsed ? 'Expand scene' : 'Collapse scene'}
                   title={isCollapsed ? 'Expand scene' : 'Collapse scene'}
                 >
-                  {isCollapsed ? <ArrowsOutSimple size={13} weight="bold" /> : <ArrowsInSimple size={13} weight="bold" />}
+                  {isCollapsed ? <CaretRight size={14} weight="bold" /> : <CaretLeft size={14} weight="bold" />}
                 </button>
 
                 {/* Add shot button */}
