@@ -341,6 +341,18 @@ export function LeftToolbar({
     }
   }
 
+  // Click a folder in the compact assets panel or the category drawer →
+  // open the full-screen expanded panel pointed straight at that folder.
+  const openExpandedFolder = (folderId: string) => {
+    setHistoryOpen(true)
+    setHistoryExpanded(true)
+    setExpandedView({ kind: 'folder', folderId })
+    setSelectedGenAsset(null)
+    onShowHistoryChange?.(true)
+    // Close the small category drawer if it was open.
+    setExpanded(false)
+  }
+
   const handleToggleHistory = () => {
     const newState = !historyOpen
     setHistoryOpen(newState)
@@ -1173,7 +1185,7 @@ export function LeftToolbar({
                           {characterFolders.map(folder => (
                             <button
                               key={folder.id}
-                              onClick={() => setEditingFolder(folder)}
+                              onClick={() => openExpandedFolder(folder.id)}
                               className="text-left p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors"
                             >
                               <div className="flex gap-1 mb-1.5">
@@ -1214,7 +1226,7 @@ export function LeftToolbar({
                           {propFolders.map(folder => (
                             <button
                               key={folder.id}
-                              onClick={() => setEditingFolder(folder)}
+                              onClick={() => openExpandedFolder(folder.id)}
                               className="text-left p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors"
                             >
                               <div className="flex gap-1 mb-1.5">
@@ -1255,7 +1267,7 @@ export function LeftToolbar({
                           {locationFolders.map(folder => (
                             <button
                               key={folder.id}
-                              onClick={() => setEditingFolder(folder)}
+                              onClick={() => openExpandedFolder(folder.id)}
                               className="text-left p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors"
                             >
                               <div className="flex gap-1 mb-1.5">
@@ -1685,9 +1697,13 @@ export function LeftToolbar({
                     const isOpen = expandedFolderId === folder.id
                     return (
                       <div key={folder.id} className="rounded-lg overflow-hidden">
-                        {/* Folder row — clicking toggles inline expand. The
-                            whole row is also draggable: dropping it on the
-                            canvas spawns one reference node per asset. */}
+                        {/* Folder row — clicking opens the expanded assets
+                            panel pointed at this folder. The caret on the
+                            left is a separate click target that just
+                            toggles the inline preview without leaving the
+                            current panel. The whole row is also draggable:
+                            dropping it on the canvas spawns one reference
+                            node per asset. */}
                         <div
                           draggable
                           onDragStart={(e) => {
@@ -1699,12 +1715,17 @@ export function LeftToolbar({
                             }))
                             e.dataTransfer.effectAllowed = 'copy'
                           }}
-                          onClick={() => setExpandedFolderId(isOpen ? null : folder.id)}
+                          onClick={() => openExpandedFolder(folder.id)}
                           className="w-full flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-white/5 transition-colors group cursor-pointer"
                         >
-                          {isOpen
-                            ? <CaretDown size={9} className="text-muted-foreground/60 shrink-0" />
-                            : <CaretRight size={9} className="text-muted-foreground/60 shrink-0" />}
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); setExpandedFolderId(isOpen ? null : folder.id) }}
+                            className="shrink-0 text-muted-foreground/60 hover:text-foreground"
+                            aria-label={isOpen ? 'Collapse preview' : 'Expand preview'}
+                          >
+                            {isOpen ? <CaretDown size={9} /> : <CaretRight size={9} />}
+                          </button>
                           <div className="w-10 h-10 rounded overflow-hidden shrink-0 bg-card border border-border/30">
                             {folder.assets[0]?.r2_url ? (
                               <img src={folder.assets[0].r2_url} alt="" className="w-full h-full object-cover" loading="lazy" decoding="async" />
