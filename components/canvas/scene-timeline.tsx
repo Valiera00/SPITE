@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef } from 'react'
-import { Plus, CaretDown, Play, CaretLeft, CaretRight, Check, Image as ImageIcon } from '@phosphor-icons/react'
+import { Plus, CaretDown, Play, CaretLeft, CaretRight, Image as ImageIcon, ArrowsOutSimple, ArrowsInSimple } from '@phosphor-icons/react'
 
 export interface Shot {
   id: string
@@ -38,13 +38,24 @@ export function SceneTimeline({
   const scrollRef = useRef<HTMLDivElement>(null)
   const [draggedShot, setDraggedShot] = useState<{ sceneId: string; shotId: string; index: number } | null>(null)
   const [dropTarget, setDropTarget] = useState<{ sceneId: string; index: number } | null>(null)
+  // Scene tiles can be independently collapsed to just their first shot.
+  // The whole bar always stays visible — toggle is per-scene.
+  const [collapsedScenes, setCollapsedScenes] = useState<Set<string>>(new Set())
+  const toggleCollapsed = (sceneId: string) => {
+    setCollapsedScenes((prev) => {
+      const next = new Set(prev)
+      if (next.has(sceneId)) next.delete(sceneId)
+      else next.add(sceneId)
+      return next
+    })
+  }
 
   const scrollLeft = () => {
-    scrollRef.current?.scrollBy({ left: -200, behavior: 'smooth' })
+    scrollRef.current?.scrollBy({ left: -240, behavior: 'smooth' })
   }
 
   const scrollRight = () => {
-    scrollRef.current?.scrollBy({ left: 200, behavior: 'smooth' })
+    scrollRef.current?.scrollBy({ left: 240, behavior: 'smooth' })
   }
 
   const handleDragStart = (sceneId: string, shotId: string, index: number) => {
@@ -79,51 +90,61 @@ export function SceneTimeline({
         {/* Scroll left button */}
         <button
           onClick={scrollLeft}
-          className="shrink-0 w-6 h-full flex items-center justify-center text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+          className="shrink-0 w-8 h-full flex items-center justify-center text-muted-foreground/60 hover:text-foreground hover:bg-white/5 transition-colors"
+          aria-label="Scroll left"
         >
-          <CaretLeft size={12} weight="bold" />
+          <CaretLeft size={16} weight="bold" />
         </button>
 
-        {/* Scrollable scene tabs */}
+        {/* Scrollable scene tabs — ~20% taller than before (h-20 → h-24) */}
         <div
           ref={scrollRef}
-          className="flex-1 flex items-stretch h-20 overflow-x-auto gap-1 px-1 py-2 scrollbar-hide"
+          className="flex-1 flex items-stretch h-24 overflow-x-auto gap-1.5 px-1 py-2 scrollbar-hide"
         >
           {scenes.map((scene) => {
             const isActive = scene.id === activeSceneId
             const sortedShots = [...scene.shots].sort((a, b) => a.order - b.order)
+            const isCollapsed = collapsedScenes.has(scene.id)
+            const realShots = sortedShots.filter((s) => s.nodeId)
+            // In collapsed mode show just the first real shot (or the first
+            // slot if there are no real shots yet) so the scene still gets
+            // a visual anchor instead of an empty rectangle.
+            const visibleShots = isCollapsed
+              ? sortedShots.slice(0, 1)
+              : sortedShots
 
             return (
               <div
                 key={scene.id}
                 onClick={() => onSceneChange(scene.id)}
                 className={`
-                  relative flex items-center gap-2 px-3 min-w-[160px] rounded-lg cursor-pointer transition-all
-                  ${isActive 
-                    ? 'bg-accent/10 border border-accent/40' 
+                  relative flex items-center gap-2.5 px-4 ${isCollapsed ? 'min-w-[140px]' : 'min-w-[200px]'} rounded-lg cursor-pointer transition-all
+                  ${isActive
+                    ? 'bg-accent/10 border border-accent/40'
                     : 'bg-card/30 border border-border/30 hover:bg-card/50 hover:border-border/50'}
                 `}
               >
                 {/* Scene label */}
-                <div className="flex flex-col gap-0.5 shrink-0 min-w-[60px]">
+                <div className="flex flex-col gap-0.5 shrink-0 min-w-[68px]">
                   <div className="flex items-center gap-1">
                     {isActive && <div className="w-1.5 h-1.5 rounded-full bg-accent" />}
-                    <span className={`text-[11px] font-mono ${isActive ? 'text-foreground' : 'text-muted-foreground/80'}`}>
+                    <span className={`text-[13px] font-mono ${isActive ? 'text-foreground' : 'text-muted-foreground/80'}`}>
                       {scene.name}
                     </span>
-                    <CaretDown size={8} className="text-muted-foreground/40" />
+                    <CaretDown size={10} className="text-muted-foreground/40" />
                   </div>
-                  <span className="text-[9px] font-mono text-muted-foreground/40 pl-2.5">
-                    {sortedShots.filter(s => s.nodeId).length} {sortedShots.filter(s => s.nodeId).length === 1 ? 'shot' : 'shots'}
+                  <span className="text-[11px] font-mono text-muted-foreground/40 pl-2.5">
+                    {realShots.length} {realShots.length === 1 ? 'shot' : 'shots'}
                   </span>
                 </div>
 
-                {/* Shot thumbnails filmstrip */}
-                <div className="flex items-center gap-1 overflow-hidden flex-1 py-1">
-                  {sortedShots.map((shot, index) => (
+                {/* Shot thumbnails filmstrip — scrolls horizontally when
+                    expanded and there are too many shots to fit. */}
+                <div className={`flex items-center gap-1.5 flex-1 py-1 ${isCollapsed ? 'overflow-hidden' : 'overflow-x-auto scrollbar-hide'}`}>
+                  {visibleShots.map((shot, index) => (
                     <div
                       key={shot.id}
-                      draggable={!!shot.nodeId}
+                      draggable={!isCollapsed && !!shot.nodeId}
                       onDragStart={() => shot.nodeId && handleDragStart(scene.id, shot.id, index)}
                       onDragOver={(e) => handleDragOver(e, scene.id, index)}
                       onDrop={(e) => handleDrop(e, scene.id, index)}
@@ -133,8 +154,8 @@ export function SceneTimeline({
                         if (shot.nodeId) onShotClick?.(scene.id, shot.id)
                       }}
                       className={`
-                        relative shrink-0 w-12 h-9 rounded overflow-hidden transition-all duration-150
-                        ${shot.nodeId ? 'cursor-grab active:cursor-grabbing' : 'cursor-default'}
+                        relative shrink-0 w-[58px] h-[44px] rounded overflow-hidden transition-all duration-150
+                        ${shot.nodeId && !isCollapsed ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'}
                         ${!shot.nodeId ? 'border border-dashed border-border/50 bg-card/20' : shot.thumbnail ? '' : 'bg-card border border-border/50'}
                         ${dropTarget?.sceneId === scene.id && dropTarget.index === index ? 'ring-2 ring-accent scale-105' : ''}
                       `}
@@ -148,36 +169,59 @@ export function SceneTimeline({
                         />
                       ) : !shot.nodeId ? (
                         <div className="w-full h-full flex flex-col items-center justify-center gap-0.5 text-muted-foreground/40">
-                          <ImageIcon size={12} />
-                          <span className="text-[7px] font-mono leading-none">{shot.order}</span>
+                          <ImageIcon size={14} />
+                          <span className="text-[9px] font-mono leading-none">{shot.order}</span>
                         </div>
                       ) : (
-                        <div className="w-full h-full flex items-center justify-center text-[8px] font-mono text-muted-foreground/40">
+                        <div className="w-full h-full flex items-center justify-center text-[10px] font-mono text-muted-foreground/40">
                           {shot.order}
                         </div>
                       )}
                       {/* Shot number badge for real shots with thumbnails */}
                       {shot.thumbnail && shot.nodeId && (
-                        <div className="absolute top-0.5 left-0.5 px-1 py-0.5 rounded bg-black/60 text-[7px] font-mono text-white/80">
+                        <div className="absolute top-0.5 left-0.5 px-1 py-0.5 rounded bg-black/60 text-[9px] font-mono text-white/80">
                           {shot.order}
                         </div>
                       )}
                       {/* Video indicator */}
                       {shot.hasVideo && (
-                        <div className="absolute bottom-0.5 right-0.5 w-3 h-3 rounded-full bg-accent/90 flex items-center justify-center">
-                          <Play size={6} weight="fill" className="text-white" />
+                        <div className="absolute bottom-0.5 right-0.5 w-3.5 h-3.5 rounded-full bg-accent/90 flex items-center justify-center">
+                          <Play size={7} weight="fill" className="text-white" />
                         </div>
                       )}
                     </div>
                   ))}
-                  
+
+                  {/* When collapsed and there's more than one shot, show
+                      a small "+N" pill so the user knows there's more
+                      hidden in this scene. */}
+                  {isCollapsed && sortedShots.length > 1 && (
+                    <div className="shrink-0 px-1.5 h-[44px] flex items-center text-[10px] font-mono text-muted-foreground/60">
+                      +{sortedShots.length - 1}
+                    </div>
+                  )}
+
                   {/* Empty state when no shots tagged at all */}
-                  {sortedShots.filter(s => s.nodeId).length === 0 && (
-                    <div className="w-12 h-9 rounded border border-dashed border-border/40 flex items-center justify-center">
-                      <span className="text-[8px] font-mono text-muted-foreground/30">Empty</span>
+                  {realShots.length === 0 && !isCollapsed && (
+                    <div className="w-[58px] h-[44px] rounded border border-dashed border-border/40 flex items-center justify-center">
+                      <span className="text-[10px] font-mono text-muted-foreground/30">Empty</span>
                     </div>
                   )}
                 </div>
+
+                {/* Collapse / expand toggle (per scene). Click stops
+                    propagation so it doesn't also change the active scene. */}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    toggleCollapsed(scene.id)
+                  }}
+                  className="shrink-0 w-7 h-7 rounded flex items-center justify-center hover:bg-white/10 text-muted-foreground/50 hover:text-foreground transition-colors"
+                  aria-label={isCollapsed ? 'Expand scene' : 'Collapse scene'}
+                  title={isCollapsed ? 'Expand scene' : 'Collapse scene'}
+                >
+                  {isCollapsed ? <ArrowsOutSimple size={13} weight="bold" /> : <ArrowsInSimple size={13} weight="bold" />}
+                </button>
 
                 {/* Add shot button */}
                 <button
@@ -185,9 +229,10 @@ export function SceneTimeline({
                     e.stopPropagation()
                     // This would trigger adding the selected node to this scene
                   }}
-                  className="shrink-0 w-6 h-6 rounded flex items-center justify-center hover:bg-white/10 text-muted-foreground/40 hover:text-muted-foreground transition-colors"
+                  className="shrink-0 w-7 h-7 rounded flex items-center justify-center hover:bg-white/10 text-muted-foreground/40 hover:text-muted-foreground transition-colors"
+                  aria-label="Add shot"
                 >
-                  <Plus size={12} weight="bold" />
+                  <Plus size={14} weight="bold" />
                 </button>
               </div>
             )
@@ -196,27 +241,29 @@ export function SceneTimeline({
           {/* Add scene button */}
           <button
             onClick={onAddScene}
-            className="flex items-center justify-center px-6 min-w-[80px] rounded-lg border border-dashed border-border/40 hover:border-accent/30 hover:bg-accent/5 text-muted-foreground/40 hover:text-accent transition-all"
+            className="flex items-center justify-center px-7 min-w-[88px] rounded-lg border border-dashed border-border/40 hover:border-accent/30 hover:bg-accent/5 text-muted-foreground/40 hover:text-accent transition-all"
+            aria-label="Add scene"
           >
-            <Plus size={14} weight="bold" />
+            <Plus size={16} weight="bold" />
           </button>
         </div>
 
         {/* Scroll right button */}
         <button
           onClick={scrollRight}
-          className="shrink-0 w-6 h-full flex items-center justify-center text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+          className="shrink-0 w-8 h-full flex items-center justify-center text-muted-foreground/60 hover:text-foreground hover:bg-white/5 transition-colors"
+          aria-label="Scroll right"
         >
-          <CaretRight size={12} weight="bold" />
+          <CaretRight size={16} weight="bold" />
         </button>
       </div>
 
       {/* Progress bar indicator */}
       <div className="h-0.5 bg-border/20 mx-2">
-        <div 
+        <div
           className="h-full bg-accent/40 transition-all"
-          style={{ 
-            width: `${((scenes.findIndex(s => s.id === activeSceneId) + 1) / scenes.length) * 100}%` 
+          style={{
+            width: `${((scenes.findIndex(s => s.id === activeSceneId) + 1) / scenes.length) * 100}%`
           }}
         />
       </div>
@@ -225,10 +272,10 @@ export function SceneTimeline({
       <div className="flex items-center gap-2 px-4 py-1.5">
         <button className="flex items-center gap-1.5 px-2 py-1 rounded hover:bg-white/5 transition-colors">
           <div className="w-2 h-2 rounded-full bg-accent/60" />
-          <span className="text-[11px] font-mono text-foreground/80">
+          <span className="text-[13px] font-mono text-foreground/80">
             {scenes.find(s => s.id === activeSceneId)?.name || 'Scene 1'}
           </span>
-          <CaretDown size={10} className="text-muted-foreground/60" />
+          <CaretDown size={12} className="text-muted-foreground/60" />
         </button>
       </div>
     </div>
