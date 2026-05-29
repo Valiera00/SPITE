@@ -317,15 +317,18 @@ export function AddToFolderModal({ open, onClose, folderType, projectId, assetId
         // viewport positioning. `fixed` is already a positioning context
         // for the absolute-positioned drop overlay below.
         className="bg-[#1A1D21] border-white/10 max-w-md max-h-[85vh] overflow-y-auto"
-        // Block Radix's auto-dismiss on pointerdown outside the dialog.
-        // Without this, starting a drag on a draggable element outside
-        // the modal (e.g. a folder/asset in the sidebar) was firing
-        // pointerdown → Radix interpreted it as a click-outside →
-        // dismissed the dialog mid-drag, so the modal "popped up for
-        // a second then disappeared". Users can still close via the
-        // X button, Cancel, or Escape key.
+        // Block every Radix auto-dismiss path. Each of these was
+        // independently firing in the wild and closing the dialog:
+        //   - pointerdown outside (starting a drag from the sidebar)
+        //   - interact outside (broader signal Radix uses)
+        //   - focus outside (OS file picker steals focus when the
+        //     hidden <input type=file> click() opens, and on close
+        //     focus may not return to a child of the dialog)
+        // Users can still close explicitly via the built-in X button,
+        // Cancel button, or Escape key.
         onPointerDownOutside={(e) => e.preventDefault()}
         onInteractOutside={(e) => e.preventDefault()}
+        onFocusOutside={(e) => e.preventDefault()}
         // Whole modal accepts drag-and-drop of files. The small "+" tile
         // also still works for direct clicks.
         //
