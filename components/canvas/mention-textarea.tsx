@@ -111,7 +111,10 @@ function listDomMentions(el: HTMLElement): Mention[] {
   return serializeEditor(el).mentions
 }
 
-// Build the chip span for a mention.
+// Build the chip span for a mention. Single text node for the folder
+// name — kept atomic so caret/arrow navigation treats the whole chip
+// as one unit. Selection counts are shown in the inline popover when
+// the user clicks the chip.
 function makeChipElement(
   folder: MentionFolder | { id: string; name: string; type: FolderType },
   selectedAssetIds: string[],
@@ -123,19 +126,12 @@ function makeChipElement(
   span.dataset.name = folder.name
   span.dataset.type = folder.type
   span.dataset.assetIds = selectedAssetIds.join(',')
-  // contentEditable=false makes the chip behave like a single atomic unit:
-  // arrow keys jump over it, backspace deletes the whole thing.
   span.contentEditable = 'false'
   const cls = COLOR[folder.type]
   span.className =
     'mention-chip inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[11px] border align-middle select-none cursor-pointer hover:opacity-90 ' +
     cls
-  // Chip content is just the name. Icon would require nested HTML; for
-  // simplicity (and to keep selection/cursor stable) we omit it from the
-  // DOM and rely on color coding + the hover popover for the icon affordance.
   span.textContent = folder.name
-  // Add a zero-width space after the chip so the cursor can land safely
-  // immediately after it without merging into the next text node weirdly.
   return span
 }
 
@@ -251,13 +247,6 @@ export const MentionTextarea = forwardRef<MentionTextareaRef, Props>(function Me
     folderId: string
   } | null>(null)
 
-  // Full-screen asset picker (when the user clicks "Choose assets" inside
-  // the popover). Same modal as the v1.
-  const [picker, setPicker] = useState<{
-    folderId: string
-    selected: Set<string>
-  } | null>(null)
-
   useImperativeHandle(outerRef, () => ({
     focus: () => editorRef.current?.focus(),
   }))
@@ -349,26 +338,6 @@ export const MentionTextarea = forwardRef<MentionTextareaRef, Props>(function Me
     emit()
   }
 
-  function commitPicker() {
-    if (!picker) return
-    const folder = folders.find((f) => f.id === picker.folderId)
-    if (!folder) return
-    // Update the chip in place if it's already in the editor — otherwise
-    // insert it.
-    const el = editorRef.current
-    const chip = el?.querySelector<HTMLElement>(`[data-mention="1"][data-folder-id="${folder.id}"]`)
-    if (chip) {
-      chip.dataset.assetIds = Array.from(picker.selected).join(',')
-      emit()
-      setPicker(null)
-      setPopover(null)
-      return
-    }
-    insertChipAtCursor(folder, picker.selected)
-    setPicker(null)
-    setPopover(null)
-  }
-
   function removeChip(folderId: string) {
     const el = editorRef.current
     if (!el) return
@@ -382,7 +351,6 @@ export const MentionTextarea = forwardRef<MentionTextareaRef, Props>(function Me
       c.remove()
     })
     setPopover(null)
-    setPicker(null)
     emit()
   }
 
@@ -432,124 +400,88 @@ export const MentionTextarea = forwardRef<MentionTextareaRef, Props>(function Me
     return () => document.removeEventListener('mousedown', onDoc)
   }, [popover])
 
-  // ---------------- Popover ----------------
+  // ---------------- Inline asset-picker popover ----------------
+  //
+  // Clicking a chip opens a small bar anchored to the chip itself, with
+  // the folder's asset thumbnails inline. Click any thumb to toggle.
+  // Changes apply immediately (no Cancel/Apply — the chip's dataset is
+  // mutated in place). Remove button strips the mention entirely.
+
+  function toggleAssetInChip(folderId: string, assetId: string, allAssetIds: string[]) {
+    const el = editorRef.current
+    if (!el) return
+    const chip = el.querySelector<HTMLElement>(`[data-mention="1"][data-folder-id="${folderId}"]`)
+    if (!chip) return
+    const raw = (chip.dataset.assetIds || '').split(',').filter(Boolean)
+    // Treat empty dataset.assetIds as "all" so the first toggle deselects
+    // an item from the full set instead of jumping from 0/N to 1/N.
+    const current = new Set(raw.length === 0 ? allAssetIds : raw)
+    if (current.has(assetId)) current.delete(assetId)
+    else current.add(assetId)
+    chip.dataset.assetIds = Array.from(current).join(',')
+    emit()
+    // Force the popover to re-read the chip's dataset so the count updates.
+    setPopover((p) => (p ? { ...p } : p))
+  }
 
   const popoverEl = popover && typeof document !== 'undefined'
     ? (() => {
         const folder = folders.find((f) => f.id === popover.folderId)
         if (!folder) return null
-        // Read the chip's current selectedAssetIds (so opening doesn't reset).
-        const ids = (popover.anchor.dataset.assetIds || '').split(',').filter(Boolean)
+        const rawIds = (popover.anchor.dataset.assetIds || '').split(',').filter(Boolean)
+        const allIds = folder.assets.map((a) => a.id)
+        // Empty selectedAssetIds means "use them all" at resolve time, so
+        // reflect that in the UI: every thumb is shown selected.
+        const isAll = rawIds.length === 0
+        const selectedIds = new Set(isAll ? allIds : rawIds)
         const rect = popover.anchor.getBoundingClientRect()
+
+        // 4 thumbs per row, ~64px each + gap. Anchor below the chip,
+        // flipping above if there isn't room. Clamp horizontally to
+        // stay on screen.
+        const W = 320
+        const Hest = folder.assets.length === 0 ? 110 : (Math.ceil(folder.assets.length / 4) * 68) + 110
+        const left = Math.max(8, Math.min(rect.left, window.innerWidth - W - 8))
+        const placeBelow = rect.bottom + Hest + 8 < window.innerHeight
+        const top = placeBelow ? rect.bottom + 6 : Math.max(8, rect.top - Hest - 6)
+
+        const Icon = ICONS[folder.type]
         return createPortal(
           <div
             data-mention-popover
-            className="fixed z-[70] w-64 rounded-lg border border-white/10 bg-[#0E1014] shadow-xl p-2"
-            style={{
-              left: Math.min(rect.left, window.innerWidth - 270),
-              top: Math.min(rect.bottom + 6, window.innerHeight - 200),
-            }}
+            className="fixed z-[70] rounded-lg border border-white/10 bg-[#0E1014] shadow-xl"
+            style={{ left, top, width: W }}
             onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center gap-2 px-2 py-1.5 mb-1 border-b border-white/5">
-              {(() => {
-                const Icon = ICONS[folder.type]
-                return <Icon size={12} className="text-accent" />
-              })()}
+            <div className="flex items-center gap-2 px-3 py-2 border-b border-white/5">
+              <div className={`w-5 h-5 rounded flex items-center justify-center ${COLOR[folder.type]}`}>
+                <Icon size={10} weight="fill" />
+              </div>
               <span className="text-[12px] text-foreground/90 truncate flex-1">{folder.name}</span>
               <span className="text-[10px] text-muted-foreground/60">
-                {ids.length}/{folder.assets.length}
+                {selectedIds.size}/{folder.assets.length}
               </span>
             </div>
-            <button
-              type="button"
-              onClick={() => {
-                setPicker({ folderId: folder.id, selected: new Set(ids) })
-              }}
-              className="w-full flex items-center gap-2 px-2 py-1.5 rounded hover:bg-white/5 text-left"
-            >
-              <PencilSimple size={11} className="text-muted-foreground" />
-              <span className="text-[11px] text-foreground/80">Choose assets</span>
-              <span className="ml-auto text-[10px] text-muted-foreground/60">{ids.length} selected</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => removeChip(folder.id)}
-              className="w-full flex items-center gap-2 px-2 py-1.5 rounded hover:bg-red-500/10 text-left text-red-400 mt-0.5"
-            >
-              <Trash size={11} />
-              <span className="text-[11px]">Remove mention</span>
-            </button>
-          </div>,
-          document.body,
-        )
-      })()
-    : null
 
-  // ---------------- Asset picker modal ----------------
-
-  const pickerModal = picker && typeof document !== 'undefined'
-    ? (() => {
-        const folder = folders.find((f) => f.id === picker.folderId)
-        if (!folder) return null
-        return createPortal(
-          <div
-            className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 backdrop-blur-sm"
-            onClick={() => setPicker(null)}
-          >
-            <div
-              className="w-[480px] max-w-[92vw] rounded-xl bg-[#0E1014] border border-white/10 p-4"
-              onClick={(e) => e.stopPropagation()}
-              onMouseDown={(e) => e.stopPropagation()}
-            >
-              <div className="flex items-center justify-between mb-3">
-                <div>
-                  <div className="text-sm font-medium text-foreground">{folder.name}</div>
-                  <div className="text-[11px] text-muted-foreground/60 capitalize">
-                    {folder.type} · {picker.selected.size} of {folder.assets.length} selected
-                  </div>
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setPicker((p) => p ? { ...p, selected: new Set(folder.assets.map((a) => a.id)) } : p)}
-                    className="text-[11px] text-accent hover:underline"
-                  >
-                    Select all
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPicker((p) => p ? { ...p, selected: new Set() } : p)}
-                    className="text-[11px] text-muted-foreground hover:text-foreground hover:underline"
-                  >
-                    Clear
-                  </button>
-                </div>
+            {folder.assets.length === 0 ? (
+              <div className="py-6 text-center text-[11px] text-muted-foreground/50">
+                Folder is empty — add assets to it first.
               </div>
-              {folder.assets.length === 0 ? (
-                <div className="py-12 text-center text-sm text-muted-foreground/50">
-                  This folder is empty — add assets to it first.
-                </div>
-              ) : (
-                <div className="grid grid-cols-4 gap-2 max-h-80 overflow-y-auto pr-1">
+            ) : (
+              <div className="p-2">
+                <div className="grid grid-cols-4 gap-1.5 max-h-[260px] overflow-y-auto pr-0.5">
                   {folder.assets.map((asset) => {
-                    const isSel = picker.selected.has(asset.id)
+                    const isSel = selectedIds.has(asset.id)
                     return (
                       <button
                         type="button"
                         key={asset.id}
-                        onClick={() =>
-                          setPicker((p) => {
-                            if (!p) return p
-                            const next = new Set(p.selected)
-                            if (next.has(asset.id)) next.delete(asset.id)
-                            else next.add(asset.id)
-                            return { ...p, selected: next }
-                          })
-                        }
-                        className={`relative aspect-square rounded-lg overflow-hidden border transition ${
-                          isSel ? 'border-accent ring-2 ring-accent/60' : 'border-white/10 hover:border-white/30'
+                        onClick={() => toggleAssetInChip(folder.id, asset.id, allIds)}
+                        className={`relative aspect-square rounded-md overflow-hidden border transition ${
+                          isSel ? 'border-accent ring-1 ring-accent/60' : 'border-white/10 hover:border-white/30 opacity-50 hover:opacity-100'
                         }`}
+                        title={isSel ? 'Click to deselect' : 'Click to select'}
                       >
                         {asset.type === 'video' ? (
                           <video src={asset.r2_url} className="w-full h-full object-cover" muted preload="metadata" />
@@ -557,38 +489,42 @@ export const MentionTextarea = forwardRef<MentionTextareaRef, Props>(function Me
                           <img src={asset.r2_url} alt="" className="w-full h-full object-cover" loading="lazy" decoding="async" />
                         )}
                         {isSel && (
-                          <div className="absolute top-1 right-1 w-5 h-5 rounded-full bg-accent flex items-center justify-center">
-                            <Check size={11} weight="bold" className="text-white" />
+                          <div className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full bg-accent flex items-center justify-center">
+                            <Check size={9} weight="bold" className="text-white" />
                           </div>
                         )}
                       </button>
                     )
                   })}
                 </div>
-              )}
-              <div className="flex justify-end gap-2 mt-4">
-                <button
-                  type="button"
-                  onClick={() => setPicker(null)}
-                  className="px-3 py-1.5 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-white/5"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={commitPicker}
-                  disabled={picker.selected.size === 0}
-                  className="px-3 py-1.5 rounded-md text-xs bg-accent text-accent-foreground hover:bg-accent/90 disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  Use {picker.selected.size}
-                </button>
               </div>
+            )}
+
+            <div className="flex items-center gap-2 px-2 pb-2">
+              <button
+                type="button"
+                onClick={() => removeChip(folder.id)}
+                className="flex items-center gap-1 px-2 py-1 rounded text-[10px] text-red-400 hover:bg-red-500/10"
+              >
+                <Trash size={10} />
+                Remove
+              </button>
+              <button
+                type="button"
+                onClick={() => setPopover(null)}
+                className="ml-auto px-2 py-1 rounded text-[10px] text-muted-foreground hover:text-foreground hover:bg-white/5"
+              >
+                Done
+              </button>
             </div>
           </div>,
           document.body,
         )
       })()
     : null
+
+  // (Center-screen picker modal removed — the inline popover now handles
+  // asset selection right next to the chip.)
 
   // ---------------- Render ----------------
 
@@ -658,7 +594,6 @@ export const MentionTextarea = forwardRef<MentionTextareaRef, Props>(function Me
       )}
 
       {popoverEl}
-      {pickerModal}
     </div>
   )
 })
@@ -681,9 +616,15 @@ export function resolveMentionRefs(
     const folder = folders.find((f) => f.id === m.folderId)
     if (!folder) continue
     seen.add(folder.id)
-    for (const assetId of m.selectedAssetIds) {
-      const asset = folder.assets.find((a) => a.id === assetId)
-      if (asset?.r2_url) out.push(asset.r2_url)
+    // If the mention has no per-asset selection (or it captured the
+    // folder while still empty), use every current asset in the folder.
+    // Otherwise filter to the intersection so removed assets drop out.
+    const useAll = m.selectedAssetIds.length === 0
+    const idSet = new Set(m.selectedAssetIds)
+    for (const asset of folder.assets) {
+      if (useAll || idSet.has(asset.id)) {
+        if (asset.r2_url) out.push(asset.r2_url)
+      }
     }
   }
 
