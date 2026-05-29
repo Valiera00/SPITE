@@ -70,6 +70,11 @@ export function AddToFolderModal({ open, onClose, folderType, projectId, assetId
   const [showAssetPicker, setShowAssetPicker] = useState(false)
   const [availableAssets, setAvailableAssets] = useState<{ id: string; r2_url: string; prompt: string }[]>([])
   const [isDraggingOver, setIsDraggingOver] = useState(false)
+  // Counter-based drag tracking. Each dragenter increments, each
+  // dragleave decrements. We only flip isDraggingOver off when the
+  // counter reaches zero, so child-boundary crossings don't make the
+  // overlay flicker.
+  const dragCountRef = useRef(0)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const pickerFileInputRef = useRef<HTMLInputElement>(null)
 
@@ -343,28 +348,30 @@ export function AddToFolderModal({ open, onClose, folderType, projectId, assetId
         onDragOver={e => {
           const t = e.dataTransfer.types
           if (t.includes('Files') || t.includes('asset') || t.includes('folder-assets')) {
+            // preventDefault on EVERY dragover is what tells the browser
+            // "a drop is allowed here" — drop the call and the drag
+            // preview snaps back to the source.
             e.preventDefault()
             e.stopPropagation()
-            setIsDraggingOver(true)
           }
         }}
         onDragEnter={e => {
           const t = e.dataTransfer.types
-          if (t.includes('Files') || t.includes('asset') || t.includes('folder-assets')) {
-            e.stopPropagation()
-          }
+          if (!(t.includes('Files') || t.includes('asset') || t.includes('folder-assets'))) return
+          e.preventDefault()
+          e.stopPropagation()
+          dragCountRef.current++
+          if (dragCountRef.current === 1) setIsDraggingOver(true)
         }}
         onDragLeave={e => {
           e.stopPropagation()
-          // dragleave fires every time we cross a child boundary; only clear
-          // the overlay when the pointer actually exits the modal.
-          if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-            setIsDraggingOver(false)
-          }
+          dragCountRef.current = Math.max(0, dragCountRef.current - 1)
+          if (dragCountRef.current === 0) setIsDraggingOver(false)
         }}
         onDrop={e => {
           e.preventDefault()
           e.stopPropagation()
+          dragCountRef.current = 0
           setIsDraggingOver(false)
 
           // 1) Desktop files → upload + add.
