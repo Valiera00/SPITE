@@ -81,13 +81,35 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         `
       }
 
+      // Folder membership is sticky protection too. Re-promote any folder
+      // member that was previously demoted (e.g. by an earlier autosave
+      // that didn't yet know about folders). Cheap — the EXISTS subquery
+      // is keyed by asset_id which is the FK target.
+      await sql`
+        UPDATE generation_history
+        SET used_in_canvas = true, expires_at = NULL
+        WHERE project_id = ${projectId}
+          AND (used_in_canvas = false OR expires_at IS NOT NULL)
+          AND EXISTS (
+            SELECT 1 FROM asset_folder_items fi WHERE fi.asset_id = generation_history.id
+          )
+      `
+
       const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+      // Demote assets no longer on the canvas back to a 30-day temp life
+      // — UNLESS they're also a member of a folder. Folder membership is
+      // a separate, sticky protection: the user explicitly filed them
+      // under Characters/Props/Locations/General and expects them to
+      // survive cleanup until manually deleted.
       await sql`
         UPDATE generation_history
         SET used_in_canvas = false, expires_at = ${expiresAt}
         WHERE project_id = ${projectId}
           AND used_in_canvas = true
           AND NOT (r2_url = ANY(${urlArr}::text[]) OR id = ANY(${idArr}::text[]))
+          AND NOT EXISTS (
+            SELECT 1 FROM asset_folder_items fi WHERE fi.asset_id = generation_history.id
+          )
       `
     } catch (reconcileErr) {
       // Never fail the save because of reconciliation.
