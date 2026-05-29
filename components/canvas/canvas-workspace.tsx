@@ -309,6 +309,10 @@ function CanvasInner({ projectId }: { projectId: string }) {
             thumbnail: (n.type === 'videoGen'
               ? (n.data.videoThumbnail || n.data.thumbnail || n.data.assetUrl)
               : (n.data.outputUrl || n.data.thumbnail || n.data.assetUrl)) as string | undefined,
+            // For video shots, outputUrl is the .mp4; for image shots it's
+            // the generated image. Fall back to assetUrl/thumbnail for
+            // upload/reference nodes that don't have an outputUrl.
+            mediaUrl: (n.data.outputUrl || n.data.assetUrl || n.data.thumbnail) as string | undefined,
             label: n.data.label as string,
             hasVideo: n.type === 'videoGen',
             order: i,
@@ -839,6 +843,7 @@ function CanvasInner({ projectId }: { projectId: string }) {
         onSceneChange={setActiveSceneId}
         onAddScene={handleAddScene}
         onShotClick={handleShotClick}
+        projectName={projectName}
       />
 
       {/* Top toolbar */}

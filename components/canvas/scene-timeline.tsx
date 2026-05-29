@@ -1,12 +1,18 @@
 'use client'
 
 import { useState, useRef } from 'react'
-import { Plus, CaretDown, Play, CaretLeft, CaretRight, Image as ImageIcon } from '@phosphor-icons/react'
+import { Plus, CaretDown, Play, CaretLeft, CaretRight, Image as ImageIcon, DownloadSimple, CircleNotch } from '@phosphor-icons/react'
+import { toast } from 'sonner'
+import { exportScenesAsZip } from '@/lib/export-scenes'
 
 export interface Shot {
   id: string
   nodeId: string  // Links to actual node on canvas
   thumbnail?: string
+  // The actual file URL to download on export (image file for image shots,
+  // video file for video shots). Different from `thumbnail` for videos —
+  // `thumbnail` is the poster image, `mediaUrl` is the .mp4.
+  mediaUrl?: string
   label?: string
   hasVideo?: boolean
   order: number
@@ -25,6 +31,8 @@ interface SceneTimelineProps {
   onAddScene: () => void
   onShotClick?: (sceneId: string, shotId: string) => void
   onReorderShot?: (sceneId: string, shotId: string, newIndex: number) => void
+  // Optional project name used as the downloaded zip's filename.
+  projectName?: string
 }
 
 export function SceneTimeline({
@@ -34,7 +42,35 @@ export function SceneTimeline({
   onAddScene,
   onShotClick,
   onReorderShot,
+  projectName,
 }: SceneTimelineProps) {
+  const [exporting, setExporting] = useState(false)
+
+  // Down the line we could open a small dialog asking "one zip vs zip
+  // per scene" / "rename to Shot1.. or keep labels" — for now the chosen
+  // convention is: one zip, one folder per scene, files named
+  // "Shot <order>.<ext>" preserving the original numbering (placeholders
+  // produce gaps, not renumbering). User asked for these defaults.
+  const handleExport = async () => {
+    if (exporting) return
+    setExporting(true)
+    const toastId = toast.loading('Building zip...')
+    try {
+      const result = await exportScenesAsZip(scenes, projectName || 'frame-export')
+      const skippedCount = result.skipped.length
+      toast.success(
+        skippedCount > 0
+          ? `Exported ${result.fileCount} shot${result.fileCount === 1 ? '' : 's'} (${skippedCount} skipped)`
+          : `Exported ${result.fileCount} shot${result.fileCount === 1 ? '' : 's'}`,
+        { id: toastId },
+      )
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Export failed', { id: toastId })
+    } finally {
+      setExporting(false)
+    }
+  }
+
   const scrollRef = useRef<HTMLDivElement>(null)
   const [draggedShot, setDraggedShot] = useState<{ sceneId: string; shotId: string; index: number } | null>(null)
   const [dropTarget, setDropTarget] = useState<{ sceneId: string; index: number } | null>(null)
@@ -270,7 +306,7 @@ export function SceneTimeline({
         />
       </div>
 
-      {/* Active scene indicator */}
+      {/* Active scene indicator + actions */}
       <div className="flex items-center gap-2 px-4 py-1.5">
         <button className="flex items-center gap-1.5 px-2 py-1 rounded hover:bg-white/5 transition-colors">
           <div className="w-2 h-2 rounded-full bg-accent/60" />
@@ -279,6 +315,22 @@ export function SceneTimeline({
           </span>
           <CaretDown size={12} className="text-muted-foreground/60" />
         </button>
+
+        <div className="ml-auto">
+          <button
+            onClick={handleExport}
+            disabled={exporting}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded text-[12px] font-mono text-muted-foreground hover:text-foreground hover:bg-white/5 transition-colors disabled:opacity-50 disabled:cursor-wait"
+            title="Download every tagged shot across all scenes as a zip"
+          >
+            {exporting ? (
+              <CircleNotch size={13} weight="bold" className="animate-spin" />
+            ) : (
+              <DownloadSimple size={13} weight="bold" />
+            )}
+            <span>{exporting ? 'Exporting...' : 'Export shots'}</span>
+          </button>
+        </div>
       </div>
     </div>
   )
