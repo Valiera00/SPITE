@@ -594,9 +594,9 @@ export function AddToFolderModal({ open, onClose, folderType, projectId, assetId
               </div>
 
               <div className="flex items-center gap-2 pt-1">
-                {/* Delete folder lives on the left when editing — destructive,
-                    but no membership has to be touched first; the folder
-                    items table has ON DELETE CASCADE. */}
+                {/* Delete <type> lives on the left when editing —
+                    destructive, but no membership has to be touched first;
+                    the folder items table has ON DELETE CASCADE. */}
                 {editFolder && (
                   <Button
                     variant="ghost"
@@ -604,7 +604,8 @@ export function AddToFolderModal({ open, onClose, folderType, projectId, assetId
                     disabled={creating}
                     onClick={async () => {
                       if (!editFolder) return
-                      if (!window.confirm(`Delete "${editFolder.name}"? Assets inside the folder stay in the library.`)) return
+                      const noun = typeLabels[editFolder.type].toLowerCase()
+                      if (!window.confirm(`Delete the ${noun} "${editFolder.name}"? Assets inside stay in the library.`)) return
                       try {
                         const res = await fetch(`/api/folders/${editFolder.id}`, { method: 'DELETE' })
                         if (!res.ok) throw new Error(`HTTP ${res.status}`)
@@ -614,12 +615,12 @@ export function AddToFolderModal({ open, onClose, folderType, projectId, assetId
                         onClose()
                       } catch (err: any) {
                         console.error('[folder] delete failed', err)
-                        toast.error(`Couldn't delete folder: ${err?.message || 'unknown error'}`)
+                        toast.error(`Couldn't delete ${noun}: ${err?.message || 'unknown error'}`)
                       }
                     }}
                     className="text-red-400 hover:text-red-300 hover:bg-red-500/10"
                   >
-                    Delete folder
+                    Delete {typeLabels[editFolder.type]}
                   </Button>
                 )}
                 <div className="ml-auto flex items-center gap-2">

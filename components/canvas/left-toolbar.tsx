@@ -775,39 +775,48 @@ export function LeftToolbar({
                       {activeFolder.description && (
                         <div className="basis-full text-foreground/80 italic">{activeFolder.description}</div>
                       )}
-                      <div className="ml-auto flex items-center gap-2">
-                        <button
-                          onClick={() => setEditingFolder(activeFolder)}
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-accent/15 hover:bg-accent/25 text-accent text-xs transition-colors"
-                          title="Add or remove assets, rename, edit description"
-                        >
-                          <PencilSimple size={11} weight="bold" />
-                          Edit folder
-                        </button>
-                        <button
-                          onClick={async () => {
-                            if (!window.confirm(`Delete the folder "${activeFolder.name}"? Assets inside stay in the library.`)) return
-                            try {
-                              const res = await fetch(`/api/folders/${activeFolder.id}`, { method: 'DELETE' })
-                              if (!res.ok) throw new Error(`HTTP ${res.status}`)
-                              toast.success(`Deleted "${activeFolder.name}"`)
-                              // Pop back up to the parent category so the
-                              // user lands somewhere sensible.
-                              setExpandedView({ kind: 'category', type: activeFolder.type })
-                              mutateFolders()
-                              mutateAssets()
-                            } catch (err: any) {
-                              console.error('[folder] delete failed', err)
-                              toast.error(`Couldn't delete folder: ${err?.message || 'unknown error'}`)
-                            }
-                          }}
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-red-500/15 hover:bg-red-500/25 text-red-400 text-xs transition-colors"
-                          title="Delete this folder. Assets inside it stay in the library."
-                        >
-                          <Trash size={11} weight="bold" />
-                          Delete folder
-                        </button>
-                      </div>
+                      {(() => {
+                        const typeLabel =
+                          activeFolder.type === 'character' ? 'Character'
+                          : activeFolder.type === 'prop' ? 'Prop'
+                          : activeFolder.type === 'location' ? 'Location'
+                          : 'General'
+                        return (
+                          <div className="ml-auto flex items-center gap-2">
+                            <button
+                              onClick={() => setEditingFolder(activeFolder)}
+                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-accent/15 hover:bg-accent/25 text-accent text-xs transition-colors"
+                              title="Add or remove assets, rename, edit description"
+                            >
+                              <PencilSimple size={11} weight="bold" />
+                              Edit {typeLabel}
+                            </button>
+                            <button
+                              onClick={async () => {
+                                if (!window.confirm(`Delete the ${typeLabel.toLowerCase()} "${activeFolder.name}"? Assets inside stay in the library.`)) return
+                                try {
+                                  const res = await fetch(`/api/folders/${activeFolder.id}`, { method: 'DELETE' })
+                                  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+                                  toast.success(`Deleted "${activeFolder.name}"`)
+                                  // Pop back up to the parent category so the
+                                  // user lands somewhere sensible.
+                                  setExpandedView({ kind: 'category', type: activeFolder.type })
+                                  mutateFolders()
+                                  mutateAssets()
+                                } catch (err: any) {
+                                  console.error('[folder] delete failed', err)
+                                  toast.error(`Couldn't delete ${typeLabel.toLowerCase()}: ${err?.message || 'unknown error'}`)
+                                }
+                              }}
+                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-red-500/15 hover:bg-red-500/25 text-red-400 text-xs transition-colors"
+                              title={`Delete this ${typeLabel.toLowerCase()}. Assets inside stay in the library.`}
+                            >
+                              <Trash size={11} weight="bold" />
+                              Delete {typeLabel}
+                            </button>
+                          </div>
+                        )
+                      })()}
                     </div>
 
                     {activeFolder.assets.length === 0 ? (
