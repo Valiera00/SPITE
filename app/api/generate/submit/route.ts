@@ -11,7 +11,15 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  const { modelId, prompt, referenceImageUrl, endImageUrl, referenceImageUrls, settings } = await request.json()
+  const {
+    modelId,
+    prompt,
+    referenceImageUrl,
+    endImageUrl,
+    referenceImageUrls,
+    referenceGroups,
+    settings,
+  } = await request.json()
 
   if (!modelId || !prompt) {
     return NextResponse.json({ error: 'modelId and prompt are required' }, { status: 400 })
@@ -29,9 +37,25 @@ export async function POST(request: NextRequest) {
   const baseUrl = host ? `${proto}://${host}` : ''
   const referenceImageSigned = toFalFetchableUrl(referenceImageUrl, baseUrl)
   const endImageSigned = toFalFetchableUrl(endImageUrl, baseUrl)
-  const refsSigned: string[] = Array.isArray(referenceImageUrls)
-    ? referenceImageUrls.map((u: string) => toFalFetchableUrl(u, baseUrl)).filter(Boolean) as string[]
-    : []
+  // Accept either grouped refs (preferred) or the legacy flat list. Sign
+  // every URL per-group so the structure can be preserved for
+  // element-based models (Kling v3 elements).
+  type IncomingGroup = { urls?: string[]; folderName?: string; folderType?: string }
+  const refGroupsSigned: { urls: string[] }[] = Array.isArray(referenceGroups)
+    ? (referenceGroups as IncomingGroup[]).map((g) => ({
+        urls: Array.isArray(g.urls)
+          ? (g.urls
+              .map((u) => toFalFetchableUrl(u, baseUrl))
+              .filter(Boolean) as string[])
+          : [],
+      })).filter((g) => g.urls.length > 0)
+    : Array.isArray(referenceImageUrls)
+      ? (referenceImageUrls as string[])
+          .map((u) => toFalFetchableUrl(u, baseUrl))
+          .filter(Boolean)
+          .map((u) => ({ urls: [u as string] }))
+      : []
+  const refsSigned: string[] = refGroupsSigned.flatMap((g) => g.urls)
 
   // Reference images use a different endpoint/param per model:
   //  - Models with `referenceParam` (Seedance 2.0, Kling v3, Kling o1/1.6,
@@ -59,7 +83,8 @@ export async function POST(request: NextRequest) {
 
   // Build the input using model-specific parameter mapping. Always pass the
   // folder refs through — buildModelInput decides whether they flow into
-  // imageParam (image_urls/image_url) or referenceParam.
+  // imageParam (image_urls/image_url) or referenceParam. Grouped form is
+  // preferred so element-based models can build one element per subject.
   const input = buildModelInput(model, finalPrompt, {
     aspectRatio: settings?.aspectRatio,
     duration: settings?.duration,
@@ -70,6 +95,7 @@ export async function POST(request: NextRequest) {
     imageUrl: usesSeparateRefEndpoint ? undefined : (referenceImageSigned || undefined),
     endImageUrl: usesSeparateRefEndpoint ? undefined : (endImageSigned || undefined),
     referenceImageUrls: hasFolderRefs ? refsSigned : undefined,
+    referenceGroups: hasFolderRefs ? refGroupsSigned : undefined,
   })
 
   // Batch image count — image models only (video models produce one clip).

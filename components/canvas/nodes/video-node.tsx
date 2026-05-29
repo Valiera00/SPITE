@@ -507,10 +507,10 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
     // prompt-node) fall back to "use every asset in the matched folder".
     //
     // compileMentionsForModel rewrites the prompt so each @FolderTag is
-    // replaced with the citation the target model understands
-    // ("@Image1 @Image2" for Kling/Seedance, plain English for others).
-    // Wired refs occupy the leading slots in the array, so mentions start
-    // at position connectedReferenceUrls.length.
+    // replaced with the citation the target model understands and groups
+    // every mention's URLs so the server can build per-subject elements
+    // for element-based models (Kling v3). Wired pink-handle refs occupy
+    // the leading element/slot positions; folder mentions start after.
     const compiled = compileMentionsForModel(
       compiledPrompt,
       mentions,
@@ -518,7 +518,8 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
       currentModel,
       connectedReferenceUrls.length,
     )
-    const allReferenceUrls = [...connectedReferenceUrls, ...compiled.refs]
+    const wiredGroups = connectedReferenceUrls.map((url) => ({ urls: [url] }))
+    const referenceGroups = [...wiredGroups, ...compiled.refGroups]
 
     try {
       // Send RAW settings; the server builds the model-specific payload.
@@ -527,7 +528,7 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
         prompt: compiled.prompt,
         referenceImageUrl: connectedImageUrl,
         endImageUrl: connectedEndImageUrl,
-        referenceImageUrls: allReferenceUrls.length ? allReferenceUrls : undefined,
+        referenceGroups: referenceGroups.length ? referenceGroups : undefined,
         settings: {
           aspectRatio,
           duration,

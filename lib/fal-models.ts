@@ -343,10 +343,19 @@ export function buildModelInput(
     imageUrl?: string
     endImageUrl?: string
     referenceImageUrls?: string[]
+    // Grouped reference images — preferred over the flat
+    // referenceImageUrls because it preserves per-subject boundaries so
+    // element-based models (Kling v3) can build one element per group.
+    // If both are supplied, groups win.
+    referenceGroups?: { urls: string[] }[]
     seed?: number
   } = {}
 ): Record<string, any> {
   const input: Record<string, any> = {}
+  // Derive a flat URL list whichever shape the caller used.
+  const folderRefsFlat: string[] = options.referenceGroups
+    ? options.referenceGroups.flatMap((g) => g.urls)
+    : options.referenceImageUrls || []
 
   // Attach a reference image using the field name(s) the endpoint expects:
   //  - image_urls (array): Nano Banana / Kling o1 image. Folder-mention refs
@@ -361,7 +370,7 @@ export function buildModelInput(
   //    first folder-mention ref when no connected image is provided.
   if (model.inputTypes.includes('image')) {
     const primary = options.imageUrl
-    const folderRefs = options.referenceImageUrls || []
+    const folderRefs = folderRefsFlat
 
     if (model.imageParam === 'image_urls') {
       const all = primary ? [primary, ...folderRefs] : folderRefs
@@ -397,28 +406,32 @@ export function buildModelInput(
   }
 
   // Reference images (subject/style). Shape depends on the model:
-  //  - elements: [{frontal_image_url}] (Kling v3)
+  //  - elements: [{frontal_image_url, reference_image_urls}, …] one entry
+  //    per subject (Kling v3). The prompt cites @Element{N} which binds
+  //    to the N-th element.
   //  - subject_reference_image_url: single string (MiniMax)
-  //  - image_urls / input_image_urls: plain array (Seedance 2.0, Kling o1/1.6)
-  // The prompt must cite them (@Image1 / @Element1) — handled in the submit route.
-  if (options.referenceImageUrls?.length && model.referenceParam) {
-    const refs = options.referenceImageUrls
+  //  - image_urls / input_image_urls: plain array (Seedance 2.0, Kling
+  //    o1/1.6). The prompt cites @Image{N} which binds to the N-th URL.
+  // The prompt is rewritten on the client (lib/mention-prompt.ts) so the
+  // citation indices already match the order of refs/elements we build.
+  if (folderRefsFlat.length && model.referenceParam) {
     if (model.referenceParam === 'elements') {
-      // Kling 3.0 elements: one "element" describes one subject. fal's
-      // schema requires BOTH frontal_image_url AND a non-empty
-      // reference_image_urls. Map first frame → frontal_image_url and
-      // connected references → reference_image_urls. The video-node UI
-      // blocks references-without-first-frame so options.imageUrl is set.
-      if (options.imageUrl) {
-        input.elements = [{
-          frontal_image_url: options.imageUrl,
-          reference_image_urls: refs,
-        }]
-      }
+      // Build one element per group. With no per-group structure we fall
+      // back to one big element so refs are at least attached.
+      const groups = options.referenceGroups && options.referenceGroups.length
+        ? options.referenceGroups
+        : [{ urls: folderRefsFlat }]
+      const elements = groups
+        .filter((g) => g.urls.length > 0)
+        .map((g) => ({
+          frontal_image_url: g.urls[0],
+          reference_image_urls: g.urls.slice(1),
+        }))
+      if (elements.length > 0) input.elements = elements
     } else if (model.referenceParam === 'subject_reference_image_url') {
-      input.subject_reference_image_url = refs[0]
+      input.subject_reference_image_url = folderRefsFlat[0]
     } else {
-      input[model.referenceParam] = refs
+      input[model.referenceParam] = folderRefsFlat
     }
   }
 

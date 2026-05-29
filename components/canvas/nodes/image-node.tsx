@@ -514,13 +514,15 @@ function ImageNodeImpl({ id, data, selected }: NodeProps) {
     // (forwarded from a connected prompt-node — those use the folder's
     // full asset list since the prompt-node has no per-asset picker).
     //
-    // compileMentionsForModel both collects the URLs in mention order AND
-    // rewrites each @FolderTag in the prompt to the model's binding form:
-    //   - Kling/Seedance (citation models)  → "@Image1 @Image2 ..."
-    //   - Nano Banana / FLUX (no citation)  → "the character shown in
-    //                                          reference image 1"
-    // The first slot is reserved for the connected primary frame on
-    // image_urls-style models (Nano Banana etc.), so mentions start at
+    // compileMentionsForModel returns ordered reference *groups* (one per
+    // mention) AND a prompt with each @FolderTag rewritten to the binding
+    // form the target model understands. For unsupported models the
+    // rewrite degrades to the plain folder name and no URLs are sent —
+    // tagging still works in the UI but only models with real reference
+    // support attach the images.
+    //
+    // For image_urls-style image models (Nano Banana etc.) the first slot
+    // is reserved for the connected primary frame, so mentions start at
     // slot 1 when connectedImageUrl is present.
     const primaryInImageUrls =
       !!connectedImageUrl && currentModel?.imageParam === 'image_urls'
@@ -531,7 +533,6 @@ function ImageNodeImpl({ id, data, selected }: NodeProps) {
       currentModel,
       primaryInImageUrls ? 1 : 0,
     )
-    const folderRefs = compiled.refs
 
     try {
       // Fan out one fal job per requested image, mirroring how video-node
@@ -541,7 +542,7 @@ function ImageNodeImpl({ id, data, selected }: NodeProps) {
         modelId,
         prompt: compiled.prompt,
         referenceImageUrl: connectedImageUrl,
-        referenceImageUrls: folderRefs.length > 0 ? folderRefs : undefined,
+        referenceGroups: compiled.refGroups.length > 0 ? compiled.refGroups : undefined,
         settings: { aspectRatio, resolution, numImages: 1 },
       })
       const count = Math.max(1, Math.min(12, numImages))
