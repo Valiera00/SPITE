@@ -33,23 +33,33 @@ export async function POST(request: NextRequest) {
     ? referenceImageUrls.map((u: string) => toFalFetchableUrl(u, baseUrl)).filter(Boolean) as string[]
     : []
 
-  // Reference images use a different endpoint/param per model. Some (Seedance
-  // 2.0, Kling o1/1.6) have a separate reference endpoint that does NOT take
-  // first/end frames; others (Kling v3) carry refs as `elements` on the same
-  // image-to-video endpoint alongside frames.
-  const hasRefs = refsSigned.length > 0 && !!model.referenceParam
-  const usesSeparateRefEndpoint = hasRefs && !!model.referenceModel
+  // Reference images use a different endpoint/param per model:
+  //  - Models with `referenceParam` (Seedance 2.0, Kling v3, Kling o1/1.6,
+  //    MiniMax) carry refs in a dedicated field; some of those have a
+  //    `referenceModel` endpoint that does NOT accept first/end frames.
+  //  - Models WITHOUT `referenceParam` (Nano Banana, FLUX Dev) reuse their
+  //    image input slot — folder-mention refs ride alongside the connected
+  //    image (or alone) inside `image_urls`/`image_url`. For those we still
+  //    need to switch to `editModel`, since the plain endpoint ignores any
+  //    image input.
+  const hasFolderRefs = refsSigned.length > 0
+  const hasRefsViaRefParam = hasFolderRefs && !!model.referenceParam
+  const hasRefsViaImageParam =
+    hasFolderRefs && !model.referenceParam && !!model.imageParam
+  const usesSeparateRefEndpoint = hasRefsViaRefParam && !!model.referenceModel
   const hasFrame = !!(referenceImageUrl || endImageUrl) && model.inputTypes.includes('image')
 
   // fal only uses references the prompt cites (@Image1 / @Element1). Auto-append
   // citations if the user didn't write any.
   let finalPrompt: string = prompt
-  if (hasRefs && model.referenceCite && !/@(image|element)\d/i.test(prompt)) {
+  if (hasRefsViaRefParam && model.referenceCite && !/@(image|element)\d/i.test(prompt)) {
     const cites = refsSigned.map((_, i) => `${model.referenceCite}${i + 1}`).join(' ')
     finalPrompt = `${prompt} ${cites}`.trim()
   }
 
-  // Build the input using model-specific parameter mapping
+  // Build the input using model-specific parameter mapping. Always pass the
+  // folder refs through — buildModelInput decides whether they flow into
+  // imageParam (image_urls/image_url) or referenceParam.
   const input = buildModelInput(model, finalPrompt, {
     aspectRatio: settings?.aspectRatio,
     duration: settings?.duration,
@@ -59,7 +69,7 @@ export async function POST(request: NextRequest) {
     // Separate reference endpoints don't accept first/end frame inputs.
     imageUrl: usesSeparateRefEndpoint ? undefined : (referenceImageSigned || undefined),
     endImageUrl: usesSeparateRefEndpoint ? undefined : (endImageSigned || undefined),
-    referenceImageUrls: hasRefs ? refsSigned : undefined,
+    referenceImageUrls: hasFolderRefs ? refsSigned : undefined,
   })
 
   // Batch image count — image models only (video models produce one clip).
@@ -73,12 +83,13 @@ export async function POST(request: NextRequest) {
     input.video_url = toFalFetchableUrl(settings.videoUrl, baseUrl)
   }
 
-  // Pick the endpoint: separate reference endpoint > image-to-video (frames or
-  // elements-style refs) > text-to-video.
+  // Pick the endpoint: separate reference endpoint > image-to-image /
+  // image-to-video (frames, elements-style refs, OR image-slot refs from
+  // folder mentions on models like Nano Banana / FLUX Dev) > text-to-video.
   let endpoint = model.falModel
   if (usesSeparateRefEndpoint) {
     endpoint = model.referenceModel!
-  } else if ((hasRefs || hasFrame) && model.editModel) {
+  } else if ((hasRefsViaRefParam || hasRefsViaImageParam || hasFrame) && model.editModel) {
     endpoint = model.editModel
   }
 
