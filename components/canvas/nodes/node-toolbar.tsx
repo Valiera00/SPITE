@@ -23,6 +23,7 @@ import {
   PencilSimple,
   DownloadSimple,
   ArrowsOutSimple,
+  SquaresFour,
 } from '@phosphor-icons/react'
 
 interface NodeActionToolbarProps {
@@ -113,6 +114,47 @@ export function NodeActionToolbar({
       addNodes(newNode)
     }
     onDuplicate?.()
+  }
+
+  // Arrange every selected node into an auto-fit (~square) grid anchored
+  // at the top-left of the current selection. Sort order is the node's
+  // current top→bottom, left→right reading order so the result feels
+  // predictable rather than randomly reshuffled. Toast + bail if fewer
+  // than 2 nodes are selected — sorting one node is meaningless.
+  const handleArrangeGrid = () => {
+    const nodes = getNodes()
+    const selected = nodes.filter(n => n.selected)
+    if (selected.length < 2) {
+      toast.info('Select at least 2 nodes to arrange')
+      return
+    }
+    const anchorX = Math.min(...selected.map(n => n.position.x))
+    const anchorY = Math.min(...selected.map(n => n.position.y))
+    // Conservative column / row step that covers the widest node type
+    // (image/video nodes are 320-420px wide, ~500px tall when expanded).
+    const colWidth = 380
+    const rowHeight = 520
+    const columns = Math.max(1, Math.ceil(Math.sqrt(selected.length)))
+    const sorted = [...selected].sort((a, b) => {
+      // Treat nodes within ~50px of the same y as on the same row.
+      if (Math.abs(a.position.y - b.position.y) > 50) return a.position.y - b.position.y
+      return a.position.x - b.position.x
+    })
+    const posById = new Map<string, { x: number; y: number }>()
+    sorted.forEach((node, idx) => {
+      const col = idx % columns
+      const row = Math.floor(idx / columns)
+      posById.set(node.id, {
+        x: anchorX + col * colWidth,
+        y: anchorY + row * rowHeight,
+      })
+    })
+    setNodes(ns => ns.map(n => {
+      const next = posById.get(n.id)
+      if (!next) return n
+      return { ...n, position: next }
+    }))
+    toast.success(`Arranged ${selected.length} nodes in a ${columns}-column grid`)
   }
 
   const handleQuickConnect = (nodeType: string) => {
@@ -234,6 +276,10 @@ export function NodeActionToolbar({
             </DropdownMenu>
           )}
         </div>
+
+        {/* Arrange selected — auto-fit grid. Only meaningful when >1
+            nodes are selected; the handler toasts if not. */}
+        <ToolBtn icon={SquaresFour} label="Arrange selected in grid" onClick={handleArrangeGrid} />
 
         {/* Move to page */}
         <ToolBtn icon={ArrowSquareOut} label="Move to page" onClick={() => onMoveToPage?.(2)} />

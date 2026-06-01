@@ -67,6 +67,18 @@ function PromptNodeImpl({ id, data, selected }: NodeProps) {
           boxShadow: selected ? '0 0 0 1px rgba(168,85,247,0.2), 0 0 24px rgba(168,85,247,0.15)' : 'none',
         }}
       >
+        {/* Drag handle strip. The textarea below carries the `nodrag` class
+            so clicks land cursor-in-text, but that left the node with no
+            grabbable surface at all — the only "frame" was the 1.5px
+            border. This top strip gives the user a clear target to grab
+            and drag without sacrificing any text area. */}
+        <div
+          className="h-3 w-full cursor-move flex items-center justify-center select-none"
+          title="Drag to move"
+          style={{ background: 'rgba(168,85,247,0.06)' }}
+        >
+          <div className="w-8 h-[3px] rounded-full bg-purple-400/30" />
+        </div>
         <MentionTextarea
           value={text}
           mentions={mentions}

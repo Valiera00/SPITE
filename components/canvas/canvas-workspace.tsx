@@ -27,6 +27,7 @@ import { CanvasToolbar } from './canvas-toolbar'
 import { LeftToolbar, type Asset, type AssetCategory } from './left-toolbar'
 import { BottomBar } from './bottom-bar'
 import { SceneTimeline, type Scene, type Shot } from './scene-timeline'
+import { AlignmentGuides, computeAlignmentGuides } from './alignment-guides'
 import { MapTrifold, X } from '@phosphor-icons/react'
 import { AddNodeMenu } from './add-node-menu'
 import { ImageNode } from './nodes/image-node'
@@ -820,7 +821,33 @@ function CanvasInner({ projectId }: { projectId: string }) {
     setContextMenu({ x: e.clientX, y: e.clientY, flowPos })
   }, [screenToFlowPosition])
 
+  // Smart-guide state. Populated on every drag tick with the flow
+  // coordinates of any alignments between the dragged node and the
+  // others; cleared when the drag finishes so guides only show during
+  // active manipulation.
+  const [dragGuides, setDragGuides] = useState<{ vertical: number[]; horizontal: number[] }>({
+    vertical: [],
+    horizontal: [],
+  })
+
+  const onNodeDrag = useCallback((_event: any, node: Node) => {
+    const others = (nodes as Node[]).filter(n => n.id !== node.id)
+    const guides = computeAlignmentGuides(node, others)
+    // Avoid re-rendering when nothing changed — set state by identity
+    // comparison on the small flat arrays.
+    setDragGuides(prev => {
+      if (
+        prev.vertical.length === guides.vertical.length &&
+        prev.horizontal.length === guides.horizontal.length &&
+        prev.vertical.every((v, i) => v === guides.vertical[i]) &&
+        prev.horizontal.every((v, i) => v === guides.horizontal[i])
+      ) return prev
+      return guides
+    })
+  }, [nodes])
+
   const onNodeDragStop = useCallback(() => {
+    setDragGuides({ vertical: [], horizontal: [] })
   }, [])
 
   // Memoize the scene-filtered nodes/edges so they don't get a fresh
@@ -898,6 +925,7 @@ function CanvasInner({ projectId }: { projectId: string }) {
               onEdgesChange={onEdgesChange}
               onConnect={onConnect}
               isValidConnection={isValidConnection}
+              onNodeDrag={onNodeDrag}
               onNodeDragStop={onNodeDragStop}
               onNodeClick={() => {
                 // Close any open sticker pickers when clicking any node
@@ -968,6 +996,10 @@ function CanvasInner({ projectId }: { projectId: string }) {
                   className="!bottom-14 !right-3"
                 />
               )}
+              <AlignmentGuides
+                vertical={dragGuides.vertical}
+                horizontal={dragGuides.horizontal}
+              />
             </ReactFlow>
           )
         })()}
