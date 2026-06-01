@@ -20,10 +20,36 @@ function getS3Client() {
   })
 }
 
+// Both branches of this endpoint are catastrophically destructive — one
+// wipes every canvas + project, the other deletes every asset in R2 AND
+// in the DB. To stop an accidental stray POST from doing that, the
+// caller must include a typed confirmation matching the action they're
+// taking. The frontend Settings UI prompts the user to type the phrase
+// in a dialog before sending the request.
+const CONFIRM_PHRASES = {
+  canvas: 'DELETE ALL CANVAS DATA',
+  assets: 'DELETE ALL ASSETS',
+} as const
+
 export async function POST(request: NextRequest) {
   try {
     const sql = getDb()
-    const { type } = await request.json()
+    const { type, confirm } = await request.json()
+
+    const expected = (CONFIRM_PHRASES as Record<string, string>)[type]
+    if (!expected) {
+      return NextResponse.json({ error: 'Invalid type' }, { status: 400 })
+    }
+    if (typeof confirm !== 'string' || confirm !== expected) {
+      return NextResponse.json(
+        {
+          error:
+            'confirmation required',
+          message: `To proceed, POST { type, confirm: "${expected}" }`,
+        },
+        { status: 400 },
+      )
+    }
 
     if (type === 'canvas') {
       // Clear all canvas data (nodes, edges, projects)

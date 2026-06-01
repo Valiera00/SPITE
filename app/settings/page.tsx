@@ -32,10 +32,16 @@ export default function SettingsPage() {
   const [passwordSuccess, setPasswordSuccess] = useState(false)
   const [changingPassword, setChangingPassword] = useState(false)
 
-  // Danger zone state
+  // Danger zone state. Both actions require the user to type the
+  // matching phrase before the button enables — defense against a stray
+  // click wiping a project mid-job.
   const [showClearCanvasConfirm, setShowClearCanvasConfirm] = useState(false)
   const [showClearAssetsConfirm, setShowClearAssetsConfirm] = useState(false)
   const [clearing, setClearing] = useState(false)
+  const [canvasConfirmText, setCanvasConfirmText] = useState('')
+  const [assetsConfirmText, setAssetsConfirmText] = useState('')
+  const CLEAR_CANVAS_PHRASE = 'DELETE ALL CANVAS DATA'
+  const CLEAR_ASSETS_PHRASE = 'DELETE ALL ASSETS'
 
   // Check API key on mount
   useEffect(() => {
@@ -169,15 +175,17 @@ export default function SettingsPage() {
   }
 
   const clearAllCanvasData = async () => {
+    if (canvasConfirmText !== CLEAR_CANVAS_PHRASE) return
     setClearing(true)
     try {
       const res = await fetch('/api/settings/clear-data', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: 'canvas' }),
+        body: JSON.stringify({ type: 'canvas', confirm: canvasConfirmText }),
       })
       if (res.ok) {
         setShowClearCanvasConfirm(false)
+        setCanvasConfirmText('')
       }
     } catch (error) {
       console.error('Failed to clear canvas data:', error)
@@ -187,15 +195,17 @@ export default function SettingsPage() {
   }
 
   const clearAllAssets = async () => {
+    if (assetsConfirmText !== CLEAR_ASSETS_PHRASE) return
     setClearing(true)
     try {
       const res = await fetch('/api/settings/clear-data', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: 'assets' }),
+        body: JSON.stringify({ type: 'assets', confirm: assetsConfirmText }),
       })
       if (res.ok) {
         setShowClearAssetsConfirm(false)
+        setAssetsConfirmText('')
       }
     } catch (error) {
       console.error('Failed to clear assets:', error)
@@ -354,67 +364,105 @@ export default function SettingsPage() {
         <section className="space-y-4">
           <h2 className="text-sm font-mono uppercase tracking-wider text-destructive">Danger Zone</h2>
           <div className="glass rounded-xl border border-destructive/20 p-6 space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-foreground">Clear all canvas data</p>
-                <p className="text-xs text-muted-foreground mt-1">Delete all projects and pages from the database</p>
-              </div>
-              {showClearCanvasConfirm ? (
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => setShowClearCanvasConfirm(false)}
-                    className="px-3 py-1.5 text-xs font-mono rounded-lg glass-hover text-muted-foreground"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={clearAllCanvasData}
-                    disabled={clearing}
-                    className="px-3 py-1.5 text-xs font-mono rounded-lg bg-destructive text-destructive-foreground hover:bg-destructive/90 disabled:opacity-50"
-                  >
-                    {clearing ? 'Clearing...' : 'Confirm Delete'}
-                  </button>
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-foreground">Clear all canvas data</p>
+                  <p className="text-xs text-muted-foreground mt-1">Delete all projects and pages from the database</p>
                 </div>
-              ) : (
-                <button
-                  onClick={() => setShowClearCanvasConfirm(true)}
-                  className="px-3 py-1.5 text-xs font-mono rounded-lg border border-destructive/50 text-destructive hover:bg-destructive/10 transition-colors"
-                >
-                  Clear Data
-                </button>
+                {!showClearCanvasConfirm && (
+                  <button
+                    onClick={() => setShowClearCanvasConfirm(true)}
+                    className="px-3 py-1.5 text-xs font-mono rounded-lg border border-destructive/50 text-destructive hover:bg-destructive/10 transition-colors"
+                  >
+                    Clear Data
+                  </button>
+                )}
+              </div>
+              {showClearCanvasConfirm && (
+                <div className="flex flex-col gap-2 p-3 rounded-lg bg-destructive/5 border border-destructive/30">
+                  <p className="text-xs text-muted-foreground">
+                    Type <span className="font-mono text-destructive">{CLEAR_CANVAS_PHRASE}</span> to confirm:
+                  </p>
+                  <input
+                    type="text"
+                    value={canvasConfirmText}
+                    onChange={(e) => setCanvasConfirmText(e.target.value)}
+                    placeholder={CLEAR_CANVAS_PHRASE}
+                    className="px-3 py-1.5 text-xs font-mono rounded-lg bg-background border border-border/50 focus:border-destructive outline-none"
+                    autoFocus
+                  />
+                  <div className="flex items-center gap-2 justify-end">
+                    <button
+                      onClick={() => {
+                        setShowClearCanvasConfirm(false)
+                        setCanvasConfirmText('')
+                      }}
+                      className="px-3 py-1.5 text-xs font-mono rounded-lg glass-hover text-muted-foreground"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={clearAllCanvasData}
+                      disabled={clearing || canvasConfirmText !== CLEAR_CANVAS_PHRASE}
+                      className="px-3 py-1.5 text-xs font-mono rounded-lg bg-destructive text-destructive-foreground hover:bg-destructive/90 disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      {clearing ? 'Clearing...' : 'Confirm Delete'}
+                    </button>
+                  </div>
+                </div>
               )}
             </div>
 
             <div className="border-t border-border/50" />
 
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-foreground">Clear all assets</p>
-                <p className="text-xs text-muted-foreground mt-1">Delete all assets and their storage files</p>
-              </div>
-              {showClearAssetsConfirm ? (
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => setShowClearAssetsConfirm(false)}
-                    className="px-3 py-1.5 text-xs font-mono rounded-lg glass-hover text-muted-foreground"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={clearAllAssets}
-                    disabled={clearing}
-                    className="px-3 py-1.5 text-xs font-mono rounded-lg bg-destructive text-destructive-foreground hover:bg-destructive/90 disabled:opacity-50"
-                  >
-                    {clearing ? 'Clearing...' : 'Confirm Delete'}
-                  </button>
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-foreground">Clear all assets</p>
+                  <p className="text-xs text-muted-foreground mt-1">Delete all assets and their storage files</p>
                 </div>
-              ) : (
-                <button
-                  onClick={() => setShowClearAssetsConfirm(true)}
-                  className="px-3 py-1.5 text-xs font-mono rounded-lg border border-destructive/50 text-destructive hover:bg-destructive/10 transition-colors"
-                >
-                  Clear Assets
-                </button>
+                {!showClearAssetsConfirm && (
+                  <button
+                    onClick={() => setShowClearAssetsConfirm(true)}
+                    className="px-3 py-1.5 text-xs font-mono rounded-lg border border-destructive/50 text-destructive hover:bg-destructive/10 transition-colors"
+                  >
+                    Clear Assets
+                  </button>
+                )}
+              </div>
+              {showClearAssetsConfirm && (
+                <div className="flex flex-col gap-2 p-3 rounded-lg bg-destructive/5 border border-destructive/30">
+                  <p className="text-xs text-muted-foreground">
+                    Type <span className="font-mono text-destructive">{CLEAR_ASSETS_PHRASE}</span> to confirm:
+                  </p>
+                  <input
+                    type="text"
+                    value={assetsConfirmText}
+                    onChange={(e) => setAssetsConfirmText(e.target.value)}
+                    placeholder={CLEAR_ASSETS_PHRASE}
+                    className="px-3 py-1.5 text-xs font-mono rounded-lg bg-background border border-border/50 focus:border-destructive outline-none"
+                    autoFocus
+                  />
+                  <div className="flex items-center gap-2 justify-end">
+                    <button
+                      onClick={() => {
+                        setShowClearAssetsConfirm(false)
+                        setAssetsConfirmText('')
+                      }}
+                      className="px-3 py-1.5 text-xs font-mono rounded-lg glass-hover text-muted-foreground"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={clearAllAssets}
+                      disabled={clearing || assetsConfirmText !== CLEAR_ASSETS_PHRASE}
+                      className="px-3 py-1.5 text-xs font-mono rounded-lg bg-destructive text-destructive-foreground hover:bg-destructive/90 disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      {clearing ? 'Clearing...' : 'Confirm Delete'}
+                    </button>
+                  </div>
+                </div>
               )}
             </div>
           </div>

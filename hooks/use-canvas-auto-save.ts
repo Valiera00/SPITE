@@ -91,11 +91,25 @@ export function useCanvasAutoSave(projectId: string | undefined, nodes: Node[], 
     }
   }, [projectId, nodes, edges, saveCanvas])
 
-  // Auto-save on interval (every 30 seconds as backup)
+  // Auto-save on interval (every 30 seconds as backup).
+  //
+  // Earlier version listed `saveCanvas` in the dep array — and saveCanvas
+  // is a useCallback whose own deps include `nodes` + `edges`. So every
+  // keystroke gave saveCanvas a new identity, the effect tore down the
+  // 30s timer, and the backup save effectively never fired during active
+  // editing. Now we route through a ref that gets updated each render,
+  // and the interval effect itself only depends on `projectId`. The 30s
+  // tick actually elapses; saveCanvas's own "nothing changed since last
+  // save" guard keeps it from generating noise when there's nothing new.
+  const saveCanvasRef = useRef(saveCanvas)
   useEffect(() => {
-    const interval = setInterval(() => saveCanvas(), 30000)
-    return () => clearInterval(interval)
+    saveCanvasRef.current = saveCanvas
   }, [saveCanvas])
+  useEffect(() => {
+    if (!projectId) return
+    const interval = setInterval(() => saveCanvasRef.current?.(), 30000)
+    return () => clearInterval(interval)
+  }, [projectId])
 
   // Save on unmount
   useEffect(() => {

@@ -844,6 +844,8 @@ function CanvasInner({ projectId }: { projectId: string }) {
         onAddScene={handleAddScene}
         onShotClick={handleShotClick}
         projectName={projectName}
+        canvasNodes={nodes}
+        canvasEdges={edges}
       />
 
       {/* Top toolbar */}

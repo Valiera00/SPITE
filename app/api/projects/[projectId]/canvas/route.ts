@@ -100,8 +100,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     // snapshots table so we can recover from a botched save / accidental
     // wipe. Throttled to one snapshot per 5 minutes per project to avoid
     // filling the rolling window with near-identical states during rapid
-    // editing, capped to the most recent 10 snapshots per project. Any
-    // failure here is non-fatal — the main save already succeeded.
+    // editing, capped to the most recent 30 snapshots per project —
+    // roughly 2.5 hours of recoverable history, comfortable for a long
+    // editing session. Any failure here is non-fatal — the main save
+    // already succeeded.
     try {
       await ensureSnapshotsSchema(sql)
       const lastSnap = await sql`
@@ -128,7 +130,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
               SELECT id FROM canvas_snapshots
               WHERE project_id = ${projectId}
               ORDER BY saved_at DESC
-              OFFSET 10
+              OFFSET 30
             )
         `
       }

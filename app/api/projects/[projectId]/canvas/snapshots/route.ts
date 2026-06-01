@@ -108,7 +108,7 @@ export async function POST(
           ${JSON.stringify(currentEdges)}::jsonb
         )
       `
-      // Trim back to the 10-snapshot cap to make room.
+      // Trim back to the 30-snapshot cap (matches canvas save route).
       await sql`
         DELETE FROM canvas_snapshots
         WHERE project_id = ${projectId}
@@ -116,7 +116,7 @@ export async function POST(
             SELECT id FROM canvas_snapshots
             WHERE project_id = ${projectId}
             ORDER BY saved_at DESC
-            OFFSET 10
+            OFFSET 30
           )
       `
     } catch (preSnapErr) {
