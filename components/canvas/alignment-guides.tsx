@@ -75,15 +75,23 @@ export function AlignmentGuides({ vertical, horizontal }: Props) {
       {vertical.map((flowX, i) => (
         <div
           key={`v-${i}-${flowX}`}
-          className="absolute top-0 bottom-0 w-px bg-cyan-400/80 shadow-[0_0_3px_rgba(34,211,238,0.5)]"
-          style={{ left: vx + flowX * zoom }}
+          className="absolute top-0 bottom-0"
+          style={{
+            left: vx + flowX * zoom,
+            width: 1,
+            background: 'rgba(168,85,247,0.45)',
+          }}
         />
       ))}
       {horizontal.map((flowY, i) => (
         <div
           key={`h-${i}-${flowY}`}
-          className="absolute left-0 right-0 h-px bg-cyan-400/80 shadow-[0_0_3px_rgba(34,211,238,0.5)]"
-          style={{ top: vy + flowY * zoom }}
+          className="absolute left-0 right-0"
+          style={{
+            top: vy + flowY * zoom,
+            height: 1,
+            background: 'rgba(168,85,247,0.45)',
+          }}
         />
       ))}
     </div>
