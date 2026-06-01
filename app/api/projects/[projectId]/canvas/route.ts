@@ -9,11 +9,54 @@ function getDb() {
   return neon(process.env.DATABASE_URL)
 }
 
+// Self-bootstraps the rolling-backup table. Snapshots are tiny insurance
+// against an autosave race or accidental wipe: the last ~50 minutes of
+// canvas history are recoverable via the snapshots endpoint.
+// Param typed `any` to side-step Neon's deeply-generic SQL function type.
+async function ensureSnapshotsSchema(sql: any) {
+  await sql`
+    CREATE TABLE IF NOT EXISTS canvas_snapshots (
+      id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      project_id  text NOT NULL,
+      saved_at    timestamptz NOT NULL DEFAULT now(),
+      nodes_json  jsonb NOT NULL,
+      edges_json  jsonb NOT NULL
+    )
+  `
+  await sql`CREATE INDEX IF NOT EXISTS idx_canvas_snapshots_project ON canvas_snapshots(project_id, saved_at DESC)`
+}
+
 export async function POST(request: NextRequest, { params }: { params: Promise<{ projectId: string }> }) {
   try {
     const sql = getDb()
     const { projectId } = await params
     const { nodes, edges } = await request.json()
+
+    // FAILSAFE: never blow away a non-empty canvas with an empty payload.
+    // The client has a matching guard but a stale request from a closed
+    // tab / racing beacon / error boundary could still reach us. We let
+    // an explicit ?force=true override this for the rare case the user
+    // genuinely cleared the canvas to empty.
+    if (Array.isArray(nodes) && nodes.length === 0) {
+      const url = new URL(request.url)
+      const force = url.searchParams.get('force') === 'true'
+      if (!force) {
+        const existing = await sql`
+          SELECT COUNT(*)::int AS n FROM canvas_nodes WHERE projectId = ${projectId}::text
+        `
+        const existingCount = (existing[0] as any)?.n ?? 0
+        if (existingCount > 0) {
+          console.warn(
+            `[canvas] Refusing empty-nodes save for project ${projectId}: DB has ${existingCount} nodes. Add ?force=true to override.`,
+          )
+          return NextResponse.json({
+            success: false,
+            skipped: 'empty-wipe-guard',
+            existingNodes: existingCount,
+          })
+        }
+      }
+    }
 
     // Neon's HTTP driver runs each tagged-template invocation as its own
     // round-trip — so the old `sql\`BEGIN\`` / `sql\`COMMIT\`` pattern was
@@ -52,6 +95,46 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       `)
     }
     await sql.transaction(writeQueries)
+
+    // Rolling-backup snapshot: write the just-saved state to a separate
+    // snapshots table so we can recover from a botched save / accidental
+    // wipe. Throttled to one snapshot per 5 minutes per project to avoid
+    // filling the rolling window with near-identical states during rapid
+    // editing, capped to the most recent 10 snapshots per project. Any
+    // failure here is non-fatal — the main save already succeeded.
+    try {
+      await ensureSnapshotsSchema(sql)
+      const lastSnap = await sql`
+        SELECT saved_at FROM canvas_snapshots
+        WHERE project_id = ${projectId}
+        ORDER BY saved_at DESC LIMIT 1
+      `
+      const lastTs = (lastSnap[0] as any)?.saved_at
+      const tooSoon =
+        lastTs && Date.now() - new Date(lastTs).getTime() < 5 * 60 * 1000
+      if (!tooSoon) {
+        await sql`
+          INSERT INTO canvas_snapshots (project_id, nodes_json, edges_json)
+          VALUES (
+            ${projectId},
+            ${JSON.stringify(nodes)}::jsonb,
+            ${JSON.stringify(edges)}::jsonb
+          )
+        `
+        await sql`
+          DELETE FROM canvas_snapshots
+          WHERE project_id = ${projectId}
+            AND id IN (
+              SELECT id FROM canvas_snapshots
+              WHERE project_id = ${projectId}
+              ORDER BY saved_at DESC
+              OFFSET 10
+            )
+        `
+      }
+    } catch (snapErr) {
+      console.error('[canvas] Snapshot write failed (non-fatal):', snapErr)
+    }
 
     // Reconcile asset protection: anything referenced by a node on the canvas
     // is "protected" (never auto-deleted); anything previously protected in

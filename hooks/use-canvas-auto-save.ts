@@ -17,6 +17,26 @@ export function useCanvasAutoSave(projectId: string | undefined, nodes: Node[], 
       return // No changes, don't save
     }
 
+    // FAILSAFE: never POST an empty-nodes payload if the last successful
+    // save had content. This guards against transient state glitches
+    // (project switch races, error boundaries, an unmount beacon firing
+    // mid-render) that would otherwise wipe the canvas. The server has a
+    // matching guard but blocking here saves the round-trip entirely.
+    if (nodes.length === 0 && lastSavedRef.current) {
+      try {
+        const last = JSON.parse(lastSavedRef.current)
+        if (Array.isArray(last.nodes) && last.nodes.length > 0) {
+          console.warn(
+            '[Canvas] Skipping empty-nodes autosave; previous save had content',
+          )
+          return
+        }
+      } catch {
+        // If we can't parse the last state, fall through and let the
+        // server-side guard handle it.
+      }
+    }
+
     isSavingRef.current = true
     setSaveStatus('saving')
 
