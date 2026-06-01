@@ -94,6 +94,12 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           data = EXCLUDED.data
       `)
     }
+    // Touch the project so the dashboard's "last edited" timestamp +
+    // most-recently-used sort actually reflect canvas activity, not just
+    // explicit project metadata changes (rename / create / duplicate).
+    writeQueries.push(sql`
+      UPDATE projects SET updatedat = NOW() WHERE id = ${projectId}
+    `)
     await sql.transaction(writeQueries)
 
     // Rolling-backup snapshot: write the just-saved state to a separate

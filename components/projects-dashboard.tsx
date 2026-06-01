@@ -105,6 +105,7 @@ export function ProjectsDashboard() {
                 key={project.id}
                 id={project.id}
                 name={project.name}
+                thumbnail={project.thumbnail || undefined}
                 lastModified={formatRelativeTime(project.updatedat)}
                 onMutate={() => mutate()}
               />
