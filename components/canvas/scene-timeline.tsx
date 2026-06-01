@@ -3,7 +3,6 @@
 import { useState, useRef } from 'react'
 import { Plus, CaretDown, Play, CaretLeft, CaretRight, Image as ImageIcon, DownloadSimple, CircleNotch } from '@phosphor-icons/react'
 import { toast } from 'sonner'
-import type { Node, Edge } from '@xyflow/react'
 import { exportScenesAsZip } from '@/lib/export-scenes'
 
 export interface Shot {
@@ -34,10 +33,6 @@ interface SceneTimelineProps {
   onReorderShot?: (sceneId: string, shotId: string, newIndex: number) => void
   // Optional project name used as the downloaded zip's filename.
   projectName?: string
-  // Full canvas snapshot to ship inside the export zip as canvas.json,
-  // so the archive is a self-contained backup (media + wiring).
-  canvasNodes?: Node[]
-  canvasEdges?: Edge[]
 }
 
 export function SceneTimeline({
@@ -48,8 +43,6 @@ export function SceneTimeline({
   onShotClick,
   onReorderShot,
   projectName,
-  canvasNodes,
-  canvasEdges,
 }: SceneTimelineProps) {
   const [exporting, setExporting] = useState(false)
 
@@ -63,14 +56,9 @@ export function SceneTimeline({
     setExporting(true)
     const toastId = toast.loading('Building zip...')
     try {
-      const canvasSnapshot =
-        canvasNodes && canvasEdges
-          ? { nodes: canvasNodes, edges: canvasEdges }
-          : undefined
       const result = await exportScenesAsZip(
         scenes,
         projectName || 'frame-export',
-        canvasSnapshot,
       )
       const skippedCount = result.skipped.length
       toast.success(

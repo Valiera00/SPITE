@@ -602,13 +602,29 @@ function CanvasInner({ projectId }: { projectId: string }) {
     setNodes(ns => {
       const selected = ns.filter(n => n.selected)
       if (!selected.length) return ns
-      const copies = selected.map(n => ({
-        ...n,
-        id: makeId(),
-        position: { x: n.position.x + 40, y: n.position.y + 40 },
-        selected: true,
-        data: { ...n.data },
-      }))
+      const copies = selected.map(n => {
+        // Strip shotId from the duplicate — otherwise the copy hijacks
+        // the shot tag and whatever it next generates becomes "the
+        // shot," overwriting the original's thumbnail in the timeline.
+        // Also strip the active-generation fields so the duplicate
+        // doesn't latch onto its parent's pending fal request.
+        const {
+          shotId: _droppedShotId,
+          pendingRequestId: _droppedReq,
+          pendingFalEndpoint: _droppedEndpoint,
+          ...cleanData
+        } = (n.data as Record<string, unknown>) || {}
+        void _droppedShotId
+        void _droppedReq
+        void _droppedEndpoint
+        return {
+          ...n,
+          id: makeId(),
+          position: { x: n.position.x + 40, y: n.position.y + 40 },
+          selected: true,
+          data: cleanData,
+        }
+      })
       // Deselect originals
       const deselected = ns.map(n => ({ ...n, selected: false }))
       return [...deselected, ...copies]
@@ -844,8 +860,6 @@ function CanvasInner({ projectId }: { projectId: string }) {
         onAddScene={handleAddScene}
         onShotClick={handleShotClick}
         projectName={projectName}
-        canvasNodes={nodes}
-        canvasEdges={edges}
       />
 
       {/* Top toolbar */}

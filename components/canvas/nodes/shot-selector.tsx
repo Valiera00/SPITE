@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { CaretDown, Check, Plus, FilmStrip, Image as ImageIcon } from '@phosphor-icons/react'
+import { CaretDown, Check, Plus, FilmStrip, Image as ImageIcon, X } from '@phosphor-icons/react'
 
 export interface ShotOption {
   id: string
@@ -13,6 +13,7 @@ export interface ShotOption {
 interface ShotSelectorProps {
   selectedShotId?: string
   shots: ShotOption[]
+  // Pass an empty string to unassign the node from its current shot.
   onSelect: (shotId: string) => void
   onNewShot: () => void
 }
@@ -96,6 +97,15 @@ export function ShotSelector({ selectedShotId, shots, onSelect, onNewShot }: Sho
               <Plus size={12} weight="bold" />
               <span className="text-[11px] font-mono">New Shot</span>
             </button>
+            {selectedShotId && (
+              <button
+                onClick={() => { onSelect(''); setOpen(false) }}
+                className="w-full flex items-center gap-2 px-2 py-1.5 hover:bg-white/5 transition-colors text-muted-foreground hover:text-foreground"
+              >
+                <X size={12} weight="bold" />
+                <span className="text-[11px] font-mono">Remove from shot</span>
+              </button>
+            )}
           </div>
         </div>
       )}

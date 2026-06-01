@@ -264,7 +264,14 @@ function ImageNodeImpl({ id, data, selected }: NodeProps) {
   const shots = useSceneShots(id)
 
   const handleShotSelect = (shotId: string) => {
-    setNodes(ns => ns.map(n => n.id === id ? { ...n, data: { ...n.data, shotId } } : n))
+    // Empty string from the selector means "unassign from this shot".
+    // Storing undefined keeps the data object clean (no stray empty
+    // strings ending up in exports/snapshots) and matches every other
+    // code path that checks for shotId via truthiness.
+    setNodes(ns => ns.map(n => n.id === id ? {
+      ...n,
+      data: { ...n.data, shotId: shotId || undefined },
+    } : n))
   }
 
   const handleNewShot = () => {

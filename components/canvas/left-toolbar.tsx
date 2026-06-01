@@ -163,6 +163,7 @@ export function LeftToolbar({
   const [selectMode, setSelectMode] = useState(false)
   const [selectedAssetIds, setSelectedAssetIds] = useState<Set<string>>(new Set())
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
+  const [bulkDownloading, setBulkDownloading] = useState(false)
 
   // Category panel: which folder is inline-expanded (asset grid visible),
   // and which folder-type's "+ New" button opens the create modal.
@@ -419,6 +420,91 @@ export function LeftToolbar({
     if (failed > 0) toast.error(`${failed} failed to delete`)
   }
 
+  // Download every selected asset as a single zip. Pulling each file
+  // individually would require dispatching N <a download> clicks, which
+  // most browsers throttle / block beyond the first. Zipping client-side
+  // makes the experience predictable and gives the user one file they
+  // can move around.
+  const performBulkDownload = async () => {
+    if (selectedAssetIds.size === 0 || bulkDownloading) return
+    setBulkDownloading(true)
+    const toastId = toast.loading('Building zip…')
+    try {
+      const ids = Array.from(selectedAssetIds)
+      const assets = ids
+        .map(id => generatedAssets.find(a => a.id === id))
+        .filter(Boolean) as GeneratedAsset[]
+      if (assets.length === 0) {
+        toast.error('Nothing to download', { id: toastId })
+        return
+      }
+      const { default: JSZip } = await import('jszip')
+      const zip = new JSZip()
+      const usedNames = new Set<string>()
+      let added = 0
+      const skipped: string[] = []
+      for (const asset of assets) {
+        try {
+          const res = await fetch(asset.r2_url)
+          if (!res.ok) {
+            skipped.push(`${asset.id} (${res.status})`)
+            continue
+          }
+          const blob = await res.blob()
+          // Try to recover the original filename from the URL (R2 keys
+          // look like "uploads/1738232456789-original-name.png"); strip
+          // the timestamp prefix and dedupe.
+          let baseName = `${asset.type}-${asset.id}`
+          try {
+            const path = new URL(asset.r2_url, 'http://x.invalid').pathname
+            const last = path.split('/').filter(Boolean).pop()
+            if (last) baseName = last.replace(/^\d{10,}-/, '') || baseName
+          } catch {
+            // fall back to default baseName
+          }
+          let name = baseName
+          let i = 2
+          while (usedNames.has(name)) {
+            const dot = baseName.lastIndexOf('.')
+            name = dot > 0
+              ? `${baseName.slice(0, dot)} (${i})${baseName.slice(dot)}`
+              : `${baseName} (${i})`
+            i++
+          }
+          usedNames.add(name)
+          zip.file(name, blob)
+          added++
+        } catch (err) {
+          skipped.push(asset.id)
+          console.warn('[bulk-download] fetch failed', asset.id, err)
+        }
+      }
+      if (added === 0) {
+        toast.error('All downloads failed', { id: toastId })
+        return
+      }
+      const zipBlob = await zip.generateAsync({ type: 'blob' })
+      const objectUrl = URL.createObjectURL(zipBlob)
+      const a = document.createElement('a')
+      a.href = objectUrl
+      a.download = `frame-assets-${new Date().toISOString().slice(0, 10)}.zip`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 1000)
+      toast.success(
+        skipped.length > 0
+          ? `Downloaded ${added} (${skipped.length} skipped)`
+          : `Downloaded ${added} asset${added !== 1 ? 's' : ''}`,
+        { id: toastId },
+      )
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Download failed', { id: toastId })
+    } finally {
+      setBulkDownloading(false)
+    }
+  }
+
 
   // EXPANDED FULL-SCREEN ASSETS MODAL
   if (historyOpen && historyExpanded) {
@@ -659,8 +745,16 @@ export function LeftToolbar({
                       Select all
                     </button>
                     <button
+                      onClick={performBulkDownload}
+                      disabled={selectedAssetIds.size === 0 || bulkDownloading}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs bg-white/10 hover:bg-white/15 text-foreground transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      <Download size={12} />
+                      {bulkDownloading ? 'Zipping…' : 'Download'}
+                    </button>
+                    <button
                       onClick={() => setBulkDeleteOpen(true)}
-                      disabled={selectedAssetIds.size === 0}
+                      disabled={selectedAssetIds.size === 0 || bulkDownloading}
                       className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                     >
                       <Trash size={12} />
@@ -668,7 +762,8 @@ export function LeftToolbar({
                     </button>
                     <button
                       onClick={exitSelectMode}
-                      className="px-3 py-1.5 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-white/5 transition-colors"
+                      disabled={bulkDownloading}
+                      className="px-3 py-1.5 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-white/5 transition-colors disabled:opacity-40"
                     >
                       Cancel
                     </button>
