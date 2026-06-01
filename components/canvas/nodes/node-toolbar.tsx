@@ -124,9 +124,9 @@ export function NodeActionToolbar({
   // selected — sorting one node is meaningless.
   //   'auto'  — ~square grid: ceil(sqrt(N)) columns
   //   '5col'  — 5 columns wide, rows as needed
-  //   'h3'    — horizontal layout, 3 rows tall (columns = ceil(N/3))
-  //   'v3'    — vertical layout, 3 columns wide
-  type GridLayout = 'auto' | '5col' | 'h3' | 'v3'
+  //   'row'   — single horizontal row (all N nodes side by side)
+  //   'col'   — single vertical column (all N nodes stacked)
+  type GridLayout = 'auto' | '5col' | 'row' | 'col'
   const handleArrangeGrid = (layout: GridLayout) => {
     const nodes = getNodes()
     const selected = nodes.filter(n => n.selected)
@@ -144,8 +144,8 @@ export function NodeActionToolbar({
     let columns: number
     switch (layout) {
       case '5col': columns = 5; break
-      case 'h3':   columns = Math.max(1, Math.ceil(n / 3)); break
-      case 'v3':   columns = 3; break
+      case 'row':  columns = n; break
+      case 'col':  columns = 1; break
       case 'auto':
       default:     columns = Math.max(1, Math.ceil(Math.sqrt(n))); break
     }
@@ -325,12 +325,12 @@ export function NodeActionToolbar({
                 onClick={() => { handleArrangeGrid('5col'); setSortMenuOpen(false) }}
               />
               <MenuItem
-                label="Horizontal — 3 rows tall"
-                onClick={() => { handleArrangeGrid('h3'); setSortMenuOpen(false) }}
+                label="Single row (horizontal)"
+                onClick={() => { handleArrangeGrid('row'); setSortMenuOpen(false) }}
               />
               <MenuItem
-                label="Vertical — 3 columns wide"
-                onClick={() => { handleArrangeGrid('v3'); setSortMenuOpen(false) }}
+                label="Single column (vertical)"
+                onClick={() => { handleArrangeGrid('col'); setSortMenuOpen(false) }}
               />
             </DropdownMenu>
           )}
