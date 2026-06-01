@@ -92,6 +92,7 @@ export function NodeActionToolbar({
   const [runMenuOpen, setRunMenuOpen] = useState(false)
   const [connectMenuOpen, setConnectMenuOpen] = useState(false)
   const [copyMenuOpen, setCopyMenuOpen] = useState(false)
+  const [sortMenuOpen, setSortMenuOpen] = useState(false)
   const [moreMenuOpen, setMoreMenuOpen] = useState(false)
   const [addToMenuOpen, setAddToMenuOpen] = useState(false)
   const { deleteElements, getNodes, setNodes, addNodes, addEdges } = useReactFlow()
@@ -116,12 +117,17 @@ export function NodeActionToolbar({
     onDuplicate?.()
   }
 
-  // Arrange every selected node into an auto-fit (~square) grid anchored
-  // at the top-left of the current selection. Sort order is the node's
-  // current top→bottom, left→right reading order so the result feels
-  // predictable rather than randomly reshuffled. Toast + bail if fewer
-  // than 2 nodes are selected — sorting one node is meaningless.
-  const handleArrangeGrid = () => {
+  // Arrange every selected node into a grid anchored at the top-left of
+  // the current selection. Sort order is the node's current top→bottom,
+  // left→right reading order so the result feels predictable rather than
+  // randomly reshuffled. Toast + bail if fewer than 2 nodes are
+  // selected — sorting one node is meaningless.
+  //   'auto'  — ~square grid: ceil(sqrt(N)) columns
+  //   '5col'  — 5 columns wide, rows as needed
+  //   'h3'    — horizontal layout, 3 rows tall (columns = ceil(N/3))
+  //   'v3'    — vertical layout, 3 columns wide
+  type GridLayout = 'auto' | '5col' | 'h3' | 'v3'
+  const handleArrangeGrid = (layout: GridLayout) => {
     const nodes = getNodes()
     const selected = nodes.filter(n => n.selected)
     if (selected.length < 2) {
@@ -134,7 +140,15 @@ export function NodeActionToolbar({
     // (image/video nodes are 320-420px wide, ~500px tall when expanded).
     const colWidth = 380
     const rowHeight = 520
-    const columns = Math.max(1, Math.ceil(Math.sqrt(selected.length)))
+    const n = selected.length
+    let columns: number
+    switch (layout) {
+      case '5col': columns = 5; break
+      case 'h3':   columns = Math.max(1, Math.ceil(n / 3)); break
+      case 'v3':   columns = 3; break
+      case 'auto':
+      default:     columns = Math.max(1, Math.ceil(Math.sqrt(n))); break
+    }
     const sorted = [...selected].sort((a, b) => {
       // Treat nodes within ~50px of the same y as on the same row.
       if (Math.abs(a.position.y - b.position.y) > 50) return a.position.y - b.position.y
@@ -149,12 +163,13 @@ export function NodeActionToolbar({
         y: anchorY + row * rowHeight,
       })
     })
-    setNodes(ns => ns.map(n => {
-      const next = posById.get(n.id)
-      if (!next) return n
-      return { ...n, position: next }
+    setNodes(ns => ns.map(node => {
+      const next = posById.get(node.id)
+      if (!next) return node
+      return { ...node, position: next }
     }))
-    toast.success(`Arranged ${selected.length} nodes in a ${columns}-column grid`)
+    const rows = Math.ceil(n / columns)
+    toast.success(`Arranged ${n} nodes — ${columns} × ${rows}`)
   }
 
   const handleQuickConnect = (nodeType: string) => {
@@ -277,9 +292,49 @@ export function NodeActionToolbar({
           )}
         </div>
 
-        {/* Arrange selected — auto-fit grid. Only meaningful when >1
-            nodes are selected; the handler toasts if not. */}
-        <ToolBtn icon={SquaresFour} label="Arrange selected in grid" onClick={handleArrangeGrid} />
+        {/* Arrange selected — grid options. Only meaningful when >1
+            nodes are selected; each handler toasts if not. */}
+        <div className="relative">
+          <div className="flex items-center">
+            <ToolBtn
+              icon={SquaresFour}
+              label="Arrange selected in a grid"
+              onClick={() => handleArrangeGrid('auto')}
+            />
+            <button
+              onClick={() => {
+                setSortMenuOpen(!sortMenuOpen)
+                setRunMenuOpen(false)
+                setConnectMenuOpen(false)
+                setCopyMenuOpen(false)
+                setMoreMenuOpen(false)
+              }}
+              className="flex items-center justify-center w-4 h-6 text-muted-foreground hover:text-foreground transition-colors"
+            >
+              {sortMenuOpen ? <CaretUp size={8} weight="bold" /> : <CaretDown size={8} weight="bold" />}
+            </button>
+          </div>
+          {sortMenuOpen && (
+            <DropdownMenu onClose={() => setSortMenuOpen(false)}>
+              <MenuItem
+                label="Auto-fit (square-ish)"
+                onClick={() => { handleArrangeGrid('auto'); setSortMenuOpen(false) }}
+              />
+              <MenuItem
+                label="5 columns wide"
+                onClick={() => { handleArrangeGrid('5col'); setSortMenuOpen(false) }}
+              />
+              <MenuItem
+                label="Horizontal — 3 rows tall"
+                onClick={() => { handleArrangeGrid('h3'); setSortMenuOpen(false) }}
+              />
+              <MenuItem
+                label="Vertical — 3 columns wide"
+                onClick={() => { handleArrangeGrid('v3'); setSortMenuOpen(false) }}
+              />
+            </DropdownMenu>
+          )}
+        </div>
 
         {/* Move to page */}
         <ToolBtn icon={ArrowSquareOut} label="Move to page" onClick={() => onMoveToPage?.(2)} />
