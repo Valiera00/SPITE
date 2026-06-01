@@ -6,11 +6,15 @@ import type { Node } from '@xyflow/react'
 // Photoshop / Figma-style smart guides. When the user drags a node and
 // any of its edges or center aligns with another node's edges or center
 // (within THRESHOLD flow-coordinate pixels), a full-canvas line is
-// rendered through the matching coordinate to make the alignment
+// rendered through the dragged node's coordinate to make the alignment
 // visible. Compute on every drag tick from the workspace, pass the
 // resulting flow-coordinate guide list to this component.
+//
+// THRESHOLD is intentionally tight — 4px was emitting false positives
+// where one node's center happened to be near another's left edge by
+// coincidence. 2px means you actually have to be on the line.
 
-const THRESHOLD = 4
+const THRESHOLD = 2
 
 // React Flow attaches measured width/height to each node after the first
 // render. For nodes that haven't measured yet, fall back to a typical
@@ -41,18 +45,22 @@ export function computeAlignmentGuides(
   for (const other of others) {
     if (other.id === dragged.id) continue
     const o = nodeBox(other)
-    // Vertical guides — X alignment.
-    if (Math.abs(d.left - o.left) < THRESHOLD) vertical.add(o.left)
-    if (Math.abs(d.left - o.right) < THRESHOLD) vertical.add(o.right)
-    if (Math.abs(d.right - o.right) < THRESHOLD) vertical.add(o.right)
-    if (Math.abs(d.right - o.left) < THRESHOLD) vertical.add(o.left)
-    if (Math.abs(d.centerX - o.centerX) < THRESHOLD) vertical.add(o.centerX)
-    // Horizontal guides — Y alignment.
-    if (Math.abs(d.top - o.top) < THRESHOLD) horizontal.add(o.top)
-    if (Math.abs(d.top - o.bottom) < THRESHOLD) horizontal.add(o.bottom)
-    if (Math.abs(d.bottom - o.bottom) < THRESHOLD) horizontal.add(o.bottom)
-    if (Math.abs(d.bottom - o.top) < THRESHOLD) horizontal.add(o.top)
-    if (Math.abs(d.centerY - o.centerY) < THRESHOLD) horizontal.add(o.centerY)
+    // Vertical guides — X alignment. Line is anchored at the DRAGGED
+    // node's edge, so the guide visually sits where the user's node
+    // actually is. (Anchoring to the other node's edge could place the
+    // line a couple px off from the dragged node when alignment is
+    // near-but-not-exact, which reads as a "phantom" guide.)
+    if (Math.abs(d.left - o.left) < THRESHOLD) vertical.add(d.left)
+    if (Math.abs(d.left - o.right) < THRESHOLD) vertical.add(d.left)
+    if (Math.abs(d.right - o.right) < THRESHOLD) vertical.add(d.right)
+    if (Math.abs(d.right - o.left) < THRESHOLD) vertical.add(d.right)
+    if (Math.abs(d.centerX - o.centerX) < THRESHOLD) vertical.add(d.centerX)
+    // Horizontal guides — Y alignment, same anchoring approach.
+    if (Math.abs(d.top - o.top) < THRESHOLD) horizontal.add(d.top)
+    if (Math.abs(d.top - o.bottom) < THRESHOLD) horizontal.add(d.top)
+    if (Math.abs(d.bottom - o.bottom) < THRESHOLD) horizontal.add(d.bottom)
+    if (Math.abs(d.bottom - o.top) < THRESHOLD) horizontal.add(d.bottom)
+    if (Math.abs(d.centerY - o.centerY) < THRESHOLD) horizontal.add(d.centerY)
   }
   return {
     vertical: Array.from(vertical),
@@ -79,7 +87,7 @@ export function AlignmentGuides({ vertical, horizontal }: Props) {
           style={{
             left: vx + flowX * zoom,
             width: 1,
-            background: 'rgba(168,85,247,0.45)',
+            background: 'rgba(168,85,247,0.36)',
           }}
         />
       ))}
@@ -90,7 +98,7 @@ export function AlignmentGuides({ vertical, horizontal }: Props) {
           style={{
             top: vy + flowY * zoom,
             height: 1,
-            background: 'rgba(168,85,247,0.45)',
+            background: 'rgba(168,85,247,0.36)',
           }}
         />
       ))}
