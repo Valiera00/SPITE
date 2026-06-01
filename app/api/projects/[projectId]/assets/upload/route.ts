@@ -43,8 +43,9 @@ export async function POST(
       })
     )
 
-    // Get public URL
-    const url = `https://${process.env.R2_BUCKET_NAME}.${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com/${filename}`
+    // Route reads through the authenticated proxy. The raw
+    // r2.cloudflarestorage.com URL would bypass the HMAC gate entirely.
+    const url = `/api/r2-image/${filename}`
 
     // Save metadata to database
     const result = await sql`

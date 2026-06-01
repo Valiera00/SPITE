@@ -95,9 +95,20 @@ export async function rehostToR2(sourceUrl: string): Promise<string> {
 
 // Signed, time-limited access to the /api/r2-image proxy so an external
 // service (fal.ai) can fetch a private asset without a login cookie. This is
-// more reliable than R2 presigned URLs, which some fal endpoints fail to fetch.
+// more reliable than R2 presigned URLs, which some fal endpoints fail to
+// fetch. Prefer R2_PROXY_SIGNING_SECRET (dedicated, can be rotated without
+// affecting other systems); fall back to APP_PASSWORD for existing deploys
+// that haven't migrated to the dedicated var yet. No literal-string default
+// — a public-knowledge fallback would let anyone mint signed URLs and
+// exfiltrate the entire bucket.
 function imageProxySecret(): string {
-  return process.env.APP_PASSWORD || process.env.CRON_SECRET || 'frame-fallback-secret'
+  const secret = process.env.R2_PROXY_SIGNING_SECRET || process.env.APP_PASSWORD
+  if (!secret) {
+    throw new Error(
+      'imageProxySecret: set R2_PROXY_SIGNING_SECRET (preferred) or APP_PASSWORD',
+    )
+  }
+  return secret
 }
 
 // Turn an internal proxy path (/api/r2-image/<key>) into an absolute,

@@ -15,47 +15,43 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const { projectId } = await params
     const { nodes, edges } = await request.json()
 
-    // Use a transaction to ensure atomicity
-    await sql`BEGIN`
-    
-    try {
-      // Delete existing nodes and edges for this project
-      await sql`DELETE FROM canvas_nodes WHERE projectId = ${projectId}::text`
-      await sql`DELETE FROM canvas_edges WHERE projectId = ${projectId}::text`
-
-      // Insert new nodes using UPSERT to handle race conditions
-      for (const node of nodes) {
-        await sql`
-          INSERT INTO canvas_nodes (projectId, nodeId, type, position_x, position_y, data)
-          VALUES (${projectId}::text, ${node.id}, ${node.type}, ${node.position.x}, ${node.position.y}, ${JSON.stringify(node.data)})
-          ON CONFLICT (projectId, nodeId) DO UPDATE SET
-            type = EXCLUDED.type,
-            position_x = EXCLUDED.position_x,
-            position_y = EXCLUDED.position_y,
-            data = EXCLUDED.data
-        `
-      }
-
-      // Insert new edges using UPSERT
-      for (const edge of edges) {
-        await sql`
-          INSERT INTO canvas_edges (projectId, edgeId, source, target, sourceHandle, targetHandle, animated, data)
-          VALUES (${projectId}::text, ${edge.id}, ${edge.source}, ${edge.target}, ${edge.sourceHandle}, ${edge.targetHandle}, ${edge.animated}, ${JSON.stringify(edge.data || {})})
-          ON CONFLICT (projectId, edgeId) DO UPDATE SET
-            source = EXCLUDED.source,
-            target = EXCLUDED.target,
-            sourceHandle = EXCLUDED.sourceHandle,
-            targetHandle = EXCLUDED.targetHandle,
-            animated = EXCLUDED.animated,
-            data = EXCLUDED.data
-        `
-      }
-      
-      await sql`COMMIT`
-    } catch (txError) {
-      await sql`ROLLBACK`
-      throw txError
+    // Neon's HTTP driver runs each tagged-template invocation as its own
+    // round-trip — so the old `sql\`BEGIN\`` / `sql\`COMMIT\`` pattern was
+    // NOT actually atomic, just a sequence of separate statements that
+    // could leave the canvas half-written on a mid-loop failure. The
+    // driver's .transaction(queries[]) method, by contrast, ships every
+    // query in a single HTTP request and wraps the lot in one real
+    // transaction. That fixes the atomicity bug AND collapses ~60
+    // round-trips on a 30-node canvas down to one.
+    const writeQueries = [
+      sql`DELETE FROM canvas_nodes WHERE projectId = ${projectId}::text`,
+      sql`DELETE FROM canvas_edges WHERE projectId = ${projectId}::text`,
+    ]
+    for (const node of nodes) {
+      writeQueries.push(sql`
+        INSERT INTO canvas_nodes (projectId, nodeId, type, position_x, position_y, data)
+        VALUES (${projectId}::text, ${node.id}, ${node.type}, ${node.position.x}, ${node.position.y}, ${JSON.stringify(node.data)})
+        ON CONFLICT (projectId, nodeId) DO UPDATE SET
+          type = EXCLUDED.type,
+          position_x = EXCLUDED.position_x,
+          position_y = EXCLUDED.position_y,
+          data = EXCLUDED.data
+      `)
     }
+    for (const edge of edges) {
+      writeQueries.push(sql`
+        INSERT INTO canvas_edges (projectId, edgeId, source, target, sourceHandle, targetHandle, animated, data)
+        VALUES (${projectId}::text, ${edge.id}, ${edge.source}, ${edge.target}, ${edge.sourceHandle}, ${edge.targetHandle}, ${edge.animated}, ${JSON.stringify(edge.data || {})})
+        ON CONFLICT (projectId, edgeId) DO UPDATE SET
+          source = EXCLUDED.source,
+          target = EXCLUDED.target,
+          sourceHandle = EXCLUDED.sourceHandle,
+          targetHandle = EXCLUDED.targetHandle,
+          animated = EXCLUDED.animated,
+          data = EXCLUDED.data
+      `)
+    }
+    await sql.transaction(writeQueries)
 
     // Reconcile asset protection: anything referenced by a node on the canvas
     // is "protected" (never auto-deleted); anything previously protected in

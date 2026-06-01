@@ -47,10 +47,10 @@ export async function POST(req: NextRequest) {
       })
     )
 
-    // Return public URL using custom domain or R2 public endpoint
-    const url = process.env.R2_PUBLIC_URL 
-      ? `${process.env.R2_PUBLIC_URL}/${key}`
-      : `https://${process.env.R2_BUCKET_NAME}.${process.env.R2_ACCOUNT_ID}.r2.dev/${key}`
+    // Return the authenticated proxy path — never a direct r2.dev /
+    // r2.cloudflarestorage.com URL. Those bypass our HMAC gate and the
+    // bucket would have to be world-readable for them to work.
+    const url = `/api/r2-image/${key}`
 
     console.log('[R2 Upload] Success - URL:', url)
     return NextResponse.json({ url, key }, { status: 200 })

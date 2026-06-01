@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { neon } from '@neondatabase/serverless'
 import { S3Client, DeleteObjectCommand } from '@aws-sdk/client-s3'
+import { timingSafeEqual } from 'crypto'
 
 function getDb() {
   if (!process.env.DATABASE_URL) {
@@ -36,9 +37,23 @@ async function deleteFromR2(key: string) {
 
 // Cleanup job - should be called by Vercel cron job
 export async function POST(request: NextRequest) {
-  // Verify this is from Vercel cron
-  const authHeader = request.headers.get('authorization')
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+  // Refuse to run if CRON_SECRET is missing. Without this guard the
+  // `Bearer ${process.env.CRON_SECRET}` template would produce the
+  // literal string "Bearer undefined", which any caller could match,
+  // turning this destructive endpoint into a public no-auth route.
+  const cronSecret = process.env.CRON_SECRET
+  if (!cronSecret) {
+    console.error('[cleanup] CRON_SECRET not configured — refusing to run')
+    return NextResponse.json(
+      { error: 'Server not configured' },
+      { status: 500 },
+    )
+  }
+  const expected = Buffer.from(`Bearer ${cronSecret}`)
+  const provided = Buffer.from(request.headers.get('authorization') || '')
+  const ok =
+    expected.length === provided.length && timingSafeEqual(expected, provided)
+  if (!ok) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
