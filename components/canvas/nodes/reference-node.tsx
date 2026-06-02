@@ -122,12 +122,12 @@ function ReferenceNodeImpl({ id, data, selected }: NodeProps) {
       </div>
 
       {/* Handles */}
-      <Handle type="target" position={Position.Left} style={{ opacity: 0 }} />
+      <Handle type="target" position={Position.Left} style={{ opacity: 0, zIndex: 5 }} />
       <Handle
         type="source"
         id={isVideo ? 'video-out' : 'image-out'}
         position={Position.Right}
-        style={{ top: '50%', right: -12, width: 24, height: 24, transform: 'translateY(-50%)', opacity: 0 }}
+        style={{ top: '50%', right: -12, width: 24, height: 24, transform: 'translateY(-50%)', opacity: 0, zIndex: 5 }}
       />
       {/* Visible output indicator so the reference can be wired into a generator */}
       <div

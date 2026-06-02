@@ -723,20 +723,25 @@ function ImageNodeImpl({ id, data, selected }: NodeProps) {
 
       {/* Handles - dynamic based on model inputTypes */}
       
-      {/* Text input - always shown */}
-      <Handle type="target" id="prompt-in" position={Position.Left} style={{ top: 80, left: -12, opacity: 0, width: 24, height: 24 }} />
+      {/* Text input - always shown.
+          zIndex:5 puts every Handle above the card content; without it,
+          drops that landed on the prompt textarea (which sits at the
+          same y-coordinate as some handles) were silently rejected
+          because React Flow's drop detection found the textarea before
+          the handle. */}
+      <Handle type="target" id="prompt-in" position={Position.Left} style={{ top: 80, left: -12, opacity: 0, width: 24, height: 24, zIndex: 5 }} />
       <HandleIcon icon={TextT} color="rgba(168,85,247,0.8)" position="left" top={80} visible />
-      
+
       {/* Image input - only if model supports image input */}
       {currentModel?.inputTypes.includes('image') && (
         <>
-          <Handle type="target" id="image-in" position={Position.Left} style={{ top: 180, left: -12, opacity: 0, width: 24, height: 24 }} />
+          <Handle type="target" id="image-in" position={Position.Left} style={{ top: 180, left: -12, opacity: 0, width: 24, height: 24, zIndex: 5 }} />
           <HandleIcon icon={ImageIcon} color="rgba(96,165,250,0.8)" position="left" top={180} visible />
         </>
       )}
-      
+
       {/* Image output - always shown */}
-      <Handle type="source" id="image-out" position={Position.Right} style={{ top: 130, right: -12, opacity: 0, width: 24, height: 24 }} />
+      <Handle type="source" id="image-out" position={Position.Right} style={{ top: 130, right: -12, opacity: 0, width: 24, height: 24, zIndex: 5 }} />
       <HandleIcon icon={ImageIcon} color="rgba(96,165,250,0.8)" position="right" top={130} visible />
 
       {/* Card content */}

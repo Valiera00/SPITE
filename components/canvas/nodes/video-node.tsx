@@ -704,14 +704,20 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
 
       {/* Handles - dynamic based on model inputTypes */}
       
-      {/* Text input - always shown */}
-      <Handle type="target" id="prompt-in" position={Position.Left} style={{ top: 80, left: -12, opacity: 0, width: 24, height: 24 }} />
+      {/* Text input - always shown.
+          NOTE on zIndex: handles are positioned absolutely as siblings of
+          the card, but the card comes AFTER them in DOM order so by default
+          stacks on top. That made drops at y=250 (reference-in) land on the
+          prompt textarea instead of the handle and silently fail. zIndex:5
+          puts every Handle above the card so React Flow's drop detection
+          actually finds them. */}
+      <Handle type="target" id="prompt-in" position={Position.Left} style={{ top: 80, left: -12, opacity: 0, width: 24, height: 24, zIndex: 5 }} />
       <HandleIcon icon={TextT} color="rgba(168,85,247,0.8)" position="left" top={80} visible />
-      
+
       {/* First frame (blue) - only if model supports image input */}
       {currentModel?.inputTypes.includes('image') && (
         <>
-          <Handle type="target" id="image-in" title="First frame" position={Position.Left} style={{ top: 150, left: -12, opacity: 0, width: 24, height: 24 }} />
+          <Handle type="target" id="image-in" title="First frame" position={Position.Left} style={{ top: 150, left: -12, opacity: 0, width: 24, height: 24, zIndex: 5 }} />
           <HandleIcon icon={ImageIcon} color="rgba(96,165,250,0.8)" position="left" top={150} visible />
         </>
       )}
@@ -719,7 +725,7 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
       {/* End frame (amber) - video models that support a last frame */}
       {currentModel?.category === 'video' && !currentModel.id.startsWith('minimax') && (
         <>
-          <Handle type="target" id="end-frame-in" title="End frame" position={Position.Left} style={{ top: 200, left: -12, opacity: 0, width: 24, height: 24 }} />
+          <Handle type="target" id="end-frame-in" title="End frame" position={Position.Left} style={{ top: 200, left: -12, opacity: 0, width: 24, height: 24, zIndex: 5 }} />
           <HandleIcon icon={ImageIcon} color="rgba(251,191,36,0.9)" position="left" top={200} visible />
         </>
       )}
@@ -728,7 +734,7 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
           Accepts multiple image connections. */}
       {currentModel?.referenceParam && (
         <>
-          <Handle type="target" id="reference-in" title="Reference image(s)" position={Position.Left} style={{ top: 250, left: -12, opacity: 0, width: 24, height: 24 }} />
+          <Handle type="target" id="reference-in" title="Reference image(s)" position={Position.Left} style={{ top: 250, left: -12, opacity: 0, width: 24, height: 24, zIndex: 5 }} />
           <HandleIcon icon={ImageIcon} color="rgba(236,72,153,0.9)" position="left" top={250} visible />
         </>
       )}
@@ -736,13 +742,13 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
       {/* Video input (green) - only if model supports video-to-video */}
       {currentModel?.inputTypes.includes('video') && (
         <>
-          <Handle type="target" id="video-in" title="Source video" position={Position.Left} style={{ top: 310, left: -12, opacity: 0, width: 24, height: 24 }} />
+          <Handle type="target" id="video-in" title="Source video" position={Position.Left} style={{ top: 310, left: -12, opacity: 0, width: 24, height: 24, zIndex: 5 }} />
           <HandleIcon icon={FilmStrip} color="rgba(74,222,128,0.8)" position="left" top={310} visible />
         </>
       )}
-      
+
       {/* Video output - always shown */}
-      <Handle type="source" id="video-out" position={Position.Right} style={{ top: 150, right: -12, opacity: 0, width: 24, height: 24 }} />
+      <Handle type="source" id="video-out" position={Position.Right} style={{ top: 150, right: -12, opacity: 0, width: 24, height: 24, zIndex: 5 }} />
       <HandleIcon icon={FilmStrip} color="rgba(74,222,128,0.8)" position="right" top={150} visible />
 
       {/* Card content */}
