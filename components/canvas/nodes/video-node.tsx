@@ -1,6 +1,6 @@
 'use client'
 
-import { Position, NodeProps, Handle, useReactFlow } from '@xyflow/react'
+import { Position, NodeProps, Handle, useReactFlow, useUpdateNodeInternals } from '@xyflow/react'
 import { useParams } from 'next/navigation'
 import { Play, CaretDown, SpeakerHigh, SpeakerSlash, TextT, Image as ImageIcon, FilmStrip, CircleNotch, X, Check, ArrowsClockwise, Minus, Plus } from '@phosphor-icons/react'
 import { memo, useState, useEffect, useRef, useCallback, useMemo } from 'react'
@@ -158,6 +158,7 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
   // Set true to immediately stop polling (cancel / unmount).
   const stopRef = useRef(false)
   const { setNodes, getEdges, getNodes } = useReactFlow()
+  const updateNodeInternals = useUpdateNodeInternals()
   
   // Check connection states fresh on each render
   let hasConnectedPrompts = false
@@ -178,6 +179,25 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
 
   // Get current model config
   const currentModel = useMemo(() => getModelById(modelId), [modelId])
+
+  // When the model changes, the conditional handles (image-in, reference-in,
+  // video-in, end-frame-in) appear or disappear. React Flow caches handle
+  // positions on first measurement — without a manual nudge those caches
+  // stay stale until something else re-measures (e.g., a page reload).
+  // That's why edges to handles that ONLY exist for the new model were
+  // sometimes added to state but not drawn: React Flow had no position
+  // for the new handle yet. Tell it to re-measure whenever the handle set
+  // shape changes.
+  useEffect(() => {
+    updateNodeInternals(id)
+  }, [
+    id,
+    updateNodeInternals,
+    currentModel?.id,
+    currentModel?.inputTypes,
+    currentModel?.referenceParam,
+    currentModel?.category,
+  ])
 
   // Kling v3 references ride the image-to-video endpoint, which requires a
   // first frame. Block generation (with a clear message) when refs are

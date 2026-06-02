@@ -11,6 +11,7 @@ import {
   useNodesState,
   useEdgesState,
   useReactFlow,
+  useUpdateNodeInternals,
   useViewport,
   addEdge,
   SelectionMode,
@@ -174,6 +175,9 @@ function CanvasInner({ projectId }: { projectId: string }) {
   const [projectName, setProjectName] = useState('Untitled Project')
   const [nodes, setNodes, onNodesChange] = useNodesState([] as Node[])
   const [edges, setEdges, onEdgesChange] = useEdgesState([] as Edge[])
+  // React Flow's separate hook for forcing a node's handle re-measurement.
+  // Declared here near the top because onConnect (below) depends on it.
+  const updateNodeInternals = useUpdateNodeInternals()
   
   // Simple undo/redo using state
   const [past, setPast] = useState<{ nodes: Node[]; edges: Edge[] }[]>([])
@@ -340,6 +344,15 @@ function CanvasInner({ projectId }: { projectId: string }) {
         ...params,
         animated: true,
       }, eds) as Edge[])
+      // Force React Flow to re-measure the source/target handles. Without
+      // this, edges connected to handles whose layout shifted after first
+      // measurement (e.g. when the conditional reference-in handle first
+      // mounts, or when zIndex/CSS recently changed) had stale cached
+      // positions — the edge was added to state but its SVG path couldn't
+      // resolve to real coordinates so nothing drew until a page refresh
+      // re-measured from scratch.
+      if (params.source) updateNodeInternals(params.source)
+      if (params.target) updateNodeInternals(params.target)
     } else {
       const error = getConnectionError(params.sourceHandle ?? null, params.targetHandle ?? null)
       toast.error(error, {
@@ -347,7 +360,7 @@ function CanvasInner({ projectId }: { projectId: string }) {
         duration: 3000,
       })
     }
-  }, [setEdges])
+  }, [setEdges, updateNodeInternals])
   
   const [minimapOpen, setMinimapOpen] = useState(true)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; flowPos: { x: number; y: number } } | null>(null)

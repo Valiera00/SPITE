@@ -2,7 +2,7 @@
 
 import { memo, useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useParams } from 'next/navigation'
-import { Handle, Position, NodeProps, useReactFlow } from '@xyflow/react'
+import { Handle, Position, NodeProps, useReactFlow, useUpdateNodeInternals } from '@xyflow/react'
 import { Play, CaretDown, Minus, Plus, TextT, Image as ImageIcon, CircleNotch, X, Check, ArrowsClockwise } from '@phosphor-icons/react'
 import { toast } from 'sonner'
 import { NodeActionToolbar } from './node-toolbar'
@@ -160,6 +160,7 @@ function ImageNodeImpl({ id, data, selected }: NodeProps) {
   const stopRef = useRef(false)
   const resizeStartRef = useRef<{ x: number; width: number } | null>(null)
   const { setNodes, getEdges, getNodes } = useReactFlow()
+  const updateNodeInternals = useUpdateNodeInternals()
   
   // Check if there are any connected prompt nodes - compute fresh on each render
   // Accept edges that either have targetHandle='prompt-in' OR no targetHandle (for backward compatibility)
@@ -239,6 +240,15 @@ function ImageNodeImpl({ id, data, selected }: NodeProps) {
 
   // Get current model config
   const currentModel = useMemo(() => getModelById(modelId), [modelId])
+
+  // Switching models toggles conditional handles (image-in). React Flow
+  // caches handle positions on first measure, so without a nudge a new
+  // handle's position stays stale until something else re-measures
+  // (e.g. page reload) — edges drawn to those handles were saved to
+  // state but their SVG path couldn't resolve and nothing was drawn.
+  useEffect(() => {
+    updateNodeInternals(id)
+  }, [id, updateNodeInternals, currentModel?.id, currentModel?.inputTypes])
 
   // Reset aspect/resolution when the USER picks a new model. Skip the
   // initial mount so saved settings on a reloaded or duplicated node aren't
