@@ -1,44 +1,24 @@
 import { NextResponse } from 'next/server'
-import { fal } from '@fal-ai/client'
 
+// HOTFIX (incident: silent fal charges): this route previously did
+// `fal.queue.submit('fal-ai/flux/schnell', { input: { prompt: 'test' } })`
+// and tried to immediately cancel — but the cancel was best-effort with
+// a swallowed try/catch, and the call ran on EVERY Settings page mount
+// via useEffect. Result: every visit to /settings could leak a fal
+// submission. No more. We only check that the key env var is present
+// and report a masked preview. The real validity check happens
+// implicitly the first time the user actually generates something.
 export async function POST() {
-  try {
-    if (!process.env.FAL_KEY) {
-      return NextResponse.json({
-        connected: false,
-        error: 'FAL_KEY environment variable not set',
-      })
-    }
-
-    // Configure and test connection with a lightweight call
-    fal.config({
-      credentials: process.env.FAL_KEY,
-    })
-
-    // Use a simple API call to verify the key works
-    // We'll just check if we can access the API without actually generating
-    const testResult = await fal.queue.submit('fal-ai/flux/schnell', {
-      input: { prompt: 'test' },
-    })
-
-    // Immediately cancel to avoid charges
-    if (testResult.request_id) {
-      try {
-        await fal.queue.cancel('fal-ai/flux/schnell', { requestId: testResult.request_id })
-      } catch {
-        // Ignore cancel errors
-      }
-    }
-
-    return NextResponse.json({
-      connected: true,
-      keyPreview: `****${process.env.FAL_KEY.slice(-4)}`,
-    })
-  } catch (error: any) {
-    console.error('[fal.ai] Connection test error:', error)
+  const key = process.env.FAL_KEY
+  if (!key) {
     return NextResponse.json({
       connected: false,
-      error: error.message || 'Invalid API key',
+      error: 'FAL_KEY environment variable not set',
     })
   }
+  return NextResponse.json({
+    connected: true,
+    keyPreview: `****${key.slice(-4)}`,
+    note: 'Key presence verified. Validity will be confirmed at first generate.',
+  })
 }

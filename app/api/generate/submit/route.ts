@@ -3,6 +3,21 @@ import { getModelById, buildModelInput } from '@/lib/fal-models'
 import { toFalFetchableUrl } from '@/lib/r2-upload'
 
 export async function POST(request: NextRequest) {
+  // KILL SWITCH — set GENERATION_DISABLED=1 in Vercel env vars to halt
+  // every new fal submission across the app without redeploying client
+  // code. Returns a clear 503 so the node UI shows a clean error.
+  // Re-enable by removing the env var (or setting it to anything else).
+  if (process.env.GENERATION_DISABLED === '1') {
+    console.warn('[generate/submit] blocked — GENERATION_DISABLED is set')
+    return NextResponse.json(
+      {
+        error:
+          'Generation is currently disabled by admin (GENERATION_DISABLED env var). No fal charges will be incurred. Remove the env var on Vercel to re-enable.',
+      },
+      { status: 503 }
+    )
+  }
+
   const falKey = process.env.FAL_KEY
   if (!falKey) {
     return NextResponse.json(

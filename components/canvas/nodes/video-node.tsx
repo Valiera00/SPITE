@@ -1083,7 +1083,10 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
           ) : (
             <button
               onClick={handleGenerate}
-              disabled={(!prompt.trim() && !hasConnectedPrompts) || blockedNoFirstFrame}
+              // Belt-and-suspenders: also disable while isGenerating so a
+              // fast double-click can't slip a duplicate submission past
+              // the JSX branch (which usually hides this button).
+              disabled={isGenerating || (!prompt.trim() && !hasConnectedPrompts) || blockedNoFirstFrame}
               className="w-6 h-6 rounded-full bg-accent/20 hover:bg-accent text-accent hover:text-accent-foreground flex items-center justify-center transition-colors teal-glow disabled:opacity-50 disabled:cursor-not-allowed"
               title={blockedNoFirstFrame
                 ? `${currentModel?.name} needs a first frame when references are connected — wire an image into the blue First frame handle.`

@@ -1009,7 +1009,11 @@ function ImageNodeImpl({ id, data, selected }: NodeProps) {
           ) : (
             <button
               onClick={handleGenerate}
-              disabled={!prompt.trim() && !hasConnectedPrompts}
+              // Also disable while isGenerating — the JSX branch above
+              // already hides this button when isGenerating is true, but
+              // that relies on React having re-rendered before the
+              // second click registers. Belt-and-suspenders.
+              disabled={isGenerating || (!prompt.trim() && !hasConnectedPrompts)}
               className="w-6 h-6 rounded-full bg-accent/20 hover:bg-accent text-accent hover:text-accent-foreground flex items-center justify-center transition-colors teal-glow disabled:opacity-50 disabled:cursor-not-allowed"
               title="Generate image"
             >
