@@ -660,21 +660,53 @@ function ImageNodeImpl({ id, data, selected }: NodeProps) {
         settings: { aspectRatio, resolution, numImages: 1 },
       })
       const count = Math.max(1, Math.min(12, numImages))
-      const results = await Promise.all(
-        Array.from({ length: count }, () =>
-          fetch('/api/generate/submit', {
+      // Stagger the parallel POSTs by ~200ms each instead of firing them
+      // all in the same millisecond. Vercel's edge (and sometimes fal's
+      // per-key rate limiter) will reject 1-2 out of N truly-simultaneous
+      // requests as anomalous traffic — the user saw a 403 on one of
+      // three parallel submits. Spreading the starts over ~count×200ms
+      // makes them look like discrete user actions instead of a burst.
+      // Requests still complete in parallel; only their start times
+      // are spread.
+      const submitOnce = async (i: number) => {
+        if (i > 0) await new Promise<void>(r => setTimeout(r, i * 200))
+        try {
+          const res = await fetch('/api/generate/submit', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body,
-          }).then(r => r.json()),
-        ),
+          })
+          const json = await res.json().catch(() => ({}))
+          return { ...json, _httpStatus: res.status }
+        } catch {
+          return { _httpStatus: 0 }
+        }
+      }
+      const results = await Promise.all(
+        Array.from({ length: count }, (_, i) => submitOnce(i)),
       )
 
       const ok = results.filter(r => r.request_id)
+      const failedCount = count - ok.length
       if (ok.length === 0) {
+        const firstFail = results[0]
+        const status = firstFail?._httpStatus
+        const reason =
+          status === 403 ? 'rejected by Vercel edge (rate limit on parallel requests)'
+          : status === 503 ? 'generation disabled (GENERATION_DISABLED env var)'
+          : firstFail?.error || `HTTP ${status || 'error'}`
         setStatus('failed')
-        setError(results[0]?.error || 'Failed to submit job')
+        setError(`Failed to submit job — ${reason}`)
         return
+      }
+      // Partial success — let the user know they got fewer outputs than
+      // they asked for, so they can retry the missing N without thinking
+      // it silently disappeared. Charges incurred = ok.length only.
+      if (failedCount > 0) {
+        toast.warning(
+          `Only ${ok.length} of ${count} submissions accepted — ${failedCount} rejected (likely rate-limit). You were billed for ${ok.length}.`,
+          { duration: 8000 },
+        )
       }
 
       // This node tracks the first job.

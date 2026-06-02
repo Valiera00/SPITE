@@ -665,18 +665,47 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
         },
       })
 
-      // Each video is a separate fal job. Fire `numVideos` of them in parallel.
+      // Each video is a separate fal job. Stagger the parallel POSTs by
+      // ~200ms each so Vercel's edge / fal's per-key limiter doesn't
+      // reject 1-2 of N as anomalous traffic (the image-node hit this
+      // with a 403 on one of three simultaneous submits). Requests
+      // still complete in parallel; only the start times are spread.
       const count = Math.max(1, Math.min(12, numVideos))
+      const submitOnce = async (i: number) => {
+        if (i > 0) await new Promise<void>(r => setTimeout(r, i * 200))
+        try {
+          const res = await fetch('/api/generate/submit', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body,
+          })
+          const json = await res.json().catch(() => ({}))
+          return { ...json, _httpStatus: res.status }
+        } catch {
+          return { _httpStatus: 0 }
+        }
+      }
       const results = await Promise.all(
-        Array.from({ length: count }, () =>
-          fetch('/api/generate/submit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body }).then(r => r.json())
-        )
+        Array.from({ length: count }, (_, i) => submitOnce(i)),
       )
       const ok = results.filter(r => r.request_id)
+      const failedCount = count - ok.length
       if (ok.length === 0) {
+        const firstFail = results[0]
+        const status = firstFail?._httpStatus
+        const reason =
+          status === 403 ? 'rejected by Vercel edge (rate limit on parallel requests)'
+          : status === 503 ? 'generation disabled (GENERATION_DISABLED env var)'
+          : firstFail?.error || `HTTP ${status || 'error'}`
         setStatus('failed')
-        setError(results[0]?.error || 'Failed to submit job')
+        setError(`Failed to submit job — ${reason}`)
         return
+      }
+      if (failedCount > 0) {
+        toast.warning(
+          `Only ${ok.length} of ${count} submissions accepted — ${failedCount} rejected (likely rate-limit). You were billed for ${ok.length}.`,
+          { duration: 8000 },
+        )
       }
 
       // This node tracks the first job.
