@@ -1209,6 +1209,40 @@ export function LeftToolbar({
                     Download
                   </a>
                 </div>
+                {/* Recovered toggle — flip the blue Lifebuoy badge on the
+                    library thumbnail. Useful for manually flagging the
+                    assets that were recovered before the badge feature
+                    existed, or for un-flagging an asset that was
+                    auto-marked incorrectly. */}
+                <button
+                  onClick={async () => {
+                    const next = !selectedGenAsset.recovered
+                    try {
+                      const res = await fetch(`/api/assets/${selectedGenAsset.id}`, {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ recovered: next }),
+                      })
+                      if (!res.ok) throw new Error(`${res.status}`)
+                      // Optimistic update — flip local state then revalidate.
+                      setSelectedGenAsset({ ...selectedGenAsset, recovered: next })
+                      mutateAssets()
+                      toast.success(next ? 'Marked as recovered' : 'Unmarked')
+                    } catch (err) {
+                      console.error('toggle recovered failed:', err)
+                      toast.error('Could not update asset')
+                    }
+                  }}
+                  className={`mt-2 w-full flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm transition-colors ${
+                    selectedGenAsset.recovered
+                      ? 'bg-blue-500/20 text-blue-300 hover:bg-blue-500/30'
+                      : 'border border-border/30 text-muted-foreground hover:bg-white/5 hover:text-foreground'
+                  }`}
+                  title="Mark / unmark this asset as recovered from a stuck generation"
+                >
+                  <Lifebuoy size={14} weight={selectedGenAsset.recovered ? 'fill' : 'regular'} />
+                  {selectedGenAsset.recovered ? 'Marked as recovered' : 'Mark as recovered'}
+                </button>
                 {/* Delete */}
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
@@ -1654,6 +1688,33 @@ export function LeftToolbar({
                 >
                   <Download size={12} /> Download
                 </a>
+                <button
+                  onClick={async () => {
+                    const next = !selectedGenAsset.recovered
+                    try {
+                      const res = await fetch(`/api/assets/${selectedGenAsset.id}`, {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ recovered: next }),
+                      })
+                      if (!res.ok) throw new Error(`${res.status}`)
+                      setSelectedGenAsset({ ...selectedGenAsset, recovered: next })
+                      mutateAssets()
+                      toast.success(next ? 'Marked as recovered' : 'Unmarked')
+                    } catch (err) {
+                      console.error('toggle recovered failed:', err)
+                      toast.error('Could not update asset')
+                    }
+                  }}
+                  className={`px-3 py-2 rounded-lg text-xs font-mono transition-colors ${
+                    selectedGenAsset.recovered
+                      ? 'bg-blue-500/20 text-blue-300 hover:bg-blue-500/30'
+                      : 'bg-white/5 text-muted-foreground hover:bg-white/10 hover:text-foreground'
+                  }`}
+                  title={selectedGenAsset.recovered ? 'Unmark as recovered' : 'Mark as recovered'}
+                >
+                  <Lifebuoy size={12} weight={selectedGenAsset.recovered ? 'fill' : 'regular'} />
+                </button>
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
                     <button

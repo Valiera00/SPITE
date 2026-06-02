@@ -20,7 +20,11 @@ function getR2Client() {
   })
 }
 
-// Mark asset as protected (used in canvas)
+// Update mutable fields on an asset. Currently:
+//   used_in_canvas — protection flag (true = never auto-delete)
+//   recovered      — was this asset pulled back via the recovery flow?
+//                    Lets the UI badge it with a blue Lifebuoy. The
+//                    column is added idempotently in lib/r2-upload.ts.
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ assetId: string }> }
@@ -28,17 +32,34 @@ export async function PATCH(
   try {
     const sql = getDb()
     const { assetId } = await params
-    const { used_in_canvas } = await request.json()
+    const body = await request.json()
+    const { used_in_canvas, recovered } = body as {
+      used_in_canvas?: boolean
+      recovered?: boolean
+    }
 
-    const isProtected = used_in_canvas ?? true
-    const expiresAt = isProtected ? null : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+    if (used_in_canvas !== undefined) {
+      const isProtected = used_in_canvas ?? true
+      const expiresAt = isProtected ? null : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+      await sql`
+        UPDATE generation_history
+        SET used_in_canvas = ${isProtected}, expires_at = ${expiresAt}
+        WHERE id = ${assetId}
+      `
+    }
 
-    await sql`
-      UPDATE generation_history 
-      SET used_in_canvas = ${isProtected}, expires_at = ${expiresAt}
-      WHERE id = ${assetId}
-    `
-    
+    if (recovered !== undefined) {
+      // Guard for old databases that don't yet have the recovered
+      // column — ALTER IF NOT EXISTS lets us self-migrate without
+      // failing the request.
+      await sql`ALTER TABLE generation_history ADD COLUMN IF NOT EXISTS recovered boolean DEFAULT false`
+      await sql`
+        UPDATE generation_history
+        SET recovered = ${recovered}
+        WHERE id = ${assetId}
+      `
+    }
+
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error('[assets] Update error:', error)
