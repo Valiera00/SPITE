@@ -14,6 +14,7 @@ import { useProjectFolders } from '@/hooks/use-project-folders'
 import { labelFromPrompt, DEFAULT_IMAGE_LABEL } from '@/lib/auto-name'
 import { getImageModels, getModelById, buildModelInput, type ModelConfig } from '@/lib/fal-models'
 import { compileMentionsForModel } from '@/lib/mention-prompt'
+import { estimateGenerationCost, formatUSD, COST_CONFIRM_THRESHOLD_USD } from '@/lib/fal-cost'
 
 const IMAGE_MODELS = getImageModels()
 
@@ -137,7 +138,12 @@ function ImageNodeImpl({ id, data, selected }: NodeProps) {
   const [modelId, setModelId] = useState((data.modelId as string) || 'nano-banana-pro')
   const [aspectRatio, setAspectRatio] = useState((data.aspectRatio as string) || '')
   const [resolution, setResolution] = useState((data.resolution as string) || '')
-  const [numImages, setNumImages] = useState((data.numImages as number) || 1)
+  // Batch count always starts at 1 on a fresh node load / page refresh.
+  // It used to read from saved data — which meant if you'd set it to 12
+  // once, every subsequent Generate click on that node fired 12 fal
+  // jobs forever. Treat the counter as session-local intent: a fresh
+  // canvas is a fresh "I want one image", not "twelve images".
+  const [numImages, setNumImages] = useState(1)
   
   const [status, setStatus] = useState<GenerationStatus>('idle')
   const [progress, setProgress] = useState<number | undefined>()
@@ -742,6 +748,35 @@ function ImageNodeImpl({ id, data, selected }: NodeProps) {
     }
   }
 
+  // Cost-aware generate wrapper. Estimates the fal charge for the
+  // current model × batch count, shows it in the button tooltip, and
+  // gates handleGenerate behind a native window.confirm() when the
+  // estimate crosses COST_CONFIRM_THRESHOLD_USD. Native confirm is
+  // intentionally blocking + unmissable — this is a money-loss safety
+  // gate, not a delight feature.
+  const costEstimate = useMemo(
+    () => estimateGenerationCost(currentModel, { count: numImages }),
+    [currentModel, numImages],
+  )
+  const generateTooltip = useMemo(() => {
+    if (!currentModel) return 'Generate image'
+    const label = `Generate ${numImages} image${numImages === 1 ? '' : 's'}`
+    if (!costEstimate.isKnown) return `${label}\n(price not estimated for this model)`
+    return `${label}\nEstimated cost: ~${formatUSD(costEstimate.total)} (${formatUSD(costEstimate.perUnit)} each).\nReal cost depends on resolution and model load.`
+  }, [currentModel, numImages, costEstimate])
+  const requestGenerate = () => {
+    if (costEstimate.isKnown && costEstimate.total >= COST_CONFIRM_THRESHOLD_USD) {
+      const msg =
+        `You're about to submit ${numImages} ${currentModel?.name || 'image'} generation${numImages === 1 ? '' : 's'} ` +
+        `to fal.ai.\n\n` +
+        `Estimated cost: ~${formatUSD(costEstimate.total)} (${formatUSD(costEstimate.perUnit)} each).\n` +
+        `Real cost depends on resolution and model load.\n\n` +
+        `Press OK to confirm and spend this, or Cancel to back out.`
+      if (!window.confirm(msg)) return
+    }
+    handleGenerate()
+  }
+
   const handleCancel = async () => {
     if (!requestId || !currentModel) return
 
@@ -1008,14 +1043,10 @@ function ImageNodeImpl({ id, data, selected }: NodeProps) {
             </div>
           ) : (
             <button
-              onClick={handleGenerate}
-              // Also disable while isGenerating — the JSX branch above
-              // already hides this button when isGenerating is true, but
-              // that relies on React having re-rendered before the
-              // second click registers. Belt-and-suspenders.
+              onClick={requestGenerate}
               disabled={isGenerating || (!prompt.trim() && !hasConnectedPrompts)}
               className="w-6 h-6 rounded-full bg-accent/20 hover:bg-accent text-accent hover:text-accent-foreground flex items-center justify-center transition-colors teal-glow disabled:opacity-50 disabled:cursor-not-allowed"
-              title="Generate image"
+              title={generateTooltip}
             >
               <Play size={10} weight="fill" />
             </button>

@@ -14,6 +14,7 @@ import { useProjectFolders } from '@/hooks/use-project-folders'
 import { labelFromPrompt, DEFAULT_VIDEO_LABEL } from '@/lib/auto-name'
 import { getVideoModels, getModelById, buildModelInput, type ModelConfig } from '@/lib/fal-models'
 import { compileMentionsForModel } from '@/lib/mention-prompt'
+import { estimateGenerationCost, formatUSD, COST_CONFIRM_THRESHOLD_USD } from '@/lib/fal-cost'
 import { captureVideoThumbnail } from '@/lib/video-thumbnail'
 
 const VIDEO_MODELS = getVideoModels()
@@ -141,7 +142,10 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
   const [resolution, setResolution] = useState((data.resolution as string) || '')
   const [enableAudio, setEnableAudio] = useState((data.enableAudio as boolean) || false)
   const [enableLoop, setEnableLoop] = useState((data.enableLoop as boolean) || false)
-  const [numVideos, setNumVideos] = useState((data.numVideos as number) || 1)
+  // Batch count always starts at 1 on a fresh node load. Previously
+  // persisted, which meant a sticky 12 from a past session could fire
+  // 12 fal jobs on a single click. Treat it as session-local intent.
+  const [numVideos, setNumVideos] = useState(1)
   
   const [status, setStatus] = useState<GenerationStatus>('idle')
   const [progress, setProgress] = useState<number | undefined>()
@@ -745,6 +749,41 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
     }
   }
 
+  // Cost-aware generate wrapper. Estimates the fal charge for the
+  // current model × batch count × duration, surfaces it in the
+  // button tooltip, and gates handleGenerate behind a blocking
+  // window.confirm() when the estimate crosses the safety threshold.
+  // Native confirm is intentional: the goal is "you cannot click
+  // through without seeing the dollar amount", not aesthetics.
+  const costEstimate = useMemo(
+    () => estimateGenerationCost(currentModel, {
+      count: numVideos,
+      durationSeconds: duration ? parseInt(duration) : undefined,
+    }),
+    [currentModel, numVideos, duration],
+  )
+  const generateTooltip = useMemo(() => {
+    if (!currentModel) return 'Generate video'
+    if (blockedNoFirstFrame) {
+      return `${currentModel?.name} needs a first frame when references are connected — wire an image into the blue First frame handle.`
+    }
+    const label = `Generate ${numVideos} video${numVideos === 1 ? '' : 's'}`
+    if (!costEstimate.isKnown) return `${label}\n(price not estimated for this model)`
+    return `${label}\nEstimated cost: ~${formatUSD(costEstimate.total)} (${formatUSD(costEstimate.perUnit)} each).\nReal cost depends on resolution, duration and model load.`
+  }, [currentModel, numVideos, costEstimate, blockedNoFirstFrame])
+  const requestGenerate = () => {
+    if (costEstimate.isKnown && costEstimate.total >= COST_CONFIRM_THRESHOLD_USD) {
+      const msg =
+        `You're about to submit ${numVideos} ${currentModel?.name || 'video'} generation${numVideos === 1 ? '' : 's'} ` +
+        `to fal.ai.\n\n` +
+        `Estimated cost: ~${formatUSD(costEstimate.total)} (${formatUSD(costEstimate.perUnit)} each).\n` +
+        `Real cost depends on resolution, duration and model load.\n\n` +
+        `Press OK to confirm and spend this, or Cancel to back out.`
+      if (!window.confirm(msg)) return
+    }
+    handleGenerate()
+  }
+
   const handleCancel = async () => {
     if (!requestId || !currentModel) return
 
@@ -1082,15 +1121,10 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
             </div>
           ) : (
             <button
-              onClick={handleGenerate}
-              // Belt-and-suspenders: also disable while isGenerating so a
-              // fast double-click can't slip a duplicate submission past
-              // the JSX branch (which usually hides this button).
+              onClick={requestGenerate}
               disabled={isGenerating || (!prompt.trim() && !hasConnectedPrompts) || blockedNoFirstFrame}
               className="w-6 h-6 rounded-full bg-accent/20 hover:bg-accent text-accent hover:text-accent-foreground flex items-center justify-center transition-colors teal-glow disabled:opacity-50 disabled:cursor-not-allowed"
-              title={blockedNoFirstFrame
-                ? `${currentModel?.name} needs a first frame when references are connected — wire an image into the blue First frame handle.`
-                : 'Generate video'}
+              title={generateTooltip}
             >
               <Play size={10} weight="fill" />
             </button>
