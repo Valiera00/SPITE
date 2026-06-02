@@ -200,6 +200,35 @@ export default function SettingsPage() {
     }
   }
 
+  const handleBackfillRecent = async () => {
+    if (recovering) return
+    setRecovering(true)
+    setRecoveryResult(null)
+    try {
+      const res = await fetch('/api/generate/recover', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'backfill-recent', withinHours: 24 }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setRecoveryResult(`Backfill failed: ${data.error || res.status}`)
+        return
+      }
+      const marked = data.marked ?? 0
+      setRecoveryResult(
+        marked === 0
+          ? 'Nothing to backfill — every recent asset already has the recovered flag (or there are none from the last 24h).'
+          : `Marked ${marked} asset${marked === 1 ? '' : 's'} from the last 24h as recovered. Their badges should appear in the library shortly.`,
+      )
+    } catch (err) {
+      console.error('Backfill error:', err)
+      setRecoveryResult('Backfill request failed. Check the console.')
+    } finally {
+      setRecovering(false)
+    }
+  }
+
   const handleRecoverStuck = async () => {
     if (recovering) return
     setRecovering(true)
@@ -429,6 +458,26 @@ export default function SettingsPage() {
                 className="shrink-0 px-3 py-1.5 text-xs font-mono rounded-lg bg-amber-500/15 border border-amber-500/40 text-amber-300 hover:bg-amber-500/25 transition-colors disabled:opacity-50"
               >
                 {recovering ? 'Scanning…' : 'Recover'}
+              </button>
+            </div>
+
+            {/* Backfill — mark every recent asset as 'recovered' so the
+                badge appears on assets that were recovered before the
+                badge feature shipped. Operates over the last 24 hours
+                by default. */}
+            <div className="flex items-center justify-between gap-4 pt-2 border-t border-border/30">
+              <div className="min-w-0 flex-1">
+                <p className="text-sm text-foreground">Backfill badges</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  One-shot: flag every asset from the last 24 hours as recovered, so the blue badge appears on assets you recovered before the badge feature existed. Safe to run multiple times — already-flagged assets are skipped.
+                </p>
+              </div>
+              <button
+                onClick={handleBackfillRecent}
+                disabled={recovering}
+                className="shrink-0 px-3 py-1.5 text-xs font-mono rounded-lg bg-blue-500/15 border border-blue-500/40 text-blue-300 hover:bg-blue-500/25 transition-colors disabled:opacity-50"
+              >
+                {recovering ? 'Working…' : 'Backfill'}
               </button>
             </div>
           </div>

@@ -205,6 +205,32 @@ export async function POST(request: NextRequest) {
 
   const body = await request.json().catch(() => ({}))
 
+  // Backfill mode: mark every asset in the recent window as recovered
+  // without re-running the fal lookup. Used to flag generations
+  // recovered BEFORE the badge feature shipped. Defaults to "last 2
+  // hours" but the caller can pass `withinHours` to widen it.
+  if (body.mode === 'backfill-recent') {
+    const sql = getDb()
+    await sql`ALTER TABLE generation_history ADD COLUMN IF NOT EXISTS recovered boolean DEFAULT false`
+    const hours = Math.max(0.25, Math.min(72, Number(body.withinHours) || 2))
+    const cutoff = new Date(Date.now() - hours * 60 * 60 * 1000)
+    const updated = await sql`
+      UPDATE generation_history
+      SET recovered = true
+      WHERE created_at > ${cutoff.toISOString()}
+        AND COALESCE(recovered, false) = false
+        ${body.projectId ? sql`AND project_id = ${String(body.projectId)}` : sql``}
+        ${body.modelLike ? sql`AND model ILIKE ${String(body.modelLike)}` : sql``}
+      RETURNING id, model, prompt, created_at
+    `
+    return NextResponse.json({
+      mode: 'backfill-recent',
+      hours,
+      marked: updated.length,
+      assets: updated,
+    })
+  }
+
   // Manual single-request mode.
   if (body.requestId && body.modelEndpoint) {
     if (!body.projectId) {
