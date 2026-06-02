@@ -40,10 +40,15 @@ export async function GET(request: NextRequest) {
     const sql = getDb()
     const projectId = request.nextUrl.searchParams.get('projectId')
     
-    // If projectId is provided, get assets for that project
+    // If projectId is provided, get assets for that project.
+    // COALESCE on `recovered` so existing rows from before the column
+    // was added default to false instead of NULL.
     if (projectId) {
       const assets = await sql`
-        SELECT id, type, model, prompt, r2_url, used_in_canvas, COALESCE(is_upload, false) as is_upload, created_at
+        SELECT id, type, model, prompt, r2_url, used_in_canvas,
+               COALESCE(is_upload, false) as is_upload,
+               COALESCE(recovered, false) as recovered,
+               created_at
         FROM generation_history
         WHERE project_id = ${projectId}
           AND (used_in_canvas = true OR expires_at > CURRENT_TIMESTAMP OR expires_at IS NULL)
@@ -52,10 +57,13 @@ export async function GET(request: NextRequest) {
       `
       return NextResponse.json(assets)
     }
-    
+
     // Otherwise, get all assets from all projects (library view)
     const assets = await sql`
-      SELECT id, type, model, prompt, r2_url, used_in_canvas, COALESCE(is_upload, false) as is_upload, created_at
+      SELECT id, type, model, prompt, r2_url, used_in_canvas,
+             COALESCE(is_upload, false) as is_upload,
+             COALESCE(recovered, false) as recovered,
+             created_at
       FROM generation_history
       WHERE (used_in_canvas = true OR expires_at > CURRENT_TIMESTAMP OR expires_at IS NULL)
       ORDER BY created_at DESC

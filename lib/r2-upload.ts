@@ -146,20 +146,37 @@ export function verifyImageToken(key: string, exp: string | null, sig: string | 
   }
 }
 
+// One-time idempotent column add for the `recovered` flag — pattern
+// matches ensureFoldersSchema. Cached at module level so we run the
+// ALTER once per cold start, not per asset insert.
+let recoveredColumnEnsured = false
+async function ensureRecoveredColumn(sql: ReturnType<typeof getDb>) {
+  if (recoveredColumnEnsured) return
+  try {
+    await sql`ALTER TABLE generation_history ADD COLUMN IF NOT EXISTS recovered boolean DEFAULT false`
+    recoveredColumnEnsured = true
+  } catch (err) {
+    console.error('[r2-upload] failed to ensure recovered column:', err)
+  }
+}
+
 export async function recordAsset(
   type: 'image' | 'video',
   model: string,
   prompt: string,
   r2Url: string,
-  projectId: string
+  projectId: string,
+  options: { recovered?: boolean } = {}
 ) {
   const sql = getDb()
+  await ensureRecoveredColumn(sql)
   const id = `asset-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`
   const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) // 30 days
+  const recovered = options.recovered === true
 
   await sql`
-    INSERT INTO generation_history (id, type, model, prompt, r2_url, used_in_canvas, created_at, expires_at, project_id)
-    VALUES (${id}, ${type}, ${model}, ${prompt}, ${r2Url}, false, CURRENT_TIMESTAMP, ${expiresAt}, ${projectId})
+    INSERT INTO generation_history (id, type, model, prompt, r2_url, used_in_canvas, created_at, expires_at, project_id, recovered)
+    VALUES (${id}, ${type}, ${model}, ${prompt}, ${r2Url}, false, CURRENT_TIMESTAMP, ${expiresAt}, ${projectId}, ${recovered})
   `
 
   return id

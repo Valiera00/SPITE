@@ -166,12 +166,16 @@ async function recoverOne(item: RecoveryItem, falKey: string): Promise<RecoveryR
   }
 
   try {
+    // Mark recovered=true so the UI can show a blue badge on these
+    // assets — lets the user spot the ones that came back from a
+    // stuck/timed-out generation vs. fresh ones.
     await recordAsset(
       isVideo ? 'video' : 'image',
       item.modelEndpoint,
       item.prompt || 'Recovered generation',
       storedUrl,
       item.projectId,
+      { recovered: true },
     )
   } catch (err) {
     console.error('[recover] recordAsset failed:', err)

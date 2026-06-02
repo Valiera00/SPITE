@@ -46,6 +46,7 @@ import {
   ArrowsOut,
   Cursor,
   Check,
+  Lifebuoy,
 } from '@phosphor-icons/react'
 
 export type AssetCategory = 'characters' | 'props' | 'locations' | 'general'
@@ -83,6 +84,10 @@ interface GeneratedAsset {
   r2_url: string
   used_in_canvas: boolean
   is_upload: boolean
+  // True when this asset was pulled back via /api/generate/recover —
+  // surfaces as a small blue badge on the card so the user can spot
+  // generations that came back from a stuck / timed-out job.
+  recovered?: boolean
   created_at: string
 }
 
@@ -1012,11 +1017,21 @@ export function LeftToolbar({
                               ) : (
                                 <img src={a.r2_url} alt="" className="w-full h-full object-cover" loading="lazy" decoding="async" />
                               )}
-                              {a.type === 'video' && (
-                                <div className="absolute top-2 left-2 w-5 h-5 rounded bg-black/60 flex items-center justify-center">
-                                  <VideoCamera size={12} className="text-white" />
-                                </div>
-                              )}
+                              <div className="absolute top-2 left-2 flex gap-1">
+                                {a.type === 'video' && (
+                                  <div className="w-5 h-5 rounded bg-black/60 flex items-center justify-center">
+                                    <VideoCamera size={12} className="text-white" />
+                                  </div>
+                                )}
+                                {full?.recovered && (
+                                  <div
+                                    className="w-5 h-5 rounded bg-blue-500/90 flex items-center justify-center"
+                                    title="Recovered from a stuck or timed-out generation"
+                                  >
+                                    <Lifebuoy size={12} weight="bold" className="text-white" />
+                                  </div>
+                                )}
+                              </div>
                               {selectMode && (
                                 <div className={`absolute top-2 right-2 w-6 h-6 rounded-full flex items-center justify-center border transition-colors ${
                                   isSel
@@ -1079,6 +1094,14 @@ export function LeftToolbar({
                               {asset.used_in_canvas && (
                                 <div className="w-5 h-5 rounded bg-accent/80 flex items-center justify-center">
                                   <ShieldCheck size={12} className="text-white" />
+                                </div>
+                              )}
+                              {asset.recovered && (
+                                <div
+                                  className="w-5 h-5 rounded bg-blue-500/90 flex items-center justify-center"
+                                  title="Recovered from a stuck or timed-out generation"
+                                >
+                                  <Lifebuoy size={12} weight="bold" className="text-white" />
                                 </div>
                               )}
                             </div>
@@ -1541,6 +1564,14 @@ export function LeftToolbar({
                               {asset.used_in_canvas && (
                                 <div className="w-4 h-4 rounded bg-accent/80 flex items-center justify-center">
                                   <ShieldCheck size={10} className="text-white" />
+                                </div>
+                              )}
+                              {asset.recovered && (
+                                <div
+                                  className="w-4 h-4 rounded bg-blue-500/90 flex items-center justify-center"
+                                  title="Recovered from a stuck or timed-out generation"
+                                >
+                                  <Lifebuoy size={10} weight="bold" className="text-white" />
                                 </div>
                               )}
                             </div>
