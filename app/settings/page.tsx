@@ -43,6 +43,12 @@ export default function SettingsPage() {
   const CLEAR_CANVAS_PHRASE = 'DELETE ALL CANVAS DATA'
   const CLEAR_ASSETS_PHRASE = 'DELETE ALL ASSETS'
 
+  // Recovery state — hits /api/generate/recover in bulk mode to pull
+  // back any generations whose result vanished from the canvas but
+  // still exists on fal's side (within their ~24h retention window).
+  const [recovering, setRecovering] = useState(false)
+  const [recoveryResult, setRecoveryResult] = useState<string | null>(null)
+
   // Check API key on mount
   useEffect(() => {
     checkApiKey()
@@ -191,6 +197,44 @@ export default function SettingsPage() {
       console.error('Failed to clear canvas data:', error)
     } finally {
       setClearing(false)
+    }
+  }
+
+  const handleRecoverStuck = async () => {
+    if (recovering) return
+    setRecovering(true)
+    setRecoveryResult(null)
+    try {
+      const res = await fetch('/api/generate/recover', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setRecoveryResult(`Recovery failed: ${data.error || res.status}`)
+        return
+      }
+      const scanned = data.scanned ?? 0
+      const recovered = data.recovered ?? 0
+      const stillPending = data.stillPending ?? 0
+      const failed = data.failed ?? 0
+      const notFound = data.notFound ?? 0
+      if (scanned === 0) {
+        setRecoveryResult('No stuck generations found. You’re clean.')
+      } else {
+        const parts: string[] = []
+        if (recovered > 0) parts.push(`${recovered} recovered`)
+        if (stillPending > 0) parts.push(`${stillPending} still running on fal`)
+        if (failed > 0) parts.push(`${failed} failed on fal`)
+        if (notFound > 0) parts.push(`${notFound} expired from fal (>24h old)`)
+        setRecoveryResult(`Scanned ${scanned} stuck node${scanned === 1 ? '' : 's'} — ${parts.join(', ') || 'no changes'}.`)
+      }
+    } catch (err) {
+      console.error('Recovery error:', err)
+      setRecoveryResult('Recovery request failed. Check the console.')
+    } finally {
+      setRecovering(false)
     }
   }
 
@@ -357,6 +401,36 @@ export default function SettingsPage() {
             >
               {changingPassword ? 'Changing...' : 'Change Password'}
             </button>
+          </div>
+        </section>
+
+        {/* Recovery — pull back generations whose result vanished from the
+            canvas (failed poll, refresh mid-gen, soft timeout, etc.). fal
+            keeps results around for ~24h so a job that finished off-screen
+            is usually still retrievable as long as we have its request id. */}
+        <section className="space-y-4">
+          <h2 className="text-sm font-mono uppercase tracking-wider text-foreground/80">Recovery</h2>
+          <div className="glass rounded-xl border border-border/30 p-6 space-y-4">
+            <div className="flex items-center justify-between gap-4">
+              <div className="min-w-0 flex-1">
+                <p className="text-sm text-foreground">Recover stuck generations</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Scans every project for nodes whose generation got stuck (the spinner that won&apos;t end). Any job fal has actually completed will be pulled into your assets library; jobs still running are reported back unchanged. Safe to run anytime — fal&apos;s status check is free.
+                </p>
+                {recoveryResult && (
+                  <p className="text-xs text-foreground/80 mt-2 font-mono">
+                    {recoveryResult}
+                  </p>
+                )}
+              </div>
+              <button
+                onClick={handleRecoverStuck}
+                disabled={recovering}
+                className="shrink-0 px-3 py-1.5 text-xs font-mono rounded-lg bg-amber-500/15 border border-amber-500/40 text-amber-300 hover:bg-amber-500/25 transition-colors disabled:opacity-50"
+              >
+                {recovering ? 'Scanning…' : 'Recover'}
+              </button>
+            </div>
           </div>
         </section>
 
