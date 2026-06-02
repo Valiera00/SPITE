@@ -39,7 +39,15 @@ export async function GET(request: NextRequest) {
   try {
     const sql = getDb()
     const projectId = request.nextUrl.searchParams.get('projectId')
-    
+
+    // Self-heal: if the `recovered` column hasn't been created yet on
+    // this database (it was added lazily by recordAsset, which only runs
+    // when a NEW generation lands), the SELECT below would throw and
+    // the catch would silently return an empty array — making the
+    // entire asset library look empty. Run an idempotent ALTER so the
+    // column always exists before we try to read it.
+    await sql`ALTER TABLE generation_history ADD COLUMN IF NOT EXISTS recovered boolean DEFAULT false`
+
     // If projectId is provided, get assets for that project.
     // COALESCE on `recovered` so existing rows from before the column
     // was added default to false instead of NULL.
