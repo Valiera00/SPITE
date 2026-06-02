@@ -435,15 +435,76 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
   }, [requestId, currentModel, falEndpoint, pollStatus, resumeToken])
 
   // User-triggered re-check of a request that timed out (or that the
-  // user wants to poll again for any reason). Pushes the timeout window
-  // forward 10 more minutes and bumps resumeToken so the polling effect
-  // restarts with the same request_id.
-  const handleRecheck = () => {
-    if (!requestId) return
+  // user wants to poll again for any reason). Fires a SINGLE direct
+  // status call against fal so the user sees fal's actual answer
+  // immediately — without waiting for the 4-second polling cadence.
+  // Toast-reports the outcome so it's obvious whether fal genuinely
+  // still has the job in queue, finished it, or errored. If the job
+  // is still pending, resumeToken is bumped to restart the background
+  // polling loop for another 10-minute window.
+  const handleRecheck = async () => {
+    if (!requestId || !currentModel) return
+    const pollModel = falEndpoint || currentModel.falModel
+    const toastId = `recheck-${id}`
+
     startTimeRef.current = Date.now()
     setError(null)
     setStatus('in_queue')
-    setResumeToken(t => t + 1)
+
+    toast.loading('Checking fal for this job…', { id: toastId })
+
+    try {
+      const response = await fetch(
+        `/api/generate/status?request_id=${requestId}&model=${encodeURIComponent(pollModel)}&projectId=${projectId}&prompt=${encodeURIComponent(prompt)}`,
+      )
+      const result = await response.json()
+
+      if (result.error) {
+        setStatus('failed')
+        setError(result.error)
+        clearPending()
+        toast.error(`fal: ${result.error}`, { id: toastId })
+        return
+      }
+
+      if (result.status === 'COMPLETED') {
+        const videoUrl =
+          result.output?.url ||
+          result.output?.videos?.[0] ||
+          result.result?.video?.url ||
+          result.result?.video_url
+        if (videoUrl) setOutputUrl(videoUrl)
+        setStatus('completed')
+        setProgress(undefined)
+        clearPending()
+        toast.success('Result is ready — saved to your library.', { id: toastId })
+        return
+      }
+
+      if (result.status === 'FAILED') {
+        setStatus('failed')
+        setError(result.error || 'Generation failed')
+        clearPending()
+        toast.error(`fal: ${result.error || 'Generation failed'}`, { id: toastId })
+        return
+      }
+
+      // Still IN_QUEUE or IN_PROGRESS — keep polling.
+      if (result.status === 'IN_PROGRESS') {
+        setStatus('in_progress')
+        if (result.progress !== undefined) setProgress(result.progress)
+        const pct = typeof result.progress === 'number' ? ` (${Math.round(result.progress * 100)}%)` : ''
+        toast.info(`fal is generating this now${pct}. Polling resumed.`, { id: toastId })
+      } else {
+        setStatus('in_queue')
+        const posLabel = typeof result.position === 'number' ? ` (queue position ${result.position})` : ''
+        toast.info(`Still in fal's queue${posLabel}. Polling resumed for 10 more minutes.`, { id: toastId })
+      }
+      setResumeToken(t => t + 1)
+    } catch (err) {
+      console.error('[recheck] error:', err)
+      toast.error("Couldn't reach fal — check connection and try again.", { id: toastId })
+    }
   }
 
   const handleGenerate = async () => {
