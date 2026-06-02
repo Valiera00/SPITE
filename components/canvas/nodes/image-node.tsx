@@ -224,10 +224,21 @@ function ImageNodeImpl({ id, data, selected }: NodeProps) {
       setFalEndpoint((data.pendingFalEndpoint as string) || null)
       setRequestId(pending)
       setStatus('in_queue')
+      // Restore the start-of-generation timestamp (fall back to now if
+      // the page was refreshed before timestamps were tracked). Used by
+      // the 10-minute soft timeout below.
+      const startedAt = (data.pendingStartedAt as number | undefined) ?? Date.now()
+      startTimeRef.current = startedAt
     }
     // run once on mount
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // 10-minute soft timeout — stops polling and marks failed but keeps
+  // request_id on the node so the user can re-check with the button.
+  const TIMEOUT_MS = 10 * 60 * 1000
+  const startTimeRef = useRef<number | null>(null)
+  const [resumeToken, setResumeToken] = useState(0)
   
   // Sync outputUrl TO node data when it changes (for connected nodes to read)
   useEffect(() => {
@@ -340,13 +351,21 @@ function ImageNodeImpl({ id, data, selected }: NodeProps) {
   const clearPending = useCallback(() => {
     setNodes(ns => ns.map(n => n.id === id ? {
       ...n,
-      data: { ...n.data, pendingRequestId: undefined, pendingFalEndpoint: undefined },
+      data: { ...n.data, pendingRequestId: undefined, pendingFalEndpoint: undefined, pendingStartedAt: undefined },
     } : n))
   }, [id, setNodes])
 
   // Poll for status
   const pollStatus = useCallback(async (reqId: string, falModelId: string) => {
     if (stopRef.current) return true
+    // Soft timeout — bail before the next round-trip if we've been
+    // polling for over 10 minutes. Keeps requestId on the node so the
+    // user can re-check via the "Re-check" button.
+    if (startTimeRef.current && Date.now() - startTimeRef.current > TIMEOUT_MS) {
+      setStatus('failed')
+      setError("Generation took over 10 min — fal might still finish. Use 'Re-check result' to look again, or 'Cancel' to give up.")
+      return true
+    }
     try {
         const response = await fetch(`/api/generate/status?request_id=${reqId}&model=${encodeURIComponent(falModelId)}&projectId=${projectId}&prompt=${encodeURIComponent(prompt)}`)
       const result = await response.json()
@@ -433,7 +452,9 @@ function ImageNodeImpl({ id, data, selected }: NodeProps) {
     }
   }, [clearPending])
 
-  // Start polling when we have a request_id
+  // Start polling when we have a request_id. resumeToken is included as
+  // a dep so a user-initiated re-check restarts the polling loop even
+  // though requestId itself didn't change.
   useEffect(() => {
     if (!requestId || !currentModel) return
     stopRef.current = false
@@ -456,7 +477,18 @@ function ImageNodeImpl({ id, data, selected }: NodeProps) {
         clearTimeout(pollingRef.current)
       }
     }
-  }, [requestId, currentModel, falEndpoint, pollStatus])
+  }, [requestId, currentModel, falEndpoint, pollStatus, resumeToken])
+
+  // User-triggered re-check of a request that timed out. Pushes the
+  // timeout window forward 10 more minutes and bumps resumeToken so the
+  // polling effect restarts with the same request_id.
+  const handleRecheck = () => {
+    if (!requestId) return
+    startTimeRef.current = Date.now()
+    setError(null)
+    setStatus('in_queue')
+    setResumeToken(t => t + 1)
+  }
 
   const handleGenerate = async () => {
     // Compile prompts from connected nodes and this node's prompt
@@ -582,13 +614,20 @@ function ImageNodeImpl({ id, data, selected }: NodeProps) {
 
       // This node tracks the first job.
       const firstEndpoint = ok[0].model || currentModel.falModel
+      const startedAt = Date.now()
       setFalEndpoint(firstEndpoint)
       setRequestId(ok[0].request_id)
       setStatus('in_queue')
+      startTimeRef.current = startedAt
 
       setNodes(ns => ns.map(n => n.id === id ? {
         ...n,
-        data: { ...n.data, pendingRequestId: ok[0].request_id, pendingFalEndpoint: firstEndpoint },
+        data: {
+          ...n.data,
+          pendingRequestId: ok[0].request_id,
+          pendingFalEndpoint: firstEndpoint,
+          pendingStartedAt: startedAt,
+        },
       } : n))
 
       // Extra jobs spawn duplicate image nodes in a 3-column grid that each
@@ -624,6 +663,7 @@ function ImageNodeImpl({ id, data, selected }: NodeProps) {
               prompt,
               pendingRequestId: res.request_id,
               pendingFalEndpoint: res.model || currentModel.falModel,
+              pendingStartedAt: stamp,
             },
           }
         })
@@ -877,17 +917,38 @@ function ImageNodeImpl({ id, data, selected }: NodeProps) {
             )}
           </div>
           
-          {/* Generate / Cancel button */}
+          {/* Generate / Cancel / Re-check button. After a 10-min soft
+              timeout the node sits in status='failed' but still holds the
+              fal request_id — Re-check polls fal one more time in case
+              the job finished after the timeout window (fal keeps results
+              ~24h, so slow generations aren't lost). */}
           {isGenerating ? (
-            <button 
+            <button
               onClick={handleCancel}
               className="w-6 h-6 rounded-full bg-red-500/20 hover:bg-red-500 text-red-400 hover:text-white flex items-center justify-center transition-colors"
               title="Cancel generation"
             >
               <X size={10} weight="bold" />
             </button>
+          ) : status === 'failed' && requestId ? (
+            <div className="flex items-center gap-1">
+              <button
+                onClick={handleRecheck}
+                className="px-2 h-6 rounded-full bg-amber-500/20 hover:bg-amber-500 text-amber-300 hover:text-white flex items-center justify-center transition-colors text-[9px] font-mono"
+                title="Try fetching the result from fal again — generations that took longer than the timeout window may still be available."
+              >
+                Re-check
+              </button>
+              <button
+                onClick={handleCancel}
+                className="w-6 h-6 rounded-full bg-white/5 hover:bg-red-500 text-muted-foreground hover:text-white flex items-center justify-center transition-colors"
+                title="Give up and clear this request from the node"
+              >
+                <X size={10} weight="bold" />
+              </button>
+            </div>
           ) : (
-            <button 
+            <button
               onClick={handleGenerate}
               disabled={!prompt.trim() && !hasConnectedPrompts}
               className="w-6 h-6 rounded-full bg-accent/20 hover:bg-accent text-accent hover:text-accent-foreground flex items-center justify-center transition-colors teal-glow disabled:opacity-50 disabled:cursor-not-allowed"

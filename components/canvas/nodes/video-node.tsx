@@ -319,6 +319,11 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
       setFalEndpoint((data.pendingFalEndpoint as string) || null)
       setRequestId(pending)
       setStatus('in_queue')
+      // Restore the start-of-generation timestamp (or assume now if the
+      // page was refreshed and we don't have it stored). Used by the
+      // 10-minute soft timeout below.
+      const startedAt = (data.pendingStartedAt as number | undefined) ?? Date.now()
+      startTimeRef.current = startedAt
     }
     // run once on mount
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -328,13 +333,31 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
   const clearPending = useCallback(() => {
     setNodes(ns => ns.map(n => n.id === id ? {
       ...n,
-      data: { ...n.data, pendingRequestId: undefined, pendingFalEndpoint: undefined },
+      data: { ...n.data, pendingRequestId: undefined, pendingFalEndpoint: undefined, pendingStartedAt: undefined },
     } : n))
   }, [id, setNodes])
+
+  // 10-minute soft timeout. Stops polling and marks the node failed, but
+  // does NOT clear pendingRequestId — the user can click "Re-check
+  // result" to poll again in case fal completed after the timeout
+  // window. Resets when the user clicks re-check or triggers a new
+  // generation.
+  const TIMEOUT_MS = 10 * 60 * 1000
+  const startTimeRef = useRef<number | null>(null)
+  // Bumped to force the polling effect to restart on user-initiated re-check.
+  const [resumeToken, setResumeToken] = useState(0)
 
   // Poll for status
   const pollStatus = useCallback(async (reqId: string, falModelId: string) => {
     if (stopRef.current) return true
+    // Soft timeout check — bail BEFORE the next round-trip so we don't
+    // continue hammering fal indefinitely. The request_id stays in node
+    // data so the user can manually re-check.
+    if (startTimeRef.current && Date.now() - startTimeRef.current > TIMEOUT_MS) {
+      setStatus('failed')
+      setError("Generation took over 10 min — fal might still finish. Use 'Re-check result' to look again, or 'Cancel' to give up.")
+      return true
+    }
     try {
         const response = await fetch(`/api/generate/status?request_id=${reqId}&model=${encodeURIComponent(falModelId)}&projectId=${projectId}&prompt=${encodeURIComponent(prompt)}`)
       const result = await response.json()
@@ -384,7 +407,9 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
     }
   }, [clearPending])
 
-  // Start polling when we have a request_id
+  // Start polling when we have a request_id. resumeToken is included as
+  // a dep so a user-initiated re-check (handleRecheck below) restarts the
+  // polling loop even though requestId itself didn't change.
   useEffect(() => {
     if (!requestId || !currentModel) return
     stopRef.current = false
@@ -407,7 +432,19 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
         clearTimeout(pollingRef.current)
       }
     }
-  }, [requestId, currentModel, falEndpoint, pollStatus])
+  }, [requestId, currentModel, falEndpoint, pollStatus, resumeToken])
+
+  // User-triggered re-check of a request that timed out (or that the
+  // user wants to poll again for any reason). Pushes the timeout window
+  // forward 10 more minutes and bumps resumeToken so the polling effect
+  // restarts with the same request_id.
+  const handleRecheck = () => {
+    if (!requestId) return
+    startTimeRef.current = Date.now()
+    setError(null)
+    setStatus('in_queue')
+    setResumeToken(t => t + 1)
+  }
 
   const handleGenerate = async () => {
     // Compile prompts from connected nodes and this node's prompt
@@ -579,15 +616,22 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
 
       // This node tracks the first job.
       const firstEndpoint = ok[0].model || currentModel.falModel
+      const startedAt = Date.now()
       setFalEndpoint(firstEndpoint)
       setRequestId(ok[0].request_id)
       setStatus('in_queue')
+      startTimeRef.current = startedAt
 
       // Persist the in-flight job onto the node so polling can resume
       // after a page refresh. Cleared when the generation resolves.
       setNodes(ns => ns.map(n => n.id === id ? {
         ...n,
-        data: { ...n.data, pendingRequestId: ok[0].request_id, pendingFalEndpoint: firstEndpoint },
+        data: {
+          ...n.data,
+          pendingRequestId: ok[0].request_id,
+          pendingFalEndpoint: firstEndpoint,
+          pendingStartedAt: startedAt,
+        },
       } : n))
 
       // Extra jobs become duplicate video nodes (in a grid) that each poll
@@ -619,6 +663,7 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
               prompt,
               pendingRequestId: res.request_id,
               pendingFalEndpoint: res.model || currentModel.falModel,
+              pendingStartedAt: stamp,
             },
           }
         })
@@ -944,15 +989,36 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
             )}
           </div>
           
-          {/* Generate / Cancel button */}
+          {/* Generate / Cancel / Re-check button.
+              When a job has timed out (status='failed' but we still have
+              the request_id from fal), show a "re-check" button so the
+              user can poll once more in case fal completed late — fal
+              keeps results around for ~24h, so a slow job isn't lost. */}
           {isGenerating ? (
-            <button 
+            <button
               onClick={handleCancel}
               className="w-6 h-6 rounded-full bg-red-500/20 hover:bg-red-500 text-red-400 hover:text-white flex items-center justify-center transition-colors"
               title="Cancel generation"
             >
               <X size={10} weight="bold" />
             </button>
+          ) : status === 'failed' && requestId ? (
+            <div className="flex items-center gap-1">
+              <button
+                onClick={handleRecheck}
+                className="px-2 h-6 rounded-full bg-amber-500/20 hover:bg-amber-500 text-amber-300 hover:text-white flex items-center justify-center transition-colors text-[9px] font-mono"
+                title="Try fetching the result from fal again — generations that took longer than the timeout window may still be available."
+              >
+                Re-check
+              </button>
+              <button
+                onClick={handleCancel}
+                className="w-6 h-6 rounded-full bg-white/5 hover:bg-red-500 text-muted-foreground hover:text-white flex items-center justify-center transition-colors"
+                title="Give up and clear this request from the node"
+              >
+                <X size={10} weight="bold" />
+              </button>
+            </div>
           ) : (
             <button
               onClick={handleGenerate}
