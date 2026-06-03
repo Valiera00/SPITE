@@ -47,6 +47,7 @@ import {
   Cursor,
   Check,
   Lifebuoy,
+  CircleNotch,
 } from '@phosphor-icons/react'
 
 export type AssetCategory = 'characters' | 'props' | 'locations' | 'general'
@@ -169,6 +170,13 @@ export function LeftToolbar({
   const [selectedAssetIds, setSelectedAssetIds] = useState<Set<string>>(new Set())
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
   const [bulkDownloading, setBulkDownloading] = useState(false)
+  // Live progress for the bulk download. Without this the button text
+  // stays "Zipping…" forever and the user can't tell a 69-video pack
+  // from a stuck request. `phase` distinguishes "fetching from R2" from
+  // "compressing into zip" so the label can read accurately.
+  const [bulkProgress, setBulkProgress] = useState<
+    { phase: 'fetching' | 'compressing'; current: number; total: number } | null
+  >(null)
 
   // Category panel: which folder is inline-expanded (asset grid visible),
   // and which folder-type's "+ New" button opens the create modal.
@@ -433,7 +441,7 @@ export function LeftToolbar({
   const performBulkDownload = async () => {
     if (selectedAssetIds.size === 0 || bulkDownloading) return
     setBulkDownloading(true)
-    const toastId = toast.loading('Building zip…')
+    const toastId = toast.loading('Preparing download…')
     try {
       const ids = Array.from(selectedAssetIds)
       const assets = ids
@@ -448,7 +456,9 @@ export function LeftToolbar({
       const usedNames = new Set<string>()
       let added = 0
       const skipped: string[] = []
-      for (const asset of assets) {
+      setBulkProgress({ phase: 'fetching', current: 0, total: assets.length })
+      for (let i = 0; i < assets.length; i++) {
+        const asset = assets[i]
         try {
           const res = await fetch(asset.r2_url)
           if (!res.ok) {
@@ -468,13 +478,13 @@ export function LeftToolbar({
             // fall back to default baseName
           }
           let name = baseName
-          let i = 2
+          let j = 2
           while (usedNames.has(name)) {
             const dot = baseName.lastIndexOf('.')
             name = dot > 0
-              ? `${baseName.slice(0, dot)} (${i})${baseName.slice(dot)}`
-              : `${baseName} (${i})`
-            i++
+              ? `${baseName.slice(0, dot)} (${j})${baseName.slice(dot)}`
+              : `${baseName} (${j})`
+            j++
           }
           usedNames.add(name)
           zip.file(name, blob)
@@ -483,12 +493,36 @@ export function LeftToolbar({
           skipped.push(asset.id)
           console.warn('[bulk-download] fetch failed', asset.id, err)
         }
+        const done = i + 1
+        setBulkProgress({ phase: 'fetching', current: done, total: assets.length })
+        // Update the toast text every 5 fetches (or the very last) so
+        // the user sees movement without spamming the sonner queue.
+        if (done % 5 === 0 || done === assets.length) {
+          toast.loading(`Fetching ${done} of ${assets.length}…`, { id: toastId })
+        }
       }
       if (added === 0) {
         toast.error('All downloads failed', { id: toastId })
         return
       }
-      const zipBlob = await zip.generateAsync({ type: 'blob' })
+      // Compression phase. JSZip's onUpdate fires with `{ percent }`
+      // throughout generateAsync — wire it into the same progress
+      // state so the button label and toast keep moving.
+      setBulkProgress({ phase: 'compressing', current: 0, total: 100 })
+      toast.loading('Zipping 0%…', { id: toastId })
+      let lastReported = 0
+      const zipBlob = await zip.generateAsync(
+        { type: 'blob' },
+        (meta: { percent: number }) => {
+          const pct = Math.round(meta.percent)
+          setBulkProgress({ phase: 'compressing', current: pct, total: 100 })
+          // Throttle toast updates to every ~10% to avoid flicker.
+          if (pct - lastReported >= 10 || pct === 100) {
+            lastReported = pct
+            toast.loading(`Zipping ${pct}%…`, { id: toastId })
+          }
+        },
+      )
       const objectUrl = URL.createObjectURL(zipBlob)
       const a = document.createElement('a')
       a.href = objectUrl
@@ -507,6 +541,7 @@ export function LeftToolbar({
       toast.error(err instanceof Error ? err.message : 'Download failed', { id: toastId })
     } finally {
       setBulkDownloading(false)
+      setBulkProgress(null)
     }
   }
 
@@ -752,10 +787,26 @@ export function LeftToolbar({
                     <button
                       onClick={performBulkDownload}
                       disabled={selectedAssetIds.size === 0 || bulkDownloading}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs bg-white/10 hover:bg-white/15 text-foreground transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs bg-white/10 hover:bg-white/15 text-foreground transition-colors disabled:opacity-40 disabled:cursor-not-allowed min-w-[140px] justify-center"
+                      title={bulkDownloading
+                        ? 'Building the zip — please keep this tab open'
+                        : `Download ${selectedAssetIds.size} selected as a zip`}
                     >
-                      <Download size={12} />
-                      {bulkDownloading ? 'Zipping…' : 'Download'}
+                      {bulkDownloading ? (
+                        <>
+                          <CircleNotch size={12} className="animate-spin" />
+                          {bulkProgress?.phase === 'fetching'
+                            ? `Fetching ${bulkProgress.current}/${bulkProgress.total}`
+                            : bulkProgress?.phase === 'compressing'
+                              ? `Zipping ${bulkProgress.current}%`
+                              : 'Preparing…'}
+                        </>
+                      ) : (
+                        <>
+                          <Download size={12} />
+                          Download
+                        </>
+                      )}
                     </button>
                     <button
                       onClick={() => setBulkDeleteOpen(true)}
