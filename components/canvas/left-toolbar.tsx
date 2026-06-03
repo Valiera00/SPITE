@@ -1178,8 +1178,11 @@ export function LeftToolbar({
             )
           })()}
 
-          {/* Right Detail Panel */}
-          <div className="w-72 border-l border-border/30 flex flex-col bg-card">
+          {/* Right Detail Panel. Widened from w-72 (288px) to w-[480px]
+              so the video preview is actually watchable without going
+              fullscreen — at the old width the preview was ~162px tall
+              which is too small to review motion. */}
+          <div className="w-[480px] border-l border-border/30 flex flex-col bg-card">
             {/* Close button */}
             <div className="flex justify-end px-4 py-3">
               <button
@@ -1192,10 +1195,12 @@ export function LeftToolbar({
 
             {selectedGenAsset ? (
               <div className="flex-1 overflow-y-auto px-4 pb-4">
-                {/* Preview */}
-                <div className="rounded-lg overflow-hidden bg-card border border-border/30 mb-4 aspect-video">
+                {/* Preview — black background + object-contain so the
+                    full frame is visible without cropping. Old code used
+                    object-cover, which cropped the video to fit. */}
+                <div className="rounded-lg overflow-hidden bg-black border border-border/30 mb-4 aspect-video">
                   {selectedGenAsset.type === 'video' ? (
-                    <video src={selectedGenAsset.r2_url} controls className="w-full h-full object-cover" preload="metadata" />
+                    <video src={selectedGenAsset.r2_url} controls className="w-full h-full object-contain" preload="metadata" />
                   ) : (
                     <img src={selectedGenAsset.r2_url} alt="" className="w-full h-full object-cover" loading="lazy" decoding="async" />
                   )}

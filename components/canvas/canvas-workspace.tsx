@@ -466,6 +466,11 @@ function CanvasInner({ projectId }: { projectId: string }) {
               thumbnail: asset.r2_url,
               label: payload.folderName || asset.prompt || 'Reference',
               mediaType: asset.type === 'video' ? 'video' : 'image',
+              // Tag with the currently-active scene so the node shows on
+              // the scene the user actually dropped it into, instead of
+              // being filtered out everywhere (no sceneId = no scene
+              // filter ever matches).
+              sceneId: activeSceneId,
             },
           } as Node
         })
@@ -494,7 +499,8 @@ function CanvasInner({ projectId }: { projectId: string }) {
       const asset = JSON.parse(assetData)
       const flowPos = screenToFlowPosition({ x: e.clientX, y: e.clientY })
 
-      // Create node for this asset
+      // Create node for this asset. Tag with the active scene so it
+      // shows on the scene the user actually dropped it into.
       const newNode: Node = {
         id: `ref-${Date.now()}`,
         type: 'reference',
@@ -504,6 +510,7 @@ function CanvasInner({ projectId }: { projectId: string }) {
           thumbnail: asset.r2_url,
           label: asset.prompt || 'Reference',
           mediaType: asset.type === 'video' ? 'video' : 'image',
+          sceneId: activeSceneId,
         },
       }
 
@@ -520,7 +527,7 @@ function CanvasInner({ projectId }: { projectId: string }) {
     } catch (error) {
       console.error('[v0] Drop error:', error)
     }
-  }, [screenToFlowPosition, setNodes])
+  }, [screenToFlowPosition, setNodes, activeSceneId])
 
   // Undo - restore previous state
   const undo = useCallback(() => {
