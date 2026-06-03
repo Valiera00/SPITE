@@ -70,7 +70,14 @@ export function formatUSD(amount: number): string {
 }
 
 // Threshold at which we force an explicit user confirmation before
-// firing the submission. Catches batch operations and any single
-// Seedance / Kling Pro generation, while letting cheap one-shots
-// through.
-export const COST_CONFIRM_THRESHOLD_USD = 0.5
+// firing the submission. Deliberately high — the goal is to catch
+// "panic spiral" patterns (x12 Seedance batches and similar) without
+// interrupting normal professional work. The fal balance badge in the
+// canvas toolbar gives the user ambient awareness of their spend; this
+// confirm only fires when a single click would move it noticeably.
+//
+// Reasoning:
+//   $25 ≈ 5 Seedance shots in one click, or one absurd x12 NBP batch.
+//   Below this is "normal work" and shouldn't be gated.
+//   Above this is "are you SURE" territory.
+export const COST_CONFIRM_THRESHOLD_USD = 25

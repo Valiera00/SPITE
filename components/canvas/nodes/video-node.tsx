@@ -142,9 +142,12 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
   const [resolution, setResolution] = useState((data.resolution as string) || '')
   const [enableAudio, setEnableAudio] = useState((data.enableAudio as boolean) || false)
   const [enableLoop, setEnableLoop] = useState((data.enableLoop as boolean) || false)
-  // Batch count always starts at 1 on a fresh node load. Previously
-  // persisted, which meant a sticky 12 from a past session could fire
-  // 12 fal jobs on a single click. Treat it as session-local intent.
+  // Video models are expensive enough (Seedance ≈ $4.50 per 5-sec clip,
+  // Kling Pro variants higher) that we deliberately DON'T persist the
+  // counter across reloads. Every session starts at 1, and bumping it
+  // up has to be a conscious action — "I want 3 Seedance shots" should
+  // require typing it in, not get inherited from a forgotten setting.
+  // Image counters persist (cheaper, often-used in batches of 6).
   const [numVideos, setNumVideos] = useState(1)
   
   const [status, setStatus] = useState<GenerationStatus>('idle')

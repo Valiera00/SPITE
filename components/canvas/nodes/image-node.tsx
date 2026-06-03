@@ -138,12 +138,15 @@ function ImageNodeImpl({ id, data, selected }: NodeProps) {
   const [modelId, setModelId] = useState((data.modelId as string) || 'nano-banana-pro')
   const [aspectRatio, setAspectRatio] = useState((data.aspectRatio as string) || '')
   const [resolution, setResolution] = useState((data.resolution as string) || '')
-  // Batch count always starts at 1 on a fresh node load / page refresh.
-  // It used to read from saved data — which meant if you'd set it to 12
-  // once, every subsequent Generate click on that node fired 12 fal
-  // jobs forever. Treat the counter as session-local intent: a fresh
-  // canvas is a fresh "I want one image", not "twelve images".
-  const [numImages, setNumImages] = useState(1)
+  // Batch count persists across reloads on image models — the user
+  // commonly works in batches of 6 on Nano Banana / Flux for character
+  // sheets, style sheets, etc., and re-clicking + every session is
+  // friction. The user is protected by (a) the inline cost preview in
+  // the Generate button tooltip, (b) the live fal balance badge in the
+  // toolbar, and (c) the COST_CONFIRM_THRESHOLD on truly extreme
+  // batches. Counter on the video node, in contrast, does NOT persist —
+  // see comment there for the rationale.
+  const [numImages, setNumImages] = useState((data.numImages as number) || 1)
   
   const [status, setStatus] = useState<GenerationStatus>('idle')
   const [progress, setProgress] = useState<number | undefined>()

@@ -5,6 +5,7 @@ import { ArrowLeft, MagnifyingGlassPlus, MagnifyingGlassMinus, CornersOut, Lock,
 import { useReactFlow } from '@xyflow/react'
 import { useState } from 'react'
 import { useAuth } from '@/components/auth-provider'
+import { FalBalanceBadge } from './fal-balance-badge'
 
 interface CanvasToolbarProps {
   projectName: string
@@ -90,6 +91,10 @@ export function CanvasToolbar({ projectName, onProjectNameChange, saveStatus, pr
             {saveStatus === 'saved' ? 'Saved' : 'Unsaved'}
           </span>
         </div>
+
+        <div className="w-px h-4 bg-border mx-1" />
+
+        <FalBalanceBadge />
 
         <Link
           href="/settings"
