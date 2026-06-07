@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { recordAsset, rehostToR2 } from '@/lib/r2-upload'
+import { isValidFalModel, isValidFalRequestId } from '@/lib/fal-validate'
 
 export async function GET(request: NextRequest) {
   const falKey = process.env.FAL_KEY
@@ -13,6 +14,11 @@ export async function GET(request: NextRequest) {
 
   if (!requestId || !model) {
     return NextResponse.json({ error: 'request_id and model are required' }, { status: 400 })
+  }
+  // Refuse any attempt to interpolate a non-fal hostname / path-traversal
+  // segment into the fal queue URL — SSRF defence.
+  if (!isValidFalModel(model) || !isValidFalRequestId(requestId)) {
+    return NextResponse.json({ error: 'Invalid model or request_id' }, { status: 400 })
   }
 
   try {
@@ -138,7 +144,8 @@ export async function GET(request: NextRequest) {
     })
   } catch (error: any) {
     console.error('[fal.ai] Status error:', error)
-    return NextResponse.json({ error: error.message || 'Status check failed' }, { status: 500 })
+    // Don't surface raw error message — could leak internal hostnames.
+    return NextResponse.json({ error: 'Status check failed' }, { status: 500 })
   }
 }
 

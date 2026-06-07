@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { checkRequiredEnv } from '@/lib/env-check'
+import { SESSION_COOKIE_NAME, isSessionValid } from '@/lib/sessions'
 
 // Paths that must stay reachable without a login cookie.
 // - /login: the login page itself
@@ -17,7 +18,7 @@ const PUBLIC_PATHS = [
   '/api/r2-image',
 ]
 
-export function middleware(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
 
   // First gate: refuse to boot if required env vars are missing. Sends
@@ -39,9 +40,12 @@ export function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL('/setup', request.url))
   }
 
-  // Second gate: standard cookie-based auth.
-  const isAuthenticated =
-    request.cookies.get('spite_session')?.value === 'authenticated'
+  // Second gate: validate the session token against the sessions table.
+  // The cookie value is now a random 256-bit token, not a static
+  // string, so a captured cookie can be invalidated server-side by
+  // logout / expiry.
+  const token = request.cookies.get(SESSION_COOKIE_NAME)?.value
+  const isAuthenticated = await isSessionValid(token)
 
   const isPublic = PUBLIC_PATHS.some(
     (p) => pathname === p || pathname.startsWith(p + '/'),

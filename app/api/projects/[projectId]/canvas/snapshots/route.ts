@@ -45,7 +45,7 @@ export async function GET(
   } catch (err: any) {
     console.error('[canvas/snapshots] GET error:', err)
     return NextResponse.json(
-      { error: 'failed to list snapshots', detail: err?.message || String(err) },
+      { error: 'failed to list snapshots' },
       { status: 500 },
     )
   }
@@ -150,7 +150,7 @@ export async function POST(
   } catch (err: any) {
     console.error('[canvas/snapshots] POST error:', err)
     return NextResponse.json(
-      { error: 'restore failed', detail: err?.message || String(err) },
+      { error: 'restore failed' },
       { status: 500 },
     )
   }

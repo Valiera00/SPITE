@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { isValidFalModel, isValidFalRequestId } from '@/lib/fal-validate'
 
 export async function POST(request: NextRequest) {
   const falKey = process.env.FAL_KEY
@@ -10,6 +11,9 @@ export async function POST(request: NextRequest) {
   if (!request_id || !model) {
     return NextResponse.json({ error: 'request_id and model are required' }, { status: 400 })
   }
+  if (!isValidFalModel(model) || !isValidFalRequestId(request_id)) {
+    return NextResponse.json({ error: 'Invalid model or request_id' }, { status: 400 })
+  }
 
   try {
     const res = await fetch(`https://queue.fal.run/${model}/requests/${request_id}/cancel`, {
@@ -18,14 +22,13 @@ export async function POST(request: NextRequest) {
     })
 
     if (!res.ok) {
-      const text = await res.text()
-      return NextResponse.json({ error: text }, { status: res.status })
+      return NextResponse.json({ error: 'Cancel failed' }, { status: res.status })
     }
 
     console.log(`[fal.ai] Cancelled: request_id=${request_id}`)
     return NextResponse.json({ success: true, request_id })
   } catch (error: any) {
     console.error('[fal.ai] Cancel error:', error)
-    return NextResponse.json({ error: error.message || 'Cancel failed' }, { status: 500 })
+    return NextResponse.json({ error: 'Cancel failed' }, { status: 500 })
   }
 }

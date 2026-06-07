@@ -137,7 +137,7 @@ export async function POST(req: NextRequest) {
   } catch (err: any) {
     console.error('[r2-presign] error', err)
     return NextResponse.json(
-      { error: 'presign failed', detail: err?.message || String(err) },
+      { error: 'presign failed' },
       { status: 500 },
     )
   }

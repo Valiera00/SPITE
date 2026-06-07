@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { neon } from '@neondatabase/serverless'
 import { recordAsset, rehostToR2 } from '@/lib/r2-upload'
+import { isValidFalModel, isValidFalRequestId } from '@/lib/fal-validate'
 
 // Recovery endpoint. fal keeps job results around for ~24h after completion,
 // so a generation that "disappeared" from SPITE — because polling failed,
@@ -88,6 +89,18 @@ function extractOutputUrl(result: any): { url: string | null; isVideo: boolean }
 }
 
 async function recoverOne(item: RecoveryItem, falKey: string): Promise<RecoveryResult> {
+  // Defence-in-depth: bulk-mode recovery reads modelEndpoint from the
+  // canvas_nodes jsonb, which was written by an authenticated user. If
+  // that data ever gets tampered with (via a future write bug or DB
+  // access), we still refuse to interpolate it into the fal URL.
+  if (!isValidFalModel(item.modelEndpoint) || !isValidFalRequestId(item.requestId)) {
+    return {
+      requestId: item.requestId,
+      nodeId: item.nodeId,
+      status: 'error',
+      message: 'Invalid modelEndpoint or requestId — refusing to fetch.',
+    }
+  }
   const statusRes = await fetchFalStatus(item.requestId, item.modelEndpoint, falKey)
   if (statusRes.status === 404) {
     return {
@@ -239,10 +252,21 @@ export async function POST(request: NextRequest) {
         { status: 400 },
       )
     }
+    // Validate before either reaches the fal URL interpolation.
+    // Without this an attacker can pass modelEndpoint="../@evil/path"
+    // and turn this route into an SSRF primitive.
+    const requestIdRaw = String(body.requestId)
+    const modelEndpointRaw = String(body.modelEndpoint)
+    if (!isValidFalModel(modelEndpointRaw) || !isValidFalRequestId(requestIdRaw)) {
+      return NextResponse.json(
+        { error: 'Invalid modelEndpoint or requestId' },
+        { status: 400 },
+      )
+    }
     const result = await recoverOne(
       {
-        requestId: String(body.requestId),
-        modelEndpoint: String(body.modelEndpoint),
+        requestId: requestIdRaw,
+        modelEndpoint: modelEndpointRaw,
         projectId: String(body.projectId),
         prompt: body.prompt ? String(body.prompt) : undefined,
         hintedType: body.type === 'video' || body.type === 'image' ? body.type : undefined,

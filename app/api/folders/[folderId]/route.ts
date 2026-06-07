@@ -48,7 +48,7 @@ export async function GET(
   } catch (err: any) {
     console.error('[folders] GET single error:', err)
     return NextResponse.json(
-      { error: 'Failed to fetch folder', detail: err?.message || String(err) },
+      { error: 'Failed to fetch folder' },
       { status: 500 },
     )
   }
@@ -123,7 +123,7 @@ export async function PATCH(
   } catch (err: any) {
     console.error('[folders] PATCH error:', err)
     return NextResponse.json(
-      { error: 'Failed to update folder', detail: err?.message || String(err) },
+      { error: 'Failed to update folder' },
       { status: 500 },
     )
   }
@@ -144,7 +144,7 @@ export async function DELETE(
   } catch (err: any) {
     console.error('[folders] DELETE error:', err)
     return NextResponse.json(
-      { error: 'Failed to delete folder', detail: err?.message || String(err) },
+      { error: 'Failed to delete folder' },
       { status: 500 },
     )
   }

@@ -66,10 +66,37 @@ function extFromContentType(contentType: string, fallbackUrl: string): string {
   return base.startsWith('video') ? 'mp4' : 'png'
 }
 
+// Hosts we trust to return generation output URLs. Anything outside this
+// allowlist is rejected by rehostToR2 — otherwise an attacker who can
+// influence a URL passed in (via recover/status routes that interpolate
+// user-supplied model/requestId into the fal queue URL) could turn our
+// server into a fetch primitive: point at 169.254.169.254 / localhost /
+// internal Vercel endpoints and have the response stored in R2.
+const REHOST_ALLOWED_HOSTS = [
+  /^([a-z0-9-]+\.)?fal\.media$/i,
+  /^([a-z0-9-]+\.)?fal\.ai$/i,
+  /^([a-z0-9-]+\.)?fal\.run$/i,
+  /^v[0-9]+\.fal\.media$/i,
+]
+
+function isAllowedRehostSource(rawUrl: string): boolean {
+  try {
+    const u = new URL(rawUrl)
+    if (u.protocol !== 'https:') return false
+    return REHOST_ALLOWED_HOSTS.some(re => re.test(u.hostname))
+  } catch {
+    return false
+  }
+}
+
 // Download a (temporary) source URL — e.g. a fal.media output — and store it
 // permanently in our R2 bucket. Returns the private proxy URL to use as the
-// asset's r2_url so the file is truly owned and never expires.
+// asset's r2_url so the file is truly owned and never expires. Refuses any
+// host not on REHOST_ALLOWED_HOSTS — SSRF defence.
 export async function rehostToR2(sourceUrl: string): Promise<string> {
+  if (!isAllowedRehostSource(sourceUrl)) {
+    throw new Error('rehostToR2: source host not allowed')
+  }
   const res = await fetch(sourceUrl)
   if (!res.ok) {
     throw new Error(`Failed to fetch source for re-host: ${res.status}`)

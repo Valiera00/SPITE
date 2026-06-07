@@ -104,6 +104,31 @@ CREATE TABLE IF NOT EXISTS asset_folder_items (
     PRIMARY KEY (folder_id, asset_id)
 );
 
+-- Sessions: opaque tokens issued at login, validated on every request.
+-- Replaces the previous static cookie value so a captured cookie can
+-- be revoked server-side by logout / expiry.
+CREATE TABLE IF NOT EXISTS sessions (
+    token       text PRIMARY KEY,
+    created_at  timestamptz NOT NULL DEFAULT now(),
+    expires_at  timestamptz NOT NULL DEFAULT (now() + interval '30 days')
+);
+
+-- Auth attempts: per-IP failed-login log feeding the rate limiter on
+-- the verify endpoint (5 attempts per IP per 60 s).
+CREATE TABLE IF NOT EXISTS auth_attempts (
+    ip            text NOT NULL,
+    attempted_at  timestamptz NOT NULL DEFAULT now()
+);
+
+-- Spend ledger: server-side record of every accepted fal.ai submission.
+-- Drives the per-hour USD ceiling enforced in /api/generate/submit.
+CREATE TABLE IF NOT EXISTS spend_ledger (
+    id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    model_id       text NOT NULL,
+    estimated_usd  numeric(10,4) NOT NULL,
+    created_at     timestamptz NOT NULL DEFAULT now()
+);
+
 -- Helpful indexes for the most common lookups.
 CREATE INDEX IF NOT EXISTS idx_generation_history_project ON generation_history (project_id);
 CREATE INDEX IF NOT EXISTS idx_assets_project           ON assets (projectid);
@@ -111,3 +136,6 @@ CREATE INDEX IF NOT EXISTS idx_canvas_nodes_project     ON canvas_nodes (project
 CREATE INDEX IF NOT EXISTS idx_canvas_edges_project     ON canvas_edges (projectid);
 CREATE INDEX IF NOT EXISTS idx_asset_folders_project    ON asset_folders (project_id);
 CREATE INDEX IF NOT EXISTS idx_folder_items_folder      ON asset_folder_items (folder_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_expires         ON sessions (expires_at);
+CREATE INDEX IF NOT EXISTS idx_auth_attempts_ip_time    ON auth_attempts (ip, attempted_at);
+CREATE INDEX IF NOT EXISTS idx_spend_ledger_time        ON spend_ledger (created_at);

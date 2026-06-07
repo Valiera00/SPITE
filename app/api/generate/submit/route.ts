@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getModelById, buildModelInput } from '@/lib/fal-models'
 import { toFalFetchableUrl } from '@/lib/r2-upload'
+import { estimateGenerationCost } from '@/lib/fal-cost'
+import { checkSpendGate, recordSpend } from '@/lib/spend-gate'
 
 export async function POST(request: NextRequest) {
   // KILL SWITCH — set GENERATION_DISABLED=1 in Vercel env vars to halt
@@ -43,6 +45,42 @@ export async function POST(request: NextRequest) {
   const model = getModelById(modelId)
   if (!model) {
     return NextResponse.json({ error: `Unknown model: ${modelId}` }, { status: 400 })
+  }
+
+  // Server-side spend gate. Defence against a captured cookie being
+  // weaponised into a billing attack — the client-side $25 confirm is
+  // UX, not a control. Recompute the cost from the modelId here (don't
+  // trust the client) and refuse if this submission would push the
+  // last-hour total over SPEND_LIMIT_USD_PER_HOUR.
+  const requestedUnits = Math.max(
+    1,
+    Math.min(
+      4,
+      Number(settings?.numImages) || Number(settings?.numVideos) || 1,
+    ),
+  )
+  const durationSeconds = settings?.duration
+    ? Number.parseInt(String(settings.duration), 10) || undefined
+    : undefined
+  const costEstimate = estimateGenerationCost(model, {
+    count: requestedUnits,
+    durationSeconds,
+  })
+  const gate = await checkSpendGate(costEstimate.total)
+  if (!gate.allowed) {
+    return NextResponse.json(
+      {
+        error:
+          `Spend gate blocked this submission: $${gate.projectedTotalUsd.toFixed(2)} ` +
+          `would exceed the $${gate.limitUsd}/hour ceiling ` +
+          `(already $${gate.spentLastHourUsd.toFixed(2)} this hour). ` +
+          `Raise SPEND_LIMIT_USD_PER_HOUR or wait for the window to roll over.`,
+        spentLastHourUsd: gate.spentLastHourUsd,
+        limitUsd: gate.limitUsd,
+        projectedTotalUsd: gate.projectedTotalUsd,
+      },
+      { status: 429 },
+    )
   }
 
   // Reference media is stored behind our private R2 proxy. Turn it into an
@@ -159,6 +197,12 @@ export async function POST(request: NextRequest) {
     const data = await res.json()
     console.log(`[fal.ai] Submitted, request_id=${data.request_id}`)
 
+    // Record the spend now that fal accepted the job. If we recorded
+    // before submit, every transient fal error would inflate the
+    // ledger; recording after means the ledger only counts work fal
+    // actually queued.
+    await recordSpend(model.id, costEstimate.total)
+
     // fal returns the exact status/result URLs for this job. Derive the queue
     // path fal expects for polling from status_url — this is authoritative and
     // handles every case (/edit strips to base, image-to-video keeps its path,
@@ -177,6 +221,8 @@ export async function POST(request: NextRequest) {
     })
   } catch (error: any) {
     console.error('[fal.ai] Submit error:', error)
-    return NextResponse.json({ error: error.message || 'Submit failed' }, { status: 500 })
+    // Generic error to client — don't surface raw error.message which
+    // could leak internal hostnames, header dumps, etc.
+    return NextResponse.json({ error: 'Submit failed' }, { status: 500 })
   }
 }

@@ -80,7 +80,7 @@ export async function GET(request: NextRequest) {
   } catch (err: any) {
     console.error('[folders] GET error:', err)
     return NextResponse.json(
-      { error: 'Failed to fetch folders', detail: err?.message || String(err) },
+      { error: 'Failed to fetch folders' },
       { status: 500 },
     )
   }
@@ -131,7 +131,7 @@ export async function POST(request: NextRequest) {
   } catch (err: any) {
     console.error('[folders] POST error:', err)
     return NextResponse.json(
-      { error: 'Failed to create folder', detail: err?.message || String(err) },
+      { error: 'Failed to create folder' },
       { status: 500 },
     )
   }

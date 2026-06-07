@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { neon } from '@neondatabase/serverless'
 import { S3Client, DeleteObjectCommand } from '@aws-sdk/client-s3'
 import { timingSafeEqual } from 'crypto'
+import { purgeExpiredSessions } from '@/lib/sessions'
+import { purgeOldSpendLedger } from '@/lib/spend-gate'
 
 function getDb() {
   if (!process.env.DATABASE_URL) {
@@ -86,9 +88,27 @@ export async function POST(request: NextRequest) {
 
     console.log(`[cleanup] Deleted ${result.length} expired assets from R2 and database`)
 
+    // Sweep auth/spend tables too — they grow forever otherwise and the
+    // rate-limit lookups get slower over time. Errors here don't fail
+    // the cron; asset cleanup is the primary job.
+    let sessionsDeleted = 0
+    let attemptsDeleted = 0
+    let spendLedgerDeleted = 0
+    try {
+      const sweep = await purgeExpiredSessions()
+      sessionsDeleted = sweep.sessions
+      attemptsDeleted = sweep.attempts
+      spendLedgerDeleted = await purgeOldSpendLedger()
+    } catch (err) {
+      console.error('[cleanup] auth/spend sweep failed:', err)
+    }
+
     return NextResponse.json({
       success: true,
       deleted: result.length,
+      sessionsDeleted,
+      attemptsDeleted,
+      spendLedgerDeleted,
     })
   } catch (error) {
     console.error('[cleanup] Error:', error)
