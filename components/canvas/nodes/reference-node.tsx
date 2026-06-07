@@ -159,8 +159,8 @@ function ReferenceNodeImpl({ id, data, selected }: NodeProps) {
           border: isTaggedToShot 
             ? '1.5px solid rgba(251,191,36,0.7)' 
             : selected 
-              ? '1.5px solid rgba(168,85,247,0.85)' 
-              : '1.5px solid rgba(168,85,247,0.25)',
+              ? '1.5px solid rgba(107,143,168,0.85)' 
+              : '1.5px solid rgba(107,143,168,0.25)',
         }}
       >
         {/* Image area */}

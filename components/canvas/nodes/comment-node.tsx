@@ -42,8 +42,8 @@ function CommentNodeImpl({ id, data, selected }: NodeProps) {
       className="relative group flex items-center gap-2 px-3 py-2 rounded-full transition-all nodrag"
       style={{
         background: 'rgba(30,32,38,0.95)',
-        border: selected ? '1px solid rgba(168,85,247,0.6)' : '1px solid rgba(255,255,255,0.1)',
-        boxShadow: selected ? '0 0 12px rgba(168,85,247,0.2)' : '0 2px 8px rgba(0,0,0,0.3)',
+        border: selected ? '1px solid rgba(107,143,168,0.6)' : '1px solid rgba(255,255,255,0.1)',
+        boxShadow: selected ? '0 0 12px rgba(107,143,168,0.2)' : '0 2px 8px rgba(0,0,0,0.3)',
       }}
       onDoubleClick={() => setIsEditing(true)}
     >

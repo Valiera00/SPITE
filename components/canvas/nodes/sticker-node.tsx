@@ -51,7 +51,7 @@ function StickerNodeImpl({ id, data, selected }: NodeProps) {
         style={{
           fontSize: 36,
           lineHeight: 1,
-          filter: selected ? 'drop-shadow(0 0 10px rgba(168,85,247,0.6))' : 'none',
+          filter: selected ? 'drop-shadow(0 0 10px rgba(107,143,168,0.6))' : 'none',
         }}
       >
         {sticker}

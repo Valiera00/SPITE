@@ -888,7 +888,7 @@ function CanvasInner({ projectId }: { projectId: string }) {
       return {
         ...edge,
         animated: isActive,
-        style: { stroke: '#A8B0B8', strokeWidth: 2, opacity: isActive ? 1 : 0.5 },
+        style: { stroke: '#6B8FA8', strokeWidth: 2, opacity: isActive ? 1 : 0.5 },
       }
     })
   }, [sceneNodes, sceneEdges])
@@ -990,7 +990,7 @@ function CanvasInner({ projectId }: { projectId: string }) {
               edgeTypes={EDGE_TYPES}
               defaultEdgeOptions={{
                 type: 'scissors',
-                style: { stroke: '#A8B0B8', strokeWidth: 2 },
+                style: { stroke: '#6B8FA8', strokeWidth: 2 },
                 animated: false,
               }}
             >
@@ -1011,7 +1011,7 @@ function CanvasInner({ projectId }: { projectId: string }) {
                     height: 100,
                   }}
                   maskColor="rgba(8,10,12,0.7)"
-                  nodeColor="rgba(168,85,247,0.5)"
+                  nodeColor="rgba(107,143,168,0.5)"
                   position="bottom-right"
                   className="!bottom-14 !right-3"
                 />

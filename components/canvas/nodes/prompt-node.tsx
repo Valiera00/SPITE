@@ -91,7 +91,7 @@ function PromptNodeImpl({ id, data, selected }: NodeProps) {
           and video nodes — keeps drag-origin detection robust against
           card content that might be added later. */}
       <Handle type="source" id="prompt-out" position={Position.Right} style={{ top: 85, right: 0, opacity: 0, width: 24, height: 24, zIndex: 5 }} />
-      <HandleIcon icon={TextT} color="rgba(168,85,247,0.8)" style={{ top: 85, left: 340 }} />
+      <HandleIcon icon={TextT} color="rgba(107,143,168,0.8)" style={{ top: 85, left: 340 }} />
 
       {/* Card content */}
       <div
@@ -99,8 +99,8 @@ function PromptNodeImpl({ id, data, selected }: NodeProps) {
         className="relative flex flex-col rounded-xl overflow-hidden transition-all duration-200"
         style={{
           background: '#0D0F12',
-          border: selected ? '1.5px solid rgba(168,85,247,0.85)' : '1.5px solid rgba(168,85,247,0.25)',
-          boxShadow: selected ? '0 0 0 1px rgba(168,85,247,0.2), 0 0 24px rgba(168,85,247,0.15)' : 'none',
+          border: selected ? '1.5px solid rgba(107,143,168,0.85)' : '1.5px solid rgba(107,143,168,0.25)',
+          boxShadow: selected ? '0 0 0 1px rgba(107,143,168,0.2), 0 0 24px rgba(107,143,168,0.15)' : 'none',
         }}
       >
         <MentionTextarea

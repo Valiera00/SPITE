@@ -87,7 +87,7 @@ export function AlignmentGuides({ vertical, horizontal }: Props) {
           style={{
             left: vx + flowX * zoom,
             width: 1,
-            background: 'rgba(168,85,247,0.36)',
+            background: 'rgba(107,143,168,0.36)',
           }}
         />
       ))}
@@ -98,7 +98,7 @@ export function AlignmentGuides({ vertical, horizontal }: Props) {
           style={{
             top: vy + flowY * zoom,
             height: 1,
-            background: 'rgba(168,85,247,0.36)',
+            background: 'rgba(107,143,168,0.36)',
           }}
         />
       ))}

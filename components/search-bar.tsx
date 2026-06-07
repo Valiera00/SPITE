@@ -15,10 +15,10 @@ export function SearchBar({ value, onChange }: SearchBarProps) {
     <div
       className={`glass rounded-xl flex items-center gap-3 px-4 py-2.5 transition-all duration-200 ${
         focused
-          ? 'border-accent/40 shadow-[0_0_0_1px_rgba(168,85,247,0.2),inset_0_1px_0_rgba(255,255,255,0.12)]'
+          ? 'border-accent/40 shadow-[0_0_0_1px_rgba(107,143,168,0.2),inset_0_1px_0_rgba(255,255,255,0.12)]'
           : 'border-white/8'
       }`}
-      style={{ border: focused ? '1px solid rgba(168,85,247,0.35)' : '1px solid rgba(255,255,255,0.08)' }}
+      style={{ border: focused ? '1px solid rgba(107,143,168,0.35)' : '1px solid rgba(255,255,255,0.08)' }}
     >
       <MagnifyingGlass
         size={15}

@@ -909,7 +909,7 @@ function ImageNodeImpl({ id, data, selected }: NodeProps) {
           because React Flow's drop detection found the textarea before
           the handle. */}
       <Handle type="target" id="prompt-in" position={Position.Left} style={{ top: 80, left: -12, opacity: 0, width: 24, height: 24, zIndex: 5 }} />
-      <HandleIcon icon={TextT} color="rgba(168,85,247,0.8)" position="left" top={80} visible />
+      <HandleIcon icon={TextT} color="rgba(107,143,168,0.8)" position="left" top={80} visible />
 
       {/* Image input - only if model supports image input */}
       {currentModel?.inputTypes.includes('image') && (
@@ -931,12 +931,12 @@ function ImageNodeImpl({ id, data, selected }: NodeProps) {
           border: isTaggedToShot 
             ? '1.5px solid rgba(251,191,36,0.7)' 
             : selected 
-              ? '1.5px solid rgba(168,85,247,0.85)' 
-              : '1.5px solid rgba(168,85,247,0.25)',
+              ? '1.5px solid rgba(107,143,168,0.85)' 
+              : '1.5px solid rgba(107,143,168,0.25)',
           boxShadow: isTaggedToShot
             ? '0 0 0 1px rgba(251,191,36,0.2), 0 0 20px rgba(251,191,36,0.25), 0 0 40px rgba(251,191,36,0.1)'
             : selected 
-              ? '0 0 0 1px rgba(168,85,247,0.2), 0 0 24px rgba(168,85,247,0.15)' 
+              ? '0 0 0 1px rgba(107,143,168,0.2), 0 0 24px rgba(107,143,168,0.15)' 
               : 'none',
         }}
       >
