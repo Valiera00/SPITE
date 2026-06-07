@@ -56,17 +56,19 @@ export async function GET(
       return NextResponse.json({ error: 'File not found' }, { status: 404 })
     }
 
-    // Cache hardening:
-    // - `private` not `public` so shared caches (CDNs, corporate proxies)
-    //   never store a copy; only the requesting browser/agent does.
-    // - 5 min instead of 1 year so a signed URL leaked via screenshot
-    //   or browser history has a short replay window.
-    // - No Access-Control-Allow-Origin: * — we don't want signed URLs
-    //   embeddable from any third-party origin.
+    // fal's image fetcher REQUIRES Access-Control-Allow-Origin: * to
+    // accept the response — without it, fal returns "Failed to download
+    // the file" for any reference. Don't remove this without a path
+    // for fal to opt in via its own origin.
+    //
+    // Cap cache at 1 hour to match the HMAC signature's expiry: an URL
+    // that has expired by our auth check shouldn't continue to be
+    // served from any cache.
     return new NextResponse(buffer, {
       headers: {
         'Content-Type': response.ContentType || 'application/octet-stream',
-        'Cache-Control': 'private, max-age=300',
+        'Cache-Control': 'public, max-age=3600',
+        'Access-Control-Allow-Origin': '*',
         'X-Content-Type-Options': 'nosniff',
       },
     })
