@@ -202,7 +202,7 @@ export function NodeActionToolbar({
         target: newNodeId,
         sourceHandle,
         targetHandle,
-        style: { stroke: '#A855F7', strokeWidth: 2 },
+        style: { stroke: '#A8B0B8', strokeWidth: 2 },
         animated: true,
       })
     }

@@ -63,7 +63,7 @@ export function ScissorsEdge({
           strokeDasharray: '6 4',
           strokeLinecap: 'round',
           transition: 'stroke 0.15s, stroke-width 0.15s',
-          stroke: hovered ? '#e879f9' : (style?.stroke as string ?? '#A855F7'),
+          stroke: hovered ? '#6B8FA8' : (style?.stroke as string ?? '#A8B0B8'),
           strokeWidth: hovered ? 2.5 : (style?.strokeWidth as number ?? 2),
           pointerEvents: 'none',
         }}
@@ -88,7 +88,7 @@ export function ScissorsEdge({
               height: 22,
               borderRadius: '50%',
               background: hovered ? '#1a1d21' : 'transparent',
-              border: hovered ? '1.5px solid rgba(232,121,249,0.6)' : '1.5px solid transparent',
+              border: hovered ? '1.5px solid rgba(107,143,168,0.6)' : '1.5px solid transparent',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -98,7 +98,7 @@ export function ScissorsEdge({
             }}
             title="Disconnect"
           >
-            <Scissors size={11} weight="bold" style={{ color: '#e879f9' }} />
+            <Scissors size={11} weight="bold" style={{ color: '#6B8FA8' }} />
           </button>
         </div>
       </EdgeLabelRenderer>

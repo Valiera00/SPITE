@@ -3,7 +3,7 @@ import { neon } from '@neondatabase/serverless'
 import { recordAsset, rehostToR2 } from '@/lib/r2-upload'
 
 // Recovery endpoint. fal keeps job results around for ~24h after completion,
-// so a generation that "disappeared" from FRAME — because polling failed,
+// so a generation that "disappeared" from SPITE — because polling failed,
 // the user refreshed, the 10-min soft timeout fired, or the node was
 // deleted — is usually still retrievable as long as we know the request_id.
 //

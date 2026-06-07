@@ -37,7 +37,12 @@ export default function LoginPage() {
     <div className="flex items-center justify-center min-h-screen" style={{ backgroundColor: '#080A0C' }}>
       <div className="flex flex-col items-center gap-12 w-full max-w-sm px-6">
         {/* Logo */}
-        <h1 className="text-6xl tracking-tight font-light" style={{ fontFamily: '"Onnier", serif', color: '#FFFFFF' }}>FRAME</h1>
+        <img
+          src="/brand/icon-text/SPITE_text+icon_FLAT_WHITE.svg"
+          alt="SPITE"
+          className="h-20 w-auto select-none"
+          draggable={false}
+        />
 
         {/* Password Form */}
         <form onSubmit={handleSubmit} className="w-full flex flex-col gap-6">
@@ -72,8 +77,8 @@ export default function LoginPage() {
             className="px-6 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 active:scale-95 focus:outline-none"
             style={{
               fontFamily: 'var(--font-mono)',
-              backgroundColor: '#4ECDC4',
-              color: '#080A0C',
+              backgroundColor: '#6B8FA8',
+              color: '#F0EDE6',
               opacity: isLoading || !password ? 0.5 : 1,
               cursor: isLoading || !password ? 'not-allowed' : 'pointer',
             }}

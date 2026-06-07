@@ -1,5 +1,8 @@
 -- ============================================================================
--- FRAME — Database setup script (Postgres / Neon)
+-- SPITE — Database setup script (Postgres / Neon)
+-- Note: the camera_bag table (from removed Camera Bag feature) is no
+-- longer created; if an existing database still has it, drop it with:
+--   DROP TABLE IF EXISTS camera_bag;
 -- ----------------------------------------------------------------------------
 -- HOW TO USE:
 --   1. Open your Neon project at https://console.neon.tech

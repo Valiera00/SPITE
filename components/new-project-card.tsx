@@ -43,7 +43,7 @@ export function NewProjectCard({ onCreated }: NewProjectCardProps) {
       aria-label="Create new project"
     >
       <div className="glass glass-hover rounded-xl overflow-hidden aspect-[4/3] flex flex-col items-center justify-center gap-3 border border-dashed border-white/10 group-hover:border-accent/40 transition-colors duration-300 cursor-pointer">
-        <div className="w-10 h-10 rounded-full flex items-center justify-center glass teal-glow group-hover:scale-110 transition-transform duration-300 border border-accent/30">
+        <div className="w-10 h-10 rounded-full flex items-center justify-center glass accent-glow group-hover:scale-110 transition-transform duration-300 border border-accent/30">
           {creating ? (
             <CircleNotch size={20} weight="thin" className="text-accent animate-spin" />
           ) : (
@@ -53,7 +53,7 @@ export function NewProjectCard({ onCreated }: NewProjectCardProps) {
         <div className="flex flex-col items-center gap-0.5">
           <span
             className="text-sm text-foreground/80 group-hover:text-accent transition-colors duration-200"
-            style={{ fontFamily: 'var(--font-dm-serif)' }}
+            style={{ fontFamily: 'var(--font-montserrat)' }}
           >
             {creating ? 'Creating...' : 'New Project'}
           </span>

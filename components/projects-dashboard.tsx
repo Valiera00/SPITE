@@ -67,12 +67,12 @@ export function ProjectsDashboard() {
             <div className="max-w-6xl mx-auto flex items-center justify-between gap-6">
               {/* Wordmark */}
               <div className="shrink-0">
-                <span
-                  className="text-2xl tracking-[0.15em] text-foreground select-none"
-                  style={{ fontFamily: 'var(--font-dm-serif)' }}
-                >
-                  FRAME
-                </span>
+                <img
+                  src="/brand/icon-text/SPITE_text+icon_FLAT_WHITE.svg"
+                  alt="SPITE"
+                  className="h-8 w-auto select-none"
+                  draggable={false}
+                />
               </div>
 
               {/* Search */}
@@ -116,7 +116,7 @@ export function ProjectsDashboard() {
               <div className="col-span-full flex flex-col items-center justify-center py-24 gap-3">
                 <p
                   className="text-xl text-foreground/40"
-                  style={{ fontFamily: 'var(--font-dm-serif)' }}
+                  style={{ fontFamily: 'var(--font-montserrat)' }}
                 >
                   No projects found
                 </p>

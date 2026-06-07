@@ -172,7 +172,7 @@ export function ProjectCard({ id, name, thumbnail, lastModified, genre, onMutate
           <div className="px-4 py-3 flex flex-col gap-1 border-t border-white/5">
             <h3
               className="text-base leading-snug text-foreground truncate group-hover:text-accent transition-colors duration-200"
-              style={{ fontFamily: 'var(--font-dm-serif)' }}
+              style={{ fontFamily: 'var(--font-montserrat)' }}
             >
               {name}
             </h3>

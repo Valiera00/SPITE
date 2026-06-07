@@ -2,27 +2,13 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Check, X, Pencil, Trash, Plus, Warning } from '@phosphor-icons/react'
-
-interface CameraBagStyle {
-  id: string
-  name: string
-  style: string
-}
+import { ArrowLeft, Check, X } from '@phosphor-icons/react'
 
 export default function SettingsPage() {
   // API Key state
   const [apiKeyStatus, setApiKeyStatus] = useState<'checking' | 'connected' | 'not_set' | 'invalid'>('checking')
   const [keyPreview, setKeyPreview] = useState('')
   const [testingConnection, setTestingConnection] = useState(false)
-
-  // Camera Bag state
-  const [styles, setStyles] = useState<CameraBagStyle[]>([])
-  const [loadingStyles, setLoadingStyles] = useState(true)
-  const [showNewStyleModal, setShowNewStyleModal] = useState(false)
-  const [editingStyle, setEditingStyle] = useState<CameraBagStyle | null>(null)
-  const [newStyleName, setNewStyleName] = useState('')
-  const [newStyleValue, setNewStyleValue] = useState('')
 
   // Password change state
   const [currentPassword, setCurrentPassword] = useState('')
@@ -52,7 +38,6 @@ export default function SettingsPage() {
   // Check API key on mount
   useEffect(() => {
     checkApiKey()
-    loadCameraBag()
   }, [])
 
   const checkApiKey = async () => {
@@ -76,71 +61,6 @@ export default function SettingsPage() {
     setTestingConnection(true)
     await checkApiKey()
     setTestingConnection(false)
-  }
-
-  const loadCameraBag = async () => {
-    try {
-      const res = await fetch('/api/settings/camera-bag')
-      if (res.ok) {
-        const data = await res.json()
-        setStyles(data)
-      }
-    } catch (error) {
-      console.error('Failed to load camera bag:', error)
-    } finally {
-      setLoadingStyles(false)
-    }
-  }
-
-  const saveStyle = async () => {
-    if (!newStyleName.trim() || !newStyleValue.trim()) return
-
-    try {
-      const res = await fetch('/api/settings/camera-bag', {
-        method: editingStyle ? 'PUT' : 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: editingStyle?.id,
-          name: newStyleName,
-          style: newStyleValue,
-        }),
-      })
-      if (res.ok) {
-        await loadCameraBag()
-        closeModal()
-      }
-    } catch (error) {
-      console.error('Failed to save style:', error)
-    }
-  }
-
-  const deleteStyle = async (id: string) => {
-    try {
-      const res = await fetch('/api/settings/camera-bag', {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id }),
-      })
-      if (res.ok) {
-        await loadCameraBag()
-      }
-    } catch (error) {
-      console.error('Failed to delete style:', error)
-    }
-  }
-
-  const closeModal = () => {
-    setShowNewStyleModal(false)
-    setEditingStyle(null)
-    setNewStyleName('')
-    setNewStyleValue('')
-  }
-
-  const openEditModal = (style: CameraBagStyle) => {
-    setEditingStyle(style)
-    setNewStyleName(style.name)
-    setNewStyleValue(style.style)
-    setShowNewStyleModal(true)
   }
 
   const handlePasswordChange = async () => {
@@ -347,49 +267,6 @@ export default function SettingsPage() {
           </div>
         </section>
 
-        {/* Camera Bag Section */}
-        <section className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-mono uppercase tracking-wider text-muted-foreground">Camera Bag</h2>
-            <button
-              onClick={() => setShowNewStyleModal(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-mono rounded-lg glass-hover text-muted-foreground hover:text-foreground transition-colors"
-            >
-              <Plus size={12} weight="bold" /> New Style
-            </button>
-          </div>
-          <div className="glass rounded-xl divide-y divide-border/50">
-            {loadingStyles ? (
-              <div className="p-6 text-center text-sm text-muted-foreground">Loading styles...</div>
-            ) : styles.length === 0 ? (
-              <div className="p-6 text-center text-sm text-muted-foreground">No saved styles yet</div>
-            ) : (
-              styles.map(style => (
-                <div key={style.id} className="p-4 flex items-start justify-between gap-4">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-foreground">{style.name}</p>
-                    <p className="text-xs text-muted-foreground mt-1 truncate">{style.style}</p>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <button
-                      onClick={() => openEditModal(style)}
-                      className="w-7 h-7 rounded-lg glass-hover flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
-                    >
-                      <Pencil size={12} weight="thin" />
-                    </button>
-                    <button
-                      onClick={() => deleteStyle(style.id)}
-                      className="w-7 h-7 rounded-lg glass-hover flex items-center justify-center text-muted-foreground hover:text-destructive transition-colors"
-                    >
-                      <Trash size={12} weight="thin" />
-                    </button>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </section>
-
         {/* Password Change Section */}
         <section className="space-y-4">
           <h2 className="text-sm font-mono uppercase tracking-wider text-muted-foreground">App Password</h2>
@@ -592,43 +469,6 @@ export default function SettingsPage() {
         </section>
       </div>
 
-      {/* New/Edit Style Modal */}
-      {showNewStyleModal && (
-        <div className="fixed inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="glass rounded-xl w-full max-w-md p-6 space-y-4">
-            <h3 className="text-base font-serif">{editingStyle ? 'Edit Style' : 'New Style'}</h3>
-            <input
-              type="text"
-              placeholder="Style name"
-              value={newStyleName}
-              onChange={e => setNewStyleName(e.target.value)}
-              className="w-full px-4 py-2.5 text-sm rounded-lg bg-background/50 border border-border/50 focus:border-accent/50 focus:outline-none transition-colors"
-            />
-            <textarea
-              placeholder="Style string (e.g. 'cinematic still on ARRI Alexa, Cooke lenses, film grain...')"
-              value={newStyleValue}
-              onChange={e => setNewStyleValue(e.target.value)}
-              rows={4}
-              className="w-full px-4 py-2.5 text-sm rounded-lg bg-background/50 border border-border/50 focus:border-accent/50 focus:outline-none transition-colors resize-none"
-            />
-            <div className="flex justify-end gap-2">
-              <button
-                onClick={closeModal}
-                className="px-4 py-2 text-xs font-mono rounded-lg glass-hover text-muted-foreground"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={saveStyle}
-                disabled={!newStyleName.trim() || !newStyleValue.trim()}
-                className="px-4 py-2 text-xs font-mono rounded-lg bg-foreground text-background hover:bg-foreground/90 transition-colors disabled:opacity-50"
-              >
-                {editingStyle ? 'Save Changes' : 'Create Style'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

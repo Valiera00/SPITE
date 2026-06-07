@@ -109,7 +109,7 @@ function StatusBadge({ status, progress }: { status: GenerationStatus; progress?
     idle: { label: '', color: '' },
     submitting: { label: 'Submitting...', color: 'text-blue-400' },
     in_queue: { label: 'In Queue', color: 'text-yellow-400' },
-    in_progress: { label: progress ? `${Math.round(progress * 100)}%` : 'Generating...', color: 'text-purple-400' },
+    in_progress: { label: progress ? `${Math.round(progress * 100)}%` : 'Generating...', color: 'text-accent' },
     completed: { label: 'Done', color: 'text-green-400' },
     failed: { label: 'Failed', color: 'text-red-400' },
     cancelled: { label: 'Cancelled', color: 'text-gray-400' },
@@ -1155,7 +1155,7 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
             <button
               onClick={requestGenerate}
               disabled={isGenerating || (!prompt.trim() && !hasConnectedPrompts) || blockedNoFirstFrame}
-              className="w-6 h-6 rounded-full bg-accent/20 hover:bg-accent text-accent hover:text-accent-foreground flex items-center justify-center transition-colors teal-glow disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-6 h-6 rounded-full bg-accent/20 hover:bg-accent text-accent hover:text-accent-foreground flex items-center justify-center transition-colors accent-glow disabled:opacity-50 disabled:cursor-not-allowed"
               title={generateTooltip}
             >
               <Play size={10} weight="fill" />

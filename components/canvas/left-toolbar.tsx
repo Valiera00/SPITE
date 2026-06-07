@@ -71,7 +71,7 @@ const TOOLS = [
 ] as const
 
 const ASSET_CATEGORIES: { id: AssetCategory; icon: typeof User; label: string; color: string }[] = [
-  { id: 'characters', icon: User, label: 'Characters', color: 'text-purple-400' },
+  { id: 'characters', icon: User, label: 'Characters', color: 'text-slate-300' },
   { id: 'props', icon: Package, label: 'Props', color: 'text-blue-400' },
   { id: 'locations', icon: MapPin, label: 'Locations', color: 'text-green-400' },
   { id: 'general', icon: Folder, label: 'General', color: 'text-yellow-400' },

@@ -42,13 +42,13 @@ export function CanvasToolbar({ projectName, onProjectNameChange, saveStatus, pr
             onBlur={() => setEditing(false)}
             onKeyDown={e => e.key === 'Enter' && setEditing(false)}
             className="bg-transparent border-none outline-none text-foreground text-base tracking-tight"
-            style={{ fontFamily: '"Onnier", serif' }}
+            style={{ fontFamily: 'var(--font-montserrat)' }}
           />
         ) : (
           <button
             onClick={() => setEditing(true)}
             className="text-base tracking-tight text-foreground hover:text-accent transition-colors cursor-text"
-            style={{ fontFamily: '"Onnier", serif' }}
+            style={{ fontFamily: 'var(--font-montserrat)' }}
           >
             {projectName}
           </button>

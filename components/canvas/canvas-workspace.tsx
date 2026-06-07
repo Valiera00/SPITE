@@ -888,7 +888,7 @@ function CanvasInner({ projectId }: { projectId: string }) {
       return {
         ...edge,
         animated: isActive,
-        style: { stroke: '#A855F7', strokeWidth: 2, opacity: isActive ? 1 : 0.5 },
+        style: { stroke: '#A8B0B8', strokeWidth: 2, opacity: isActive ? 1 : 0.5 },
       }
     })
   }, [sceneNodes, sceneEdges])
@@ -990,7 +990,7 @@ function CanvasInner({ projectId }: { projectId: string }) {
               edgeTypes={EDGE_TYPES}
               defaultEdgeOptions={{
                 type: 'scissors',
-                style: { stroke: '#A855F7', strokeWidth: 2 },
+                style: { stroke: '#A8B0B8', strokeWidth: 2 },
                 animated: false,
               }}
             >

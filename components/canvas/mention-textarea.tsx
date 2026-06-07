@@ -55,7 +55,7 @@ const ICONS: Record<FolderType, any> = {
 }
 
 const COLOR: Record<FolderType, string> = {
-  character: 'bg-purple-500/20 text-purple-200 border-purple-400/40',
+  character: 'bg-slate-500/20 text-slate-200 border-slate-400/40',
   prop: 'bg-blue-500/20 text-blue-200 border-blue-400/40',
   location: 'bg-green-500/20 text-green-200 border-green-400/40',
   general: 'bg-yellow-500/20 text-yellow-200 border-yellow-400/40',

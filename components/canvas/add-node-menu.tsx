@@ -11,7 +11,6 @@ import {
   MagnifyingGlass,
   FrameCorners,
   Sliders,
-  Bag,
 } from '@phosphor-icons/react'
 
 export type NodeMenuItem = {
@@ -32,8 +31,6 @@ const ITEMS: NodeMenuItem[] = [
   { id: 'assets',    label: 'Assets',            shortcut: '',  icon: Stack,          category: 'MEDIA',  nodeType: 'reference' },
   { id: 'stock',     label: 'Stock',             shortcut: '',  icon: MagnifyingGlass,category: 'MEDIA',  nodeType: 'reference' },
   { id: 'frame',     label: 'Frame',             shortcut: 'F', icon: FrameCorners,   category: 'MODIFIERS', nodeType: 'prompt' },
-  { id: 'txt-mod',   label: 'Text Modifier',     shortcut: 'M', icon: Sliders,        category: 'MODIFIERS', nodeType: 'prompt' },
-  { id: 'cam-bag',   label: 'Camera Bag Style',  shortcut: 'C', icon: Bag,            category: 'MODIFIERS', nodeType: 'prompt' },
 ]
 
 const CATEGORIES = ['BASICS', 'MEDIA', 'MODIFIERS']

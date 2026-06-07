@@ -224,7 +224,7 @@ export default function AssetsPage() {
                       onClick={() => setSelectedAsset(asset)}
                       className={`group relative aspect-square rounded-lg overflow-hidden bg-zinc-900 border-2 transition-all ${
                         selectedAsset?.id === asset.id 
-                          ? 'border-purple-500 ring-2 ring-purple-500/30' 
+                          ? 'border-accent ring-2 ring-accent/30'
                           : 'border-transparent hover:border-zinc-700'
                       }`}
                     >
@@ -256,7 +256,7 @@ export default function AssetsPage() {
                       
                       {/* Protected indicator */}
                       {asset.usedincanvas && (
-                        <div className="absolute top-2 right-2 bg-purple-500/80 backdrop-blur-sm rounded p-1">
+                        <div className="absolute top-2 right-2 bg-accent/80 backdrop-blur-sm rounded p-1">
                           <Lock size={12} className="text-white" />
                         </div>
                       )}
@@ -346,7 +346,7 @@ export default function AssetsPage() {
                 <span className="text-sm flex items-center gap-1">
                   {selectedAsset.usedincanvas ? (
                     <>
-                      <Lock size={12} className="text-purple-400" />
+                      <Lock size={12} className="text-accent" />
                       Protected
                     </>
                   ) : (

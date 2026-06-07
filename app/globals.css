@@ -1,19 +1,6 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
 
-/* Onnier font for FRAME wordmark */
-@font-face {
-  font-family: 'Onnier';
-  src: url('/fonts/onnier.woff2') format('woff2');
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}
-
-@theme {
-  --font-onnier: 'Onnier', serif;
-}
-
 @keyframes shake {
   0%, 100% { transform: translateX(0); }
   10%, 30%, 50%, 70%, 90% { transform: translateX(-4px); }
@@ -23,20 +10,21 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  /* FRAME — cinematic dark theme */
+  /* SPITE — cold, restrained, cinematic dark theme */
   --background: #080A0C;
   --canvas: #0D0F12;
-  --foreground: #E8EAF0;
+  --foreground: #F0EDE6;
   --muted-foreground: #6B7280;
-  --accent: #A855F7;
-  --accent-foreground: #ffffff;
+  --accent: #A8B0B8;
+  --accent-foreground: #0D0C0B;
+  --accent-hover: #6B8FA8;
 
   --card: rgba(255, 255, 255, 0.04);
-  --card-foreground: #E8EAF0;
+  --card-foreground: #F0EDE6;
   --border: rgba(255, 255, 255, 0.08);
   --border-bright: rgba(255, 255, 255, 0.12);
   --input: rgba(255, 255, 255, 0.06);
-  --ring: #A855F7;
+  --ring: #A8B0B8;
 
   --glass-bg: rgba(255, 255, 255, 0.04);
   --glass-border: rgba(255, 255, 255, 0.08);
@@ -46,12 +34,13 @@
 }
 
 @theme inline {
-  /* Sleek sans-serif everywhere by default; we deliberately remap the
-     `font-mono` Tailwind class to Geist Sans too so the dozens of existing
-     `font-mono` usages adopt the new look without a sweeping rename. */
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-sans);
-  --font-display: var(--font-dm-serif);
+  /* Inter everywhere for body/UI; Montserrat reserved for the wordmark
+     and display headlines. `font-mono` is intentionally remapped to Inter
+     too so the existing `font-mono` usages adopt the new look without a
+     sweeping rename. */
+  --font-sans: var(--font-inter);
+  --font-mono: var(--font-inter);
+  --font-display: var(--font-montserrat);
 
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -82,8 +71,8 @@
 
   body {
     background-color: #080A0C;
-    color: #E8EAF0;
-    font-family: var(--font-geist-sans), -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    color: #F0EDE6;
+    font-family: var(--font-inter), -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   }
 }
 
@@ -114,9 +103,9 @@
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 8px 32px rgba(0, 0, 0, 0.4);
 }
 
-/* Purple glow for accent elements */
-.teal-glow {
-  box-shadow: 0 0 20px rgba(168, 85, 247, 0.3), 0 0 40px rgba(168, 85, 247, 0.10);
+/* Cold silver glow for accent elements */
+.accent-glow {
+  box-shadow: 0 0 20px rgba(168, 176, 184, 0.3), 0 0 40px rgba(168, 176, 184, 0.10);
 }
 
 /* Shake animation for login errors */
