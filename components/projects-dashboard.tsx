@@ -59,8 +59,14 @@ export function ProjectsDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-[#080A0C] dot-grid">
-      <div className="min-h-screen bg-gradient-to-b from-[#080A0C] via-transparent to-[#080A0C]">
+    <>
+      {/* Brand background: ozone gradient base + film grain overlay,
+          both fixed-position so the atmosphere stays consistent as the
+          project grid scrolls. Mirrors the login page. */}
+      <div className="spite-ozone-bg fixed inset-0 z-0 pointer-events-none" aria-hidden="true" />
+      <div className="spite-grain" aria-hidden="true" />
+
+      <div className="relative z-10 min-h-screen">
         {/* Header */}
         <header className="sticky top-0 z-50">
           <div className="glass border-b border-white/5 px-6 md:px-10 py-4">
@@ -137,6 +143,6 @@ export function ProjectsDashboard() {
           </div>
         </main>
       </div>
-    </div>
+    </>
   )
 }

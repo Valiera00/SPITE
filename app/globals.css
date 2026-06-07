@@ -23,6 +23,15 @@
   }
 }
 
+/* Ozone-layer base — deep near-black with a faint frost-blue curve
+   glowing up from below the viewport edge. Used on full-page surfaces
+   that benefit from the horizon-line atmosphere (login, dashboard). */
+.spite-ozone-bg {
+  background:
+    radial-gradient(ellipse 80% 55% at 50% 112%, rgba(107, 143, 168, 0.22) 0%, rgba(107, 143, 168, 0.06) 35%, transparent 70%),
+    #050608;
+}
+
 /* Film grain overlay — brand guide §18 calls for fine grain in
    surrounding space, never on the logo. Apply as a fixed full-screen
    layer behind interactive content with pointer-events: none. */

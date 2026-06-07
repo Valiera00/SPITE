@@ -42,17 +42,7 @@ export default function LoginPage() {
   const buttonDisabled = isLoading || !password
 
   return (
-    <div
-      className="relative flex items-center justify-center min-h-screen overflow-hidden"
-      style={{
-        // Ozone-layer base: deep near-black ground with a faint frost-blue
-        // curve glowing up from the bottom edge. Radial ellipse sits below
-        // the viewport so only the top of the arc is visible — gives the
-        // horizon feel without competing with the wordmark.
-        background:
-          'radial-gradient(ellipse 80% 55% at 50% 112%, rgba(107, 143, 168, 0.22) 0%, rgba(107, 143, 168, 0.06) 35%, transparent 70%), #050608',
-      }}
-    >
+    <div className="spite-ozone-bg relative flex items-center justify-center min-h-screen overflow-hidden">
       {/* Film grain overlay — brand guide §18: fine grain in the
           surrounding system, never on the wordmark. */}
       <div className="spite-grain" aria-hidden="true" />
