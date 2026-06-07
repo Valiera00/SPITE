@@ -170,6 +170,31 @@ it does.
 
 The bar isn't perfection. It's honesty and usefulness.
 
+## Disclaimer
+
+SPITE is provided **as-is, with no warranty of any kind** (see
+[`LICENSE`](./LICENSE) for the legal version — AGPL §15 and §16).
+You're responsible for:
+
+- **Your fal.ai bill.** The cost gates (per-button estimates, $25
+  confirm dialog, live balance badge, server-side per-hour ceiling,
+  kill switch) are best-effort. A bug, a misconfiguration, or a
+  bypass we haven't anticipated could still result in unexpected
+  charges. The hourly ceiling defaults to $100 and can be tuned via
+  `SPEND_LIMIT_USD_PER_HOUR`.
+- **The content you generate.** SPITE doesn't filter prompts or
+  outputs. Whatever your chosen models do, you've made.
+- **Your data.** Your assets live in your R2 bucket; your projects
+  and metadata live in your Neon database. Nobody else has access.
+  If SPITE breaks, the worst case is you redeploy and possibly drop
+  a couple of tables. There's no central service that can lose your
+  work — it's already in your storage.
+
+If you find a security issue, report it via [GitHub Security
+Advisories](https://github.com/Valiera00/SPITE/security/advisories/new),
+not a public issue. See [`CONTRIBUTING.md`](./CONTRIBUTING.md) for
+the rest of the disclosure flow.
+
 ## License
 
 [AGPL-3.0-only](./LICENSE). If you fork SPITE and run it as a service,
