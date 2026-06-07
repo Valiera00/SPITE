@@ -35,7 +35,7 @@ export async function GET(
       key = path.join('/')
     }
 
-    const cookieOk = request.cookies.get('frame_session')?.value === 'authenticated'
+    const cookieOk = request.cookies.get('spite_session')?.value === 'authenticated'
     const { searchParams } = new URL(request.url)
     const queryTokenOk = verifyImageToken(key, searchParams.get('exp'), searchParams.get('sig'))
     if (!cookieOk && !pathTokenOk && !queryTokenOk) {

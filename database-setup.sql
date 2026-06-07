@@ -104,16 +104,6 @@ CREATE TABLE IF NOT EXISTS asset_folder_items (
     PRIMARY KEY (folder_id, asset_id)
 );
 
--- Camera bag: saved style presets. (You said you don't need this feature, but
--- the table is created so the app never errors when that code path runs.)
-CREATE TABLE IF NOT EXISTS camera_bag (
-    id        uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    name      text NOT NULL,
-    style     text NOT NULL,
-    createdat timestamptz DEFAULT now(),
-    updatedat timestamptz DEFAULT now()
-);
-
 -- Helpful indexes for the most common lookups.
 CREATE INDEX IF NOT EXISTS idx_generation_history_project ON generation_history (project_id);
 CREATE INDEX IF NOT EXISTS idx_assets_project           ON assets (projectid);

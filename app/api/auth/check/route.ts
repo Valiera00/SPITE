@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server'
 
 export async function GET() {
   const cookieStore = await cookies()
-  const sessionCookie = cookieStore.get('frame_session')
+  const sessionCookie = cookieStore.get('spite_session')
 
   if (sessionCookie?.value === 'authenticated') {
     return NextResponse.json({ authenticated: true })

@@ -12,7 +12,7 @@ export async function POST(request: Request) {
 
     if (password?.trim() === correctPassword) {
       const cookieStore = await cookies()
-      cookieStore.set('frame_session', 'authenticated', {
+      cookieStore.set('spite_session', 'authenticated', {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
         sameSite: 'lax',

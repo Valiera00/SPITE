@@ -1,26 +1,55 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
+import { checkRequiredEnv } from '@/lib/env-check'
 
 // Paths that must stay reachable without a login cookie.
 // - /login: the login page itself
+// - /setup: shown when required env vars are missing
 // - /api/auth/verify + /api/auth/logout: the login/logout endpoints
-// - /api/assets/cleanup: the scheduled cleanup job, which authenticates
-//   itself with CRON_SECRET instead of a user session
-// - /api/r2-image: the media proxy, which does its own cookie-or-signed-token
-//   check so fal.ai can fetch referenced assets without a login cookie
-const PUBLIC_PATHS = ['/login', '/api/auth/verify', '/api/auth/logout', '/api/assets/cleanup', '/api/r2-image']
+// - /api/assets/cleanup: scheduled cleanup job, auth via CRON_SECRET
+// - /api/r2-image: media proxy, does its own cookie-or-signed-token check
+const PUBLIC_PATHS = [
+  '/login',
+  '/setup',
+  '/api/auth/verify',
+  '/api/auth/logout',
+  '/api/assets/cleanup',
+  '/api/r2-image',
+]
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
-  const isAuthenticated = request.cookies.get('frame_session')?.value === 'authenticated'
+
+  // First gate: refuse to boot if required env vars are missing. Sends
+  // every request to /setup until the install is configured, so a
+  // self-hoster sees clear instructions instead of a broken-looking
+  // login screen. The /setup page itself, and Next.js static asset
+  // requests, are allowed through so the page can render.
+  const envCheck = checkRequiredEnv()
+  if (!envCheck.ok) {
+    if (pathname === '/setup' || pathname.startsWith('/_next/')) {
+      return NextResponse.next()
+    }
+    if (pathname.startsWith('/api/')) {
+      return NextResponse.json(
+        { error: 'Setup required', missing: envCheck.missing },
+        { status: 503 },
+      )
+    }
+    return NextResponse.redirect(new URL('/setup', request.url))
+  }
+
+  // Second gate: standard cookie-based auth.
+  const isAuthenticated =
+    request.cookies.get('spite_session')?.value === 'authenticated'
 
   const isPublic = PUBLIC_PATHS.some(
-    (p) => pathname === p || pathname.startsWith(p + '/')
+    (p) => pathname === p || pathname.startsWith(p + '/'),
   )
 
   if (isAuthenticated) {
-    // Already logged in: bounce away from the login page to the dashboard.
-    if (pathname === '/login') {
+    // Already logged in: bounce away from the login/setup pages.
+    if (pathname === '/login' || pathname === '/setup') {
       return NextResponse.redirect(new URL('/', request.url))
     }
     return NextResponse.next()
