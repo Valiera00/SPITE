@@ -76,6 +76,11 @@ export async function middleware(request: NextRequest) {
 export const config = {
   matcher: [
     // Run on everything except Next.js internals and static asset files.
-    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)).*)',
+    // The image-extension exemption is anchored to `$` — paths like
+    // `/api/r2-image/foo.png/extra` still go through middleware because
+    // they don't END in an image extension. Without the anchor, any
+    // route containing `.png` (or .svg, .jpg, etc.) anywhere in its
+    // path would silently skip authz.
+    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)',
   ],
 }

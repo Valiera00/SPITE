@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { safeStringEquals } from '@/lib/sessions'
 
 export async function POST(request: NextRequest) {
   try {
@@ -8,9 +9,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Both passwords are required' }, { status: 400 })
     }
 
-    // Verify current password
+    // Verify current password — constant-time so attempt timing can't be
+    // used as a side channel to recover the password byte by byte.
     const correctPassword = process.env.APP_PASSWORD?.trim()
-    if (!correctPassword || currentPassword !== correctPassword) {
+    if (!correctPassword || !safeStringEquals(String(currentPassword), correctPassword)) {
       return NextResponse.json({ error: 'Current password is incorrect' }, { status: 401 })
     }
 

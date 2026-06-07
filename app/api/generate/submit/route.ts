@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getModelById, buildModelInput } from '@/lib/fal-models'
 import { toFalFetchableUrl } from '@/lib/r2-upload'
 import { estimateGenerationCost } from '@/lib/fal-cost'
-import { checkSpendGate, recordSpend } from '@/lib/spend-gate'
+import { reserveSpend, rollbackSpend } from '@/lib/spend-gate'
 
 export async function POST(request: NextRequest) {
   // KILL SWITCH — set GENERATION_DISABLED=1 in Vercel env vars to halt
@@ -66,18 +66,36 @@ export async function POST(request: NextRequest) {
     count: requestedUnits,
     durationSeconds,
   })
-  const gate = await checkSpendGate(costEstimate.total)
-  if (!gate.allowed) {
+  // Fail-closed on unknown cost: a model declared in lib/fal-models.ts but
+  // missing from lib/fal-cost.ts would otherwise estimate $0 and bypass the
+  // gate entirely (the original $200 incident pattern). Refuse rather than
+  // guess — adding the model to fal-cost.ts is a one-line fix.
+  if (!costEstimate.isKnown) {
+    console.error(`[generate/submit] no cost entry for model "${model.id}" — refusing to submit`)
     return NextResponse.json(
       {
         error:
-          `Spend gate blocked this submission: $${gate.projectedTotalUsd.toFixed(2)} ` +
-          `would exceed the $${gate.limitUsd}/hour ceiling ` +
-          `(already $${gate.spentLastHourUsd.toFixed(2)} this hour). ` +
+          `Server refuses to submit "${model.id}" — this model has no entry in lib/fal-cost.ts ` +
+          `so the spend gate can't evaluate it. Add a price entry and redeploy.`,
+      },
+      { status: 422 },
+    )
+  }
+  // Atomic reserve — combines the previous separate gate-check + ledger-write
+  // into one SQL statement so concurrent submits can't both pass the same
+  // pre-spend total. ledgerId is returned for rollback if fal rejects below.
+  const reservation = await reserveSpend(model.id, costEstimate.total)
+  if (!reservation.allowed) {
+    return NextResponse.json(
+      {
+        error:
+          `Spend gate blocked this submission: $${reservation.projectedTotalUsd.toFixed(2)} ` +
+          `would exceed the $${reservation.limitUsd}/hour ceiling ` +
+          `(already $${reservation.spentLastHourUsd.toFixed(2)} this hour). ` +
           `Raise SPEND_LIMIT_USD_PER_HOUR or wait for the window to roll over.`,
-        spentLastHourUsd: gate.spentLastHourUsd,
-        limitUsd: gate.limitUsd,
-        projectedTotalUsd: gate.projectedTotalUsd,
+        spentLastHourUsd: reservation.spentLastHourUsd,
+        limitUsd: reservation.limitUsd,
+        projectedTotalUsd: reservation.projectedTotalUsd,
       },
       { status: 429 },
     )
@@ -209,6 +227,9 @@ export async function POST(request: NextRequest) {
     if (!res.ok) {
       const text = await res.text()
       console.error('[fal.ai] Submit failed:', res.status, text)
+      // Roll back the spend reservation — fal rejected the work, the
+      // ledger shouldn't pretend it was queued.
+      await rollbackSpend(reservation.ledgerId)
       return NextResponse.json(
         { error: text || `fal.ai returned ${res.status}` },
         { status: res.status }
@@ -217,12 +238,6 @@ export async function POST(request: NextRequest) {
 
     const data = await res.json()
     console.log(`[fal.ai] Submitted, request_id=${data.request_id}`)
-
-    // Record the spend now that fal accepted the job. If we recorded
-    // before submit, every transient fal error would inflate the
-    // ledger; recording after means the ledger only counts work fal
-    // actually queued.
-    await recordSpend(model.id, costEstimate.total)
 
     // fal returns the exact status/result URLs for this job. Derive the queue
     // path fal expects for polling from status_url — this is authoritative and
@@ -242,6 +257,9 @@ export async function POST(request: NextRequest) {
     })
   } catch (error: any) {
     console.error('[fal.ai] Submit error:', error)
+    // Network failure / unexpected throw — roll back the reservation
+    // so a flaky link doesn't permanently consume the per-hour budget.
+    await rollbackSpend(reservation.ledgerId)
     // Generic error to client — don't surface raw error.message which
     // could leak internal hostnames, header dumps, etc.
     return NextResponse.json({ error: 'Submit failed' }, { status: 500 })

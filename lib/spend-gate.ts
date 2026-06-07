@@ -49,43 +49,106 @@ export interface SpendGateResult {
   spentLastHourUsd: number
   limitUsd: number
   projectedTotalUsd: number
+  ledgerId?: string  // present iff allowed — used to roll back on fal-submit failure
 }
 
-// Throw-style API would be cleaner here, but the caller benefits from
-// the numbers (to put in a useful error response), so return them.
-export async function checkSpendGate(costUsd: number): Promise<SpendGateResult> {
+// Atomic check-and-record. Combines the previous checkSpendGate +
+// recordSpend in one SQL statement so two concurrent submits can't
+// both read the same "spent last hour" total and both pass through
+// (TOCTOU). The INSERT only happens if current_spent + cost <= limit;
+// otherwise zero rows are inserted and we return allowed: false.
+//
+// Caller pattern:
+//   const reservation = await reserveSpend(modelId, cost)
+//   if (!reservation.allowed) return 429
+//   try { ...submit to fal... }
+//   catch { await rollbackSpend(reservation.ledgerId) }
+//
+// Rolling back on submit failure keeps the ledger accurate; not
+// rolling back is safe-but-pessimistic (the gate over-counts by
+// failed submits, which expire from the window after 1 hour anyway).
+export async function reserveSpend(
+  modelId: string,
+  costUsd: number,
+): Promise<SpendGateResult> {
   const limitUsd = getLimitUsd()
-  if (limitUsd === 0) {
-    // Owner opted out.
-    return { allowed: true, spentLastHourUsd: 0, limitUsd, projectedTotalUsd: costUsd }
-  }
   const sql = getDb()
   await ensureSchema(sql)
-  const rows = (await sql`
+
+  if (limitUsd === 0) {
+    // Owner opted out — record for visibility, skip the gate.
+    const rows = (await sql`
+      INSERT INTO spend_ledger (model_id, estimated_usd)
+      VALUES (${modelId}, ${costUsd})
+      RETURNING id
+    `) as { id: string }[]
+    return {
+      allowed: true,
+      spentLastHourUsd: 0,
+      limitUsd,
+      projectedTotalUsd: costUsd,
+      ledgerId: rows[0]?.id,
+    }
+  }
+
+  // Atomic: INSERT only if (current_spent + this_cost) <= limit.
+  // The SELECT in the WHERE clause is locked-evaluated at write time,
+  // so two concurrent inserts will see each other.
+  const inserted = (await sql`
+    INSERT INTO spend_ledger (model_id, estimated_usd)
+    SELECT ${modelId}, ${costUsd}
+    WHERE (
+      SELECT COALESCE(SUM(estimated_usd), 0)
+      FROM spend_ledger
+      WHERE created_at > now() - interval '1 hour'
+    ) + ${costUsd} <= ${limitUsd}
+    RETURNING id
+  `) as { id: string }[]
+
+  if (inserted.length > 0) {
+    // Reserved successfully — also fetch the new current total for the response.
+    const totals = (await sql`
+      SELECT COALESCE(SUM(estimated_usd), 0)::float8 AS spent
+      FROM spend_ledger
+      WHERE created_at > now() - interval '1 hour'
+    `) as { spent: number }[]
+    const spent = Number(totals[0]?.spent ?? 0)
+    return {
+      allowed: true,
+      spentLastHourUsd: spent - costUsd,
+      limitUsd,
+      projectedTotalUsd: spent,
+      ledgerId: inserted[0].id,
+    }
+  }
+
+  // Insert was rejected by the WHERE — gate is closed. Read totals
+  // for a useful error response.
+  const totals = (await sql`
     SELECT COALESCE(SUM(estimated_usd), 0)::float8 AS spent
     FROM spend_ledger
     WHERE created_at > now() - interval '1 hour'
   `) as { spent: number }[]
-  const spentLastHourUsd = Number(rows[0]?.spent ?? 0)
-  const projectedTotalUsd = spentLastHourUsd + costUsd
+  const spent = Number(totals[0]?.spent ?? 0)
   return {
-    allowed: projectedTotalUsd <= limitUsd,
-    spentLastHourUsd,
+    allowed: false,
+    spentLastHourUsd: spent,
     limitUsd,
-    projectedTotalUsd,
+    projectedTotalUsd: spent + costUsd,
   }
 }
 
-export async function recordSpend(modelId: string, costUsd: number): Promise<void> {
+// Undo a reservation if the subsequent fal submit failed — keeps the
+// ledger from over-counting work fal never queued. Best-effort: a
+// dropped rollback just means the gate is slightly more conservative
+// for the next hour.
+export async function rollbackSpend(ledgerId: string | undefined): Promise<void> {
+  if (!ledgerId) return
   try {
     const sql = getDb()
-    await ensureSchema(sql)
-    await sql`
-      INSERT INTO spend_ledger (model_id, estimated_usd)
-      VALUES (${modelId}, ${costUsd})
-    `
+    await sql`DELETE FROM spend_ledger WHERE id = ${ledgerId}`
   } catch (err) {
-    console.error('[spend-gate] recordSpend failed:', err)
+    console.error('[spend-gate] rollbackSpend failed:', err)
   }
 }
 

@@ -18,6 +18,7 @@ const COST_TABLE: Record<string, { unit: Unit; price: number }> = {
   'flux-dev':            { unit: 'image', price: 0.025 },
   'kling-o1':            { unit: 'image', price: 0.10 },
   // Video models
+  'seedance-1.5':        { unit: 'video', price: 4.50 },  // ~5sec 720p — same tier as 2.0
   'seedance-2.0':        { unit: 'video', price: 4.50 },  // ~5sec 720p Seedance
   'kling-1.0':           { unit: 'video', price: 0.50 },
   'kling-1.5':           { unit: 'video', price: 0.50 },
@@ -27,6 +28,7 @@ const COST_TABLE: Record<string, { unit: Unit; price: number }> = {
   'kling-3.0-4k':        { unit: 'sec',   price: 0.50 },
   'kling-o1-video':      { unit: 'video', price: 1.50 },
   'minimax-hailuo':      { unit: 'video', price: 0.50 },
+  'minimax-hailuo-2.3':  { unit: 'video', price: 0.65 },  // 2.3 is slightly pricier than original
   'luma-ray2':           { unit: 'video', price: 1.50 },
 }
 

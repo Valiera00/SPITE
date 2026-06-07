@@ -189,15 +189,20 @@ export async function clearLoginAttempts(ip: string): Promise<void> {
 // IP extraction
 // ---------------------------------------------------------------------------
 
-// Vercel sets x-forwarded-for with the client IP as the first entry.
-// Fall back to a constant so local dev (no header) doesn't crash.
+// Trusted client IP. On Vercel, x-real-ip is set from the actual TCP
+// connection and cannot be spoofed by the client; x-forwarded-for's
+// leftmost entry CAN be spoofed (an attacker can rotate it to evade
+// the per-IP login rate limit). So we prefer x-real-ip and use xff
+// only as a fall-through for non-Vercel hosts that don't set
+// x-real-ip themselves. Defaults to a constant so local dev (no
+// proxy headers) doesn't crash.
 export function getClientIp(headers: Headers): string {
+  const real = headers.get('x-real-ip')
+  if (real) return real.trim()
   const xff = headers.get('x-forwarded-for')
   if (xff) {
     const first = xff.split(',')[0]?.trim()
     if (first) return first
   }
-  const real = headers.get('x-real-ip')
-  if (real) return real.trim()
   return 'unknown'
 }

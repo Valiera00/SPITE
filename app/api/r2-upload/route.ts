@@ -15,9 +15,9 @@ export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData()
     const file = formData.get('file') as File
-    const filename = formData.get('filename') as string || file.name
+    const rawFilename = formData.get('filename') as string || file?.name || 'upload'
 
-    console.log('[R2 Upload] File:', { name: filename, size: file?.size, type: file?.type })
+    console.log('[R2 Upload] File:', { name: rawFilename, size: file?.size, type: file?.type })
 
     if (!file) {
       console.log('[R2 Upload] No file provided')
@@ -30,9 +30,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'R2 not configured' }, { status: 500 })
     }
 
+    // Sanitise the filename before it becomes part of the R2 key. Anything
+    // that isn't [a-zA-Z0-9._-] collapses to `_`. Caps length so a malicious
+    // upload can't bloat the key beyond reason, and strips path separators
+    // (no directory traversal into other R2 prefixes). Preserves the
+    // extension so the served Content-Type detection still works.
+    const safeFilename = rawFilename
+      .replace(/[^a-zA-Z0-9._-]+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .slice(0, 120) || 'upload'
+
     // Generate unique filename
     const timestamp = Date.now()
-    const key = `uploads/${timestamp}-${filename}`
+    const key = `uploads/${timestamp}-${safeFilename}`
     const buffer = await file.arrayBuffer()
 
     console.log('[R2 Upload] Uploading to R2 key:', key)
@@ -56,6 +66,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ url, key }, { status: 200 })
   } catch (error) {
     console.error('[R2 Upload] Error:', error)
-    return NextResponse.json({ error: 'Upload failed', details: String(error) }, { status: 500 })
+    // Generic error to client — raw error.message could leak the
+    // S3 endpoint, bucket name, or AWS SDK internals.
+    return NextResponse.json({ error: 'Upload failed' }, { status: 500 })
   }
 }
