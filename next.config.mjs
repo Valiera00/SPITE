@@ -12,15 +12,14 @@ const nextConfig = {
   env: {
     NEXT_PUBLIC_COMMIT_SHA: process.env.VERCEL_GIT_COMMIT_SHA ?? 'dev',
   },
-  // Defence-in-depth response headers applied to every route. CSP is
-  // deliberately not set here because the canvas pulls from fal.media,
-  // fal.ai, R2 — and locking those down requires per-route policy work
-  // that can wait. These four kill the cheap clickjacking / sniffing /
-  // referrer-leak vectors with zero compatibility risk.
+  // Defence-in-depth response headers. Scoped to HTML/page routes only
+  // — API routes (especially /api/r2-image) set their own headers and
+  // pile-on globals can break third-party fetchers like fal.ai's image
+  // downloader. CSP intentionally not set yet; needs per-route work.
   async headers() {
     return [
       {
-        source: '/:path*',
+        source: '/((?!api/).*)',
         headers: [
           { key: 'X-Frame-Options', value: 'DENY' },
           { key: 'X-Content-Type-Options', value: 'nosniff' },
