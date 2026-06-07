@@ -7,6 +7,35 @@
   20%, 40%, 60%, 80% { transform: translateX(4px); }
 }
 
+/* Slow breathing glow for the login Unlock button — anticipation, not urgency. */
+@keyframes spite-anticipation {
+  0%, 100% {
+    box-shadow:
+      0 0 18px rgba(107, 143, 168, 0.18),
+      0 0 36px rgba(107, 143, 168, 0.06),
+      inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  }
+  50% {
+    box-shadow:
+      0 0 32px rgba(107, 143, 168, 0.32),
+      0 0 64px rgba(107, 143, 168, 0.12),
+      inset 0 1px 0 rgba(255, 255, 255, 0.14);
+  }
+}
+
+/* Film grain overlay — brand guide §18 calls for fine grain in
+   surrounding space, never on the logo. Apply as a fixed full-screen
+   layer behind interactive content with pointer-events: none. */
+.spite-grain {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.055;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 240 240' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  z-index: 0;
+}
+
 @custom-variant dark (&:is(.dark *));
 
 :root {

@@ -2,6 +2,13 @@
 
 import { useState } from 'react'
 import { useAuth } from '@/components/auth-provider'
+import { version as appVersion } from '@/package.json'
+
+// Vercel injects the commit SHA at build time via next.config; local
+// dev falls back to "dev". Shown faintly in the bottom-right so I
+// always know which build I'm looking at without opening DevTools.
+const commitSha = process.env.NEXT_PUBLIC_COMMIT_SHA || 'dev'
+const shortSha = commitSha === 'dev' ? 'dev' : commitSha.slice(0, 7)
 
 export default function LoginPage() {
   const [password, setPassword] = useState('')
@@ -24,19 +31,34 @@ export default function LoginPage() {
     setIsLoading(false)
   }
 
-  // Show loading while checking auth status
   if (authLoading) {
     return (
-      <div className="flex items-center justify-center min-h-screen" style={{ backgroundColor: '#080A0C' }}>
-        <div className="text-muted-foreground font-mono text-sm">Loading...</div>
+      <div className="flex items-center justify-center min-h-screen" style={{ backgroundColor: '#050608' }}>
+        <div className="text-muted-foreground/40 font-mono text-xs tracking-wider">Loading…</div>
       </div>
     )
   }
 
+  const buttonDisabled = isLoading || !password
+
   return (
-    <div className="flex items-center justify-center min-h-screen" style={{ backgroundColor: '#080A0C' }}>
-      <div className="flex flex-col items-center gap-12 w-full max-w-sm px-6">
-        {/* Logo */}
+    <div
+      className="relative flex items-center justify-center min-h-screen overflow-hidden"
+      style={{
+        // Ozone-layer base: deep near-black ground with a faint frost-blue
+        // curve glowing up from the bottom edge. Radial ellipse sits below
+        // the viewport so only the top of the arc is visible — gives the
+        // horizon feel without competing with the wordmark.
+        background:
+          'radial-gradient(ellipse 80% 55% at 50% 112%, rgba(107, 143, 168, 0.22) 0%, rgba(107, 143, 168, 0.06) 35%, transparent 70%), #050608',
+      }}
+    >
+      {/* Film grain overlay — brand guide §18: fine grain in the
+          surrounding system, never on the wordmark. */}
+      <div className="spite-grain" aria-hidden="true" />
+
+      {/* Main content */}
+      <div className="relative z-10 flex flex-col items-center gap-14 w-full max-w-sm px-6">
         <img
           src="/brand/icon-text/SPITE_text+icon_FLAT_WHITE.svg"
           alt="SPITE"
@@ -44,8 +66,7 @@ export default function LoginPage() {
           draggable={false}
         />
 
-        {/* Password Form */}
-        <form onSubmit={handleSubmit} className="w-full flex flex-col gap-6">
+        <form onSubmit={handleSubmit} className="w-full flex flex-col gap-5">
           <div className="relative">
             <input
               type="password"
@@ -57,40 +78,60 @@ export default function LoginPage() {
               className={`w-full px-4 py-3 text-sm rounded-lg transition-all duration-200 focus:outline-none ${shake ? 'animate-shake' : ''}`}
               style={{
                 fontFamily: 'var(--font-mono)',
-                backgroundColor: 'rgba(255, 255, 255, 0.05)',
-                border: '1px solid rgba(255, 255, 255, 0.1)',
-                color: '#FFFFFF',
-                backdropFilter: 'blur(10px)',
+                background: 'rgba(255, 255, 255, 0.035)',
+                border: '1px solid rgba(255, 255, 255, 0.08)',
+                color: '#F0EDE6',
+                backdropFilter: 'blur(16px) saturate(140%)',
+                WebkitBackdropFilter: 'blur(16px) saturate(140%)',
               }}
             />
           </div>
 
           {error && (
-            <p className="text-xs font-mono text-center animate-in fade-in duration-200" style={{ color: '#FF6B6B' }}>
+            <p className="text-[11px] font-mono text-center animate-in fade-in duration-200 tracking-wider" style={{ color: '#C03030' }}>
               {error}
             </p>
           )}
 
           <button
             type="submit"
-            disabled={isLoading || !password}
-            className="px-6 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 active:scale-95 focus:outline-none"
+            disabled={buttonDisabled}
+            className="group relative px-6 py-3 rounded-lg text-sm transition-all duration-300 active:scale-[0.98] focus:outline-none"
             style={{
               fontFamily: 'var(--font-mono)',
-              backgroundColor: '#6B8FA8',
+              letterSpacing: '0.08em',
+              // Liquid glass: translucent frost blue tint + real backdrop
+              // blur + frost blue border + soft inset highlight.
+              background: 'rgba(107, 143, 168, 0.18)',
+              border: '1px solid rgba(107, 143, 168, 0.45)',
               color: '#F0EDE6',
-              opacity: isLoading || !password ? 0.5 : 1,
-              cursor: isLoading || !password ? 'not-allowed' : 'pointer',
+              backdropFilter: 'blur(24px) saturate(180%)',
+              WebkitBackdropFilter: 'blur(24px) saturate(180%)',
+              opacity: buttonDisabled ? 0.45 : 1,
+              cursor: buttonDisabled ? 'not-allowed' : 'pointer',
+              // Slow cold-blue breath while idle — anticipation, never
+              // urgency. Disabled while submitting so the spinner reads
+              // as the active signal.
+              animation: isLoading ? 'none' : 'spite-anticipation 3s ease-in-out infinite',
             }}
           >
-            {isLoading ? 'Unlocking...' : 'Unlock'}
+            {isLoading ? 'UNLOCKING…' : 'UNLOCK'}
           </button>
         </form>
 
-        {/* Subtle footer */}
-        <p className="text-xs text-muted-foreground/30 text-center font-mono">
-          AI Filmmaking Canvas
+        {/* Tagline — brand guide §09 primary. Uppercased + wide
+            tracking for editorial weight, very low contrast so it
+            doesn't compete with the form. */}
+        <p className="text-[10px] text-muted-foreground/35 text-center font-mono tracking-[0.22em] uppercase select-none">
+          Built out of spite. Made for control.
         </p>
+      </div>
+
+      {/* Version corner — package.json version + short commit SHA,
+          auto-updating on every Vercel deploy. Faint enough to ignore,
+          present enough to settle "which build is live" instantly. */}
+      <div className="absolute bottom-4 right-5 z-10 text-[10px] font-mono text-muted-foreground/25 tracking-wider select-none">
+        v{appVersion} · {shortSha}
       </div>
     </div>
   )
