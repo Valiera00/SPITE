@@ -85,9 +85,30 @@ export async function POST(request: NextRequest) {
 
   // Reference media is stored behind our private R2 proxy. Turn it into an
   // absolute, token-signed proxy URL fal.ai can fetch (1-hour validity).
-  const host = request.headers.get('host')
-  const proto = request.headers.get('x-forwarded-proto') || 'https'
-  const baseUrl = host ? `${proto}://${host}` : ''
+  //
+  // Choosing the base URL is non-obvious: Vercel preview deployments are
+  // gated by Deployment Protection by default, which means fal.ai (no
+  // cookie, no bypass token) can't reach /api/r2-image on a preview.
+  // Production deployments are publicly accessible on the same project,
+  // share the same DATABASE_URL and APP_PASSWORD (signing secret), and
+  // can serve the same image bytes — so we always sign references using
+  // the production URL when we know it. Order of preference:
+  //   1. SITE_URL — explicit override, for self-hosters with a custom
+  //      domain or non-Vercel host.
+  //   2. VERCEL_PROJECT_PRODUCTION_URL — Vercel auto-injects this on
+  //      every deploy; points at the public production hostname.
+  //   3. request.headers.get('host') — last resort. Works for local
+  //      dev and for any setup with no protection.
+  function getPublicBaseUrl(): string {
+    if (process.env.SITE_URL) return process.env.SITE_URL.replace(/\/$/, '')
+    if (process.env.VERCEL_PROJECT_PRODUCTION_URL) {
+      return `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+    }
+    const host = request.headers.get('host')
+    const proto = request.headers.get('x-forwarded-proto') || 'https'
+    return host ? `${proto}://${host}` : ''
+  }
+  const baseUrl = getPublicBaseUrl()
   const referenceImageSigned = toFalFetchableUrl(referenceImageUrl, baseUrl)
   const endImageSigned = toFalFetchableUrl(endImageUrl, baseUrl)
   // Accept either grouped refs (preferred) or the legacy flat list. Sign

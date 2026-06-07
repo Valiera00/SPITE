@@ -18,8 +18,6 @@ export async function GET(
 ) {
   try {
     const { path } = await params
-    const ua = request.headers.get('user-agent') || ''
-    const isFal = /fal/i.test(ua)
 
     // Two URL shapes are accepted:
     //   1. /api/r2-image/<key...>                  — browser, cookie-auth
@@ -34,18 +32,6 @@ export async function GET(
       const sig = path[2]
       key = path.slice(3).join('/')
       pathTokenOk = verifyImageToken(key, exp, sig)
-      if (isFal || !pathTokenOk) {
-        // TEMP diagnostic: surface why fal's fetch might be failing.
-        console.log('[r2-image] path-token request', {
-          ua,
-          pathTokenOk,
-          keyLen: key.length,
-          keyHasSpaces: /\s/.test(key),
-          keyHasPlus: key.includes('+'),
-          exp,
-          expElapsedMs: Date.now() - Number(exp),
-        })
-      }
     } else {
       key = path.join('/')
     }
@@ -55,7 +41,6 @@ export async function GET(
     const { searchParams } = new URL(request.url)
     const queryTokenOk = verifyImageToken(key, searchParams.get('exp'), searchParams.get('sig'))
     if (!cookieOk && !pathTokenOk && !queryTokenOk) {
-      console.warn('[r2-image] DENIED', { ua, key, pathTokenOk, cookieOk, queryTokenOk })
       return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
     }
 
@@ -64,29 +49,12 @@ export async function GET(
       Key: key,
     })
 
-    let response
-    try {
-      response = await s3Client.send(command)
-    } catch (s3err: any) {
-      console.error('[r2-image] R2 GET failed', {
-        ua,
-        key,
-        name: s3err?.name,
-        code: s3err?.$metadata?.httpStatusCode,
-        msg: s3err?.message,
-      })
-      return new NextResponse('R2 fetch failed', {
-        status: 502,
-        headers: { 'Cache-Control': 'no-store' },
-      })
-    }
+    const response = await s3Client.send(command)
     const buffer = await response.Body?.transformToByteArray()
 
     if (!buffer) {
-      console.warn('[r2-image] empty body for key', { ua, key })
       return NextResponse.json({ error: 'File not found' }, { status: 404 })
     }
-    console.log('[r2-image] served', { ua, key, bytes: buffer.byteLength, ct: response.ContentType })
 
     // fal's image fetcher REQUIRES Access-Control-Allow-Origin: * to
     // accept the response — without it, fal returns "Failed to download
