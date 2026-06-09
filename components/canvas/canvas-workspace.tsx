@@ -223,7 +223,7 @@ function CanvasInner({ projectId }: { projectId: string }) {
   const [activeTool, setActiveTool] = useState<'select' | 'cut' | 'sticker' | 'comment'>('select')
 
   // Auto-save hook
-  const { saveCanvas, saveStatus } = useCanvasAutoSave(projectId, nodes, edges)
+  const { saveCanvas, saveStatus } = useCanvasAutoSave(projectId, nodes, edges, scenes, activeSceneId)
 
   // Load canvas data and assets on mount
   useEffect(() => {
@@ -238,13 +238,33 @@ function CanvasInner({ projectId }: { projectId: string }) {
           }
         }
 
-        // Load canvas
+        // Load canvas — nodes/edges plus the persisted scene list and
+        // last-active scene id. Before scene persistence shipped, the
+        // scenes array was reset to INITIAL_SCENES on every load and
+        // newly-added scenes vanished after a reload, leaving any
+        // nodes tagged with their sceneId orphaned (sceneId pointing
+        // to a scene that no longer existed in the list).
         const canvasResponse = await fetch(`/api/projects/${projectId}/canvas`)
         if (canvasResponse.ok) {
-          const { nodes: savedNodes, edges: savedEdges } = await canvasResponse.json()
+          const {
+            nodes: savedNodes,
+            edges: savedEdges,
+            scenes: savedScenes,
+            activeSceneId: savedActiveSceneId,
+          } = await canvasResponse.json()
           if (savedNodes && savedEdges) {
             setNodes(savedNodes)
             setEdges(savedEdges)
+          }
+          if (Array.isArray(savedScenes) && savedScenes.length > 0) {
+            // Saved scenes are bare {id, name}; the in-memory shape
+            // includes shots[] which scenesWithShots derives from
+            // nodes. Initialise with empty shots so the derivation
+            // runs cleanly on the next render.
+            setScenes(savedScenes.map((s: any) => ({ id: s.id, name: s.name, shots: [] })))
+          }
+          if (typeof savedActiveSceneId === 'string' && savedActiveSceneId) {
+            setActiveSceneId(savedActiveSceneId)
           }
         }
 

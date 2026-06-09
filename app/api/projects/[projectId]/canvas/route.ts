@@ -26,11 +26,20 @@ async function ensureSnapshotsSchema(sql: any) {
   await sql`CREATE INDEX IF NOT EXISTS idx_canvas_snapshots_project ON canvas_snapshots(project_id, saved_at DESC)`
 }
 
+// Idempotent — adds the scenes/active_scene_id columns on projects if
+// they don't exist yet. Older installs ship the projects table without
+// them; lazy-creating on first canvas save means no manual migration
+// step is needed for existing users.
+async function ensureSceneColumns(sql: any) {
+  await sql`ALTER TABLE projects ADD COLUMN IF NOT EXISTS scenes jsonb`
+  await sql`ALTER TABLE projects ADD COLUMN IF NOT EXISTS active_scene_id text`
+}
+
 export async function POST(request: NextRequest, { params }: { params: Promise<{ projectId: string }> }) {
   try {
     const sql = getDb()
     const { projectId } = await params
-    const { nodes, edges } = await request.json()
+    const { nodes, edges, scenes, activeSceneId } = await request.json()
 
     // FAILSAFE: never blow away a non-empty canvas with an empty payload.
     // The client has a matching guard but a stale request from a closed
@@ -94,11 +103,43 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           data = EXCLUDED.data
       `)
     }
+    // Persist the scene list + the user's last-active scene alongside
+    // the nodes/edges. Without this, adding a scene and reloading
+    // resets the timeline to INITIAL_SCENES and the user's tagged
+    // nodes become orphaned (sceneId references a scene that no
+    // longer exists in the list).
+    //
+    // Sanitise: scenes is saved only when it's a non-empty array of
+    // {id, name} entries; shots are derived from canvas nodes via
+    // scenesWithShots and don't belong in the persisted payload.
+    let scenesToSave: { id: string; name: string }[] | null = null
+    if (Array.isArray(scenes) && scenes.length > 0) {
+      scenesToSave = scenes
+        .filter((s: any) => s && typeof s.id === 'string' && typeof s.name === 'string')
+        .map((s: any) => ({ id: s.id, name: s.name }))
+      if (scenesToSave.length === 0) scenesToSave = null
+    }
+    const activeIdToSave =
+      typeof activeSceneId === 'string' && activeSceneId
+        ? activeSceneId
+        : null
+
+    // Lazy-create the scene columns BEFORE the transaction. ALTER TABLE
+    // inside a tagged-template transaction would lock for longer than
+    // we want, and these calls are no-ops after the first cold start.
+    await ensureSceneColumns(sql)
+
     // Touch the project so the dashboard's "last edited" timestamp +
     // most-recently-used sort actually reflect canvas activity, not just
     // explicit project metadata changes (rename / create / duplicate).
+    // Scenes + active scene id ride along on the same UPDATE so they
+    // commit atomically with the nodes/edges writes.
     writeQueries.push(sql`
-      UPDATE projects SET updatedat = NOW() WHERE id = ${projectId}
+      UPDATE projects
+      SET updatedat = NOW(),
+          scenes = COALESCE(${scenesToSave ? JSON.stringify(scenesToSave) : null}::jsonb, scenes),
+          active_scene_id = COALESCE(${activeIdToSave}, active_scene_id)
+      WHERE id = ${projectId}
     `)
     await sql.transaction(writeQueries)
 
@@ -215,6 +256,12 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const sql = getDb()
     const { projectId } = await params
 
+    // Make sure the scene columns exist before we read them. Idempotent
+    // ALTER — no-op after the first cold start of this serverless
+    // instance. Also keeps existing installs working without a manual
+    // migration step.
+    await ensureSceneColumns(sql)
+
     // Fetch nodes (cast to text to avoid UUID inference)
     const nodesResult = await sql`
       SELECT nodeId as id, type, position_x, position_y, data
@@ -230,6 +277,26 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       WHERE projectId = ${projectId}::text
       ORDER BY createdAt
     `
+
+    // Fetch scene list + last-active scene id. Falls back to a single
+    // default Scene 1 if the project hasn't saved scenes yet (new
+    // project, or pre-migration project on its first load after the
+    // scene-persistence change).
+    const projectMeta = await sql`
+      SELECT scenes, active_scene_id FROM projects WHERE id = ${projectId}
+    `
+    const savedScenes = (projectMeta[0] as any)?.scenes as
+      | { id: string; name: string }[]
+      | null
+      | undefined
+    const scenes =
+      Array.isArray(savedScenes) && savedScenes.length > 0
+        ? savedScenes
+        : [{ id: 'scene-1', name: 'Scene 1' }]
+    const activeSceneId =
+      ((projectMeta[0] as any)?.active_scene_id as string | null) ||
+      scenes[0]?.id ||
+      'scene-1'
 
     const nodes = nodesResult.map((row: any) => ({
       id: row.id,
@@ -248,7 +315,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       data: row.data || {},
     }))
 
-    return NextResponse.json({ nodes, edges })
+    return NextResponse.json({ nodes, edges, scenes, activeSceneId })
   } catch (error) {
     console.error('[v0] Error loading canvas:', error)
     return NextResponse.json({ error: 'Failed to load canvas' }, { status: 500 })

@@ -1,17 +1,36 @@
 import { useCallback, useRef, useEffect, useState } from 'react'
 import type { Node, Edge } from '@xyflow/react'
 
-export function useCanvasAutoSave(projectId: string | undefined, nodes: Node[], edges: Edge[]) {
+// Minimal shape of what we persist per scene. Shots are derived from
+// nodes by canvas-workspace's scenesWithShots memo and don't belong
+// in the saved payload.
+type PersistedScene = { id: string; name: string }
+
+export function useCanvasAutoSave(
+  projectId: string | undefined,
+  nodes: Node[],
+  edges: Edge[],
+  scenes: PersistedScene[],
+  activeSceneId: string,
+) {
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const lastSavedRef = useRef<string>('')
   const isSavingRef = useRef(false)
   const [saveStatus, setSaveStatus] = useState<'saved' | 'unsaved' | 'saving'>('saved')
 
+  // Always send the bare-bones scene shape, dropping any shots[] that
+  // might be on the in-memory Scene object (scenesWithShots adds them).
+  // Keeps the diff stable across renders that only change derived shots.
+  const persistedScenes: PersistedScene[] = scenes.map(s => ({
+    id: s.id,
+    name: s.name,
+  }))
+
   const saveCanvas = useCallback(async (force = false) => {
     if (!projectId || isSavingRef.current) return
 
     // Check if anything has changed
-    const currentState = JSON.stringify({ nodes, edges })
+    const currentState = JSON.stringify({ nodes, edges, scenes: persistedScenes, activeSceneId })
 
     if (!force && currentState === lastSavedRef.current) {
       return // No changes, don't save
@@ -44,7 +63,7 @@ export function useCanvasAutoSave(projectId: string | undefined, nodes: Node[], 
       const response = await fetch(`/api/projects/${projectId}/canvas`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nodes, edges }),
+        body: JSON.stringify({ nodes, edges, scenes: persistedScenes, activeSceneId }),
       })
 
       if (response.ok) {
@@ -60,19 +79,22 @@ export function useCanvasAutoSave(projectId: string | undefined, nodes: Node[], 
     } finally {
       isSavingRef.current = false
     }
-  }, [projectId, nodes, edges])
+  }, [projectId, nodes, edges, persistedScenes, activeSceneId])
 
-  // Mark as unsaved when nodes/edges change
+  // Mark as unsaved when nodes/edges/scenes/activeSceneId change
   useEffect(() => {
     if (!projectId || nodes.length === 0) return
-    
-    const currentState = JSON.stringify({ nodes, edges })
+
+    const currentState = JSON.stringify({ nodes, edges, scenes: persistedScenes, activeSceneId })
     if (currentState !== lastSavedRef.current && lastSavedRef.current !== '') {
       setSaveStatus('unsaved')
     }
-  }, [projectId, nodes, edges])
+  }, [projectId, nodes, edges, persistedScenes, activeSceneId])
 
-  // Debounced save on changes (3 second delay after last change)
+  // Debounced save on changes (3 second delay after last change).
+  // Also fires for scene rename / add / delete / active-scene change,
+  // so a delete-scene confirmation isn't lost if the user quickly
+  // closes the tab afterward.
   useEffect(() => {
     if (!projectId || nodes.length === 0) return
 
@@ -89,7 +111,7 @@ export function useCanvasAutoSave(projectId: string | undefined, nodes: Node[], 
         clearTimeout(saveTimeoutRef.current)
       }
     }
-  }, [projectId, nodes, edges, saveCanvas])
+  }, [projectId, nodes, edges, persistedScenes, activeSceneId, saveCanvas])
 
   // Auto-save on interval (every 30 seconds as backup).
   //
@@ -111,19 +133,19 @@ export function useCanvasAutoSave(projectId: string | undefined, nodes: Node[], 
     return () => clearInterval(interval)
   }, [projectId])
 
-  // Save on unmount
+  // Save on unmount — including scenes/activeSceneId so a tab close
+  // mid-edit doesn't lose a freshly-added or freshly-deleted scene.
   useEffect(() => {
     return () => {
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current)
-      // Force save on unmount
       if (projectId && nodes.length > 0) {
         navigator.sendBeacon?.(
           `/api/projects/${projectId}/canvas`,
-          JSON.stringify({ nodes, edges })
+          JSON.stringify({ nodes, edges, scenes: persistedScenes, activeSceneId }),
         )
       }
     }
-  }, [projectId, nodes, edges])
+  }, [projectId, nodes, edges, persistedScenes, activeSceneId])
 
   return { saveCanvas, saveStatus }
 }

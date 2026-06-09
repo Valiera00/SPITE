@@ -14,15 +14,25 @@
 -- ============================================================================
 
 -- Projects: one row per film project on your dashboard.
+-- scenes / active_scene_id: per-project scene timeline state. scenes is
+-- a JSONB array of {id, name}; shots[] are derived from canvas_nodes
+-- at read time and not persisted here.
 CREATE TABLE IF NOT EXISTS projects (
-    id          uuid PRIMARY KEY,
-    userid      uuid NOT NULL,
-    name        text NOT NULL DEFAULT 'Untitled Project',
-    description text DEFAULT '',
-    thumbnail   text,
-    createdat   timestamptz NOT NULL DEFAULT now(),
-    updatedat   timestamptz NOT NULL DEFAULT now()
+    id              uuid PRIMARY KEY,
+    userid          uuid NOT NULL,
+    name            text NOT NULL DEFAULT 'Untitled Project',
+    description     text DEFAULT '',
+    thumbnail       text,
+    scenes          jsonb,
+    active_scene_id text,
+    createdat       timestamptz NOT NULL DEFAULT now(),
+    updatedat       timestamptz NOT NULL DEFAULT now()
 );
+-- For projects tables that pre-date scene persistence: add the columns
+-- if they aren't already there. CREATE TABLE IF NOT EXISTS above only
+-- runs when the table is missing entirely.
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS scenes jsonb;
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS active_scene_id text;
 
 -- Generation history: every AI image/video you generate, plus canvas uploads.
 -- This is the "asset library" the left panel reads from. id is TEXT because the
