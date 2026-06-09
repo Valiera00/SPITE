@@ -771,17 +771,29 @@ function CanvasInner({ projectId }: { projectId: string }) {
     n.data = { ...n.data, thumbnail: tempUrl, isUploading: true, mediaType }
     setNodes(ns => [...ns, n])
     
-    // Upload to R2 in background. Two paths:
-    //   - Audio files: route bytes through /api/r2-upload (server-side
-    //     PutObject). Audio files are always small (typical mp3 is
-    //     <2 MB, well under Vercel's 4.5 MB body limit) and routing
-    //     server-side dodges the R2 CORS preflight that was silently
-    //     failing for audio/* content types from the browser.
-    //   - Everything else: presigned PUT direct to R2, so big images
-    //     and video files bypass Vercel's body limit.
+    // Upload to R2 in background. Picks the path based on file size:
+    //
+    //   - Small files (< 4 MB): route through /api/r2-upload, which
+    //     uses S3 PutObject server-side. Bypasses R2's CORS preflight
+    //     entirely. Audio always goes this way; the presigned-PUT
+    //     path was failing for audio/* and (recently) image/* with
+    //     "Failed to fetch" whenever the bucket's CORS allow-origin
+    //     list didn't include the active Vercel preview URL.
+    //
+    //   - Large files (>= 4 MB): presigned PUT direct to R2, so big
+    //     videos and high-res images don't hit Vercel's 4.5 MB
+    //     function body limit. If R2 CORS rejects this we catch and
+    //     surface a real error toast (one drop per error, no silent
+    //     blob URLs persisted).
+    //
+    // Threshold sits at 4 MB to leave headroom for multipart form
+    // wrapping under the Vercel limit. Most generated/upscaled
+    // images land under that; only very large videos cross it.
+    const VERCEL_PROXY_LIMIT_BYTES = 4 * 1024 * 1024
+    const useVercelProxy = file.size < VERCEL_PROXY_LIMIT_BYTES
     try {
       let proxyUrl: string
-      if (isAudioFile) {
+      if (useVercelProxy) {
         const formData = new FormData()
         formData.append('file', file)
         formData.append('filename', file.name)
@@ -791,7 +803,7 @@ function CanvasInner({ projectId }: { projectId: string }) {
         })
         if (!uploadRes.ok) {
           const detail = await uploadRes.text().catch(() => '')
-          throw new Error(`audio upload failed: ${uploadRes.status} ${detail}`)
+          throw new Error(`upload failed: ${uploadRes.status} ${detail}`)
         }
         const { url } = await uploadRes.json() as { url: string }
         proxyUrl = url
