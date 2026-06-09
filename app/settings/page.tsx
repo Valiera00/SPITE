@@ -3,6 +3,11 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { ArrowLeft, Check, X } from '@phosphor-icons/react'
+import {
+  getConnectorAnimation,
+  setConnectorAnimation,
+  type ConnectorAnimation,
+} from '@/lib/connector-animation'
 
 export default function SettingsPage() {
   // API Key state
@@ -35,10 +40,19 @@ export default function SettingsPage() {
   const [recovering, setRecovering] = useState(false)
   const [recoveryResult, setRecoveryResult] = useState<string | null>(null)
 
-  // Check API key on mount
+  // Canvas connector-animation preference (persisted in localStorage).
+  const [connectorAnim, setConnectorAnimState] = useState<ConnectorAnimation>('auto')
+
+  // Check API key + load preferences on mount
   useEffect(() => {
     checkApiKey()
+    setConnectorAnimState(getConnectorAnimation())
   }, [])
+
+  const changeConnectorAnim = (v: ConnectorAnimation) => {
+    setConnectorAnimState(v)
+    setConnectorAnimation(v)
+  }
 
   const checkApiKey = async () => {
     try {
@@ -356,6 +370,44 @@ export default function SettingsPage() {
               >
                 {recovering ? 'Working…' : 'Backfill'}
               </button>
+            </div>
+          </div>
+        </section>
+
+        {/* Performance — canvas connector animation */}
+        <section className="space-y-4">
+          <h2 className="text-sm font-mono uppercase tracking-wider text-muted-foreground">Performance</h2>
+          <div className="glass rounded-xl p-6 space-y-4">
+            <div>
+              <p className="text-sm text-foreground">Animated connectors</p>
+              <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+                The braided cords between nodes can gently drift and glow.{' '}
+                <span className="text-foreground/80">Auto</span> animates every cord on
+                smaller canvases and automatically freezes idle cords once a canvas gets
+                large (only the ones you hover or select keep moving).{' '}
+                <span className="text-foreground/80">Always on</span> keeps them all
+                animating regardless of size. <span className="text-foreground/80">Off</span>{' '}
+                makes them fully static — best for low-end machines or saving battery.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              {([
+                { value: 'auto', label: 'Auto' },
+                { value: 'on', label: 'Always on' },
+                { value: 'off', label: 'Off' },
+              ] as { value: ConnectorAnimation; label: string }[]).map(opt => (
+                <button
+                  key={opt.value}
+                  onClick={() => changeConnectorAnim(opt.value)}
+                  className={`px-3 py-1.5 text-xs font-mono rounded-lg border transition-colors ${
+                    connectorAnim === opt.value
+                      ? 'bg-foreground text-background border-foreground'
+                      : 'glass-hover text-muted-foreground border-border/50 hover:text-foreground'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
             </div>
           </div>
         </section>

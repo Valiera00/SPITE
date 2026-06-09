@@ -163,16 +163,27 @@ export function ScissorsEdge({
   const active = !!(data as { active?: boolean } | undefined)?.active || !!selected
   const live = hovered || active
 
-  // Animation gating (see header). Small canvas → everything drifts; big
-  // canvas → only what you touch/select moves; cap active count either way.
+  // User preference from Settings → Performance: 'off' (static), 'on' (always
+  // animate), or 'auto' (default — animate everything on small canvases, only
+  // what you touch on big ones).
+  const mode =
+    (data as { animMode?: 'auto' | 'on' | 'off' } | undefined)?.animMode ?? 'auto'
+
+  // Animation gating. 'off' → never animate. Otherwise: small canvas (or 'on')
+  // → idle cords drift; big canvas in 'auto' → only hover/active move; the
+  // active count is capped either way so a huge multi-select can't animate
+  // hundreds of cords at once.
   const allEdges = getEdges()
-  const idleAnimAllowed = allEdges.length <= ANIM_BUDGET
+  const idleAnimAllowed = mode === 'on' ? true : allEdges.length <= ANIM_BUDGET
   const activeCount = active
     ? allEdges.filter(
         (e) => (e.data as { active?: boolean } | undefined)?.active || e.selected,
       ).length
     : 0
-  const animate = hovered || (active ? activeCount <= ANIM_CAP : idleAnimAllowed)
+  const animate =
+    mode === 'off'
+      ? false
+      : hovered || (active ? activeCount <= ANIM_CAP : idleAnimAllowed)
 
   // Bezier control points from the handle directions.
   const geo = useMemo(() => {

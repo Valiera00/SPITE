@@ -22,6 +22,11 @@ import {
   type Edge,
 } from '@xyflow/react'
 import { ScissorsEdge } from './edges/scissors-edge'
+import {
+  getConnectorAnimation,
+  CONNECTOR_ANIMATION_EVENT,
+  type ConnectorAnimation,
+} from '@/lib/connector-animation'
 import '@xyflow/react/dist/style.css'
 import { useCanvasAutoSave } from '@/hooks/use-canvas-auto-save'
 import { CanvasToolbar } from './canvas-toolbar'
@@ -191,6 +196,16 @@ function CanvasInner({ projectId }: { projectId: string }) {
   const [projectName, setProjectName] = useState('Untitled Project')
   const [nodes, setNodes, onNodesChange] = useNodesState([] as Node[])
   const [edges, setEdges, onEdgesChange] = useEdgesState([] as Edge[])
+  // Connector-animation preference (Settings → Performance). Read on mount and
+  // kept live via the broadcast event so toggling it reflects without reload.
+  const [connectorAnim, setConnectorAnim] = useState<ConnectorAnimation>('auto')
+  useEffect(() => {
+    setConnectorAnim(getConnectorAnimation())
+    const onChange = (e: Event) =>
+      setConnectorAnim((e as CustomEvent<ConnectorAnimation>).detail)
+    window.addEventListener(CONNECTOR_ANIMATION_EVENT, onChange)
+    return () => window.removeEventListener(CONNECTOR_ANIMATION_EVENT, onChange)
+  }, [])
   // React Flow's separate hook for forcing a node's handle re-measurement.
   // Declared here near the top because onConnect (below) depends on it.
   const updateNodeInternals = useUpdateNodeInternals()
@@ -1038,13 +1053,14 @@ function CanvasInner({ projectId }: { projectId: string }) {
         type: 'scissors',
         // The cord runs its own hover/active animation; don't use React Flow's
         // `animated` (that's what produced the dashed look). Pass the active
-        // state through data so a selected node lights up its connected cords.
+        // state + animation preference through data so the cord can decide
+        // whether (and how) to animate.
         animated: false,
-        data: { ...(edge.data || {}), active: isActive },
+        data: { ...(edge.data || {}), active: isActive, animMode: connectorAnim },
         style: { stroke: '#aec3d2' },
       }
     })
-  }, [sceneNodes, sceneEdges])
+  }, [sceneNodes, sceneEdges, connectorAnim])
 
   const handleRecenter = useCallback(() => {
     fitView({ duration: 300, padding: 0.2 })
