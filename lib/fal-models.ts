@@ -109,6 +109,48 @@ export const FAL_MODELS: ModelConfig[] = [
     description: 'Precise image edits with multi-image reference'
   },
 
+  // ===== 2026 IMAGE MODELS =====
+  // Added based on the fal.ai 2026 directory + best-of-2026 articles.
+  // GPT Image 2 / FLUX.2 Pro / Ideogram v4 are the three image models
+  // that consistently rank above everything else in current benchmarks.
+
+  {
+    id: 'gpt-image-2',
+    name: 'GPT Image 2',
+    falModel: 'openai/gpt-image-2',
+    category: 'image',
+    inputTypes: ['text'],
+    aspectRatios: ['16:9', '4:3', '1:1', '3:4', '9:16'],
+    resolutions: ['low', 'medium', 'high', 'auto'],
+    defaultAspectRatio: '4:3',
+    defaultResolution: 'high',
+    description: 'OpenAI\'s top image model — extreme detail, fine typography'
+  },
+
+  {
+    id: 'flux-2-pro',
+    name: 'FLUX.2 [pro]',
+    falModel: 'fal-ai/flux-2-pro',
+    category: 'image',
+    inputTypes: ['text'],
+    aspectRatios: ['21:9', '16:9', '4:3', '3:2', '1:1', '2:3', '3:4', '9:16'],
+    defaultAspectRatio: '16:9',
+    description: 'Black Forest Labs FLUX.2 — 4MP output, character consistency'
+  },
+
+  {
+    id: 'ideogram-v4',
+    name: 'Ideogram v4',
+    falModel: 'ideogram/v4',
+    category: 'image',
+    inputTypes: ['text'],
+    aspectRatios: ['16:9', '4:3', '1:1', '3:4', '9:16'],
+    resolutions: ['TURBO', 'BALANCED', 'QUALITY'],
+    defaultAspectRatio: '1:1',
+    defaultResolution: 'BALANCED',
+    description: 'Best-in-class for text-heavy images — logos, posters, signage'
+  },
+
   // ===== VIDEO MODELS =====
   
   {
@@ -250,25 +292,13 @@ export const FAL_MODELS: ModelConfig[] = [
     description: 'Native 4K resolution, top-tier quality'
   },
 
-  {
-    id: 'kling-o1-video',
-    name: 'Kling o1',
-    falModel: 'fal-ai/kling-video/o1/text-to-video',
-    editModel: 'fal-ai/kling-video/o1/image-to-video',
-    imageParam: 'start_image_url',
-    referenceModel: 'fal-ai/kling-video/o1/reference-to-video',
-    referenceParam: 'image_urls',
-    referenceCite: '@Image',
-    category: 'video',
-    inputTypes: ['text', 'image', 'video'],
-    aspectRatios: ['auto', '16:9', '9:16', '1:1', '4:3', '3:4', '3:2', '2:3', '21:9'],
-    durations: ['3s', '4s', '5s', '6s', '7s', '8s', '9s', '10s'],
-    supportsAudio: false,
-    defaultAspectRatio: '16:9',
-    defaultDuration: '5s',
-    description: 'Multimodal video engine with element references'
-  },
-  
+  // Kling o1 video — REMOVED. The endpoints (fal-ai/kling-video/o1/*)
+  // return 404 as of June 2026; this model was deprecated. Users on
+  // older canvases referencing 'kling-o1-video' will see a "model not
+  // configured" error and need to switch to Kling 3.0 (recommended) or
+  // an earlier 1.x variant.
+
+
   {
     id: 'minimax-hailuo',
     name: 'MiniMax Hailuo',
@@ -315,6 +345,100 @@ export const FAL_MODELS: ModelConfig[] = [
     defaultDuration: '5s',
     defaultResolution: '720p',
     description: 'Realistic video with loop support'
+  },
+
+  // ===== 2026 VIDEO MODELS =====
+  // Veo 3.1 is the current top tier (native audio, true 4K); Fast
+  // variant cuts cost in half. Happy Horse is Alibaba's Wan-family
+  // model with multilingual lip-sync. LTX-Video 13b is the strongest
+  // open-source video option. PixVerse V6 leads stylised/anime output.
+
+  {
+    id: 'veo-3.1',
+    name: 'Veo 3.1',
+    falModel: 'fal-ai/veo3.1',
+    editModel: 'fal-ai/veo3.1/image-to-video',
+    referenceModel: 'fal-ai/veo3.1/reference-to-video',
+    referenceParam: 'image_urls',
+    category: 'video',
+    inputTypes: ['text', 'image'],
+    aspectRatios: ['16:9', '9:16'],
+    durations: ['4s', '5s', '6s', '7s', '8s'],
+    resolutions: ['720p', '1080p', '4K'],
+    supportsAudio: true,
+    defaultAspectRatio: '16:9',
+    defaultDuration: '8s',
+    defaultResolution: '720p',
+    description: 'Google\'s top video model — true 4K, native synced audio'
+  },
+
+  {
+    id: 'veo-3.1-fast',
+    name: 'Veo 3.1 Fast',
+    falModel: 'fal-ai/veo3.1/fast',
+    editModel: 'fal-ai/veo3.1/fast/image-to-video',
+    category: 'video',
+    inputTypes: ['text', 'image'],
+    aspectRatios: ['16:9', '9:16'],
+    durations: ['4s', '5s', '6s', '7s', '8s'],
+    resolutions: ['720p', '1080p', '4K'],
+    supportsAudio: true,
+    defaultAspectRatio: '16:9',
+    defaultDuration: '8s',
+    defaultResolution: '720p',
+    description: 'Veo 3.1 Fast — half the cost, same model family'
+  },
+
+  {
+    id: 'happy-horse',
+    name: 'Alibaba Happy Horse',
+    falModel: 'alibaba/happy-horse/image-to-video',
+    editModel: 'alibaba/happy-horse/image-to-video',  // i2v only
+    category: 'video',
+    inputTypes: ['image'],  // Image required; prompt optional guidance.
+    optionalPrompt: true,
+    aspectRatios: [],  // Inherits from input image.
+    durations: ['3s', '4s', '5s', '6s', '7s', '8s', '9s', '10s', '11s', '12s', '13s', '14s', '15s'],
+    resolutions: ['720p', '1080p'],
+    supportsAudio: true,  // Has native multilingual lip-sync.
+    defaultAspectRatio: '16:9',
+    defaultDuration: '5s',
+    defaultResolution: '1080p',
+    description: 'Alibaba Wan-family — 1080p with multilingual lip-sync'
+  },
+
+  {
+    id: 'ltx-video-13b',
+    name: 'LTX-Video 13b',
+    falModel: 'fal-ai/ltx-video-13b-distilled/image-to-video',
+    editModel: 'fal-ai/ltx-video-13b-distilled/image-to-video',  // i2v only on this distilled variant
+    category: 'video',
+    inputTypes: ['text', 'image'],
+    aspectRatios: ['9:16', '1:1', '16:9'],
+    durations: ['5s'],  // Set by num_frames (121 @ 24fps); fixed for simplicity.
+    resolutions: ['480p', '720p'],
+    supportsAudio: false,
+    defaultAspectRatio: '16:9',
+    defaultDuration: '5s',
+    defaultResolution: '720p',
+    description: 'Lightricks LTX-Video — strongest open-source video model'
+  },
+
+  {
+    id: 'pixverse-v6',
+    name: 'PixVerse V6',
+    falModel: 'fal-ai/pixverse/v6/image-to-video',
+    editModel: 'fal-ai/pixverse/v6/image-to-video',
+    category: 'video',
+    inputTypes: ['text', 'image'],
+    aspectRatios: [],  // Inherits from input image.
+    durations: ['3s', '4s', '5s', '6s', '7s', '8s'],
+    resolutions: ['360p', '540p', '720p', '1080p'],
+    supportsAudio: true,
+    defaultAspectRatio: '16:9',
+    defaultDuration: '5s',
+    defaultResolution: '720p',
+    description: 'PixVerse V6 — stylised + anime leader, lifelike physics'
   },
 
   // ===== UPSCALERS =====
@@ -658,6 +782,122 @@ export function buildModelInput(
       input.duration = 6
     }
     // No aspect_ratio or resolution control - fixed 768p output
+    return input
+  }
+
+  // GPT IMAGE 2 / FLUX.2 [pro] / IDEOGRAM v4 — three new image models
+  // all use a shared `image_size` field that accepts {width, height}.
+  // Aspect-ratio dropdown values map to fixed pixel sizes; we always
+  // send the object form because it's accepted by all three.
+  if (
+    model.id === 'gpt-image-2' ||
+    model.id === 'flux-2-pro' ||
+    model.id === 'ideogram-v4'
+  ) {
+    input.prompt = prompt
+    const ratio = options.aspectRatio || model.defaultAspectRatio
+    const sizeMap: Record<string, { width: number; height: number }> = {
+      '21:9':  { width: 1856, height: 768 },
+      '16:9':  { width: 1536, height: 768 },
+      '4:3':   { width: 1408, height: 1056 },
+      '3:2':   { width: 1344, height: 896 },
+      '1:1':   { width: 1024, height: 1024 },
+      '2:3':   { width: 896,  height: 1344 },
+      '3:4':   { width: 1056, height: 1408 },
+      '9:16':  { width: 768,  height: 1536 },
+    }
+    input.image_size = sizeMap[ratio] || { width: 1024, height: 1024 }
+
+    // Per-model extras:
+    if (model.id === 'gpt-image-2') {
+      // resolution selector doubles as the quality picker.
+      input.quality = options.resolution || model.defaultResolution || 'high'
+      if (options.seed !== undefined) input.seed = options.seed
+    }
+    if (model.id === 'ideogram-v4') {
+      // resolution selector doubles as the rendering_speed picker.
+      input.rendering_speed = options.resolution || model.defaultResolution || 'BALANCED'
+    }
+    if (model.id === 'flux-2-pro') {
+      if (options.seed !== undefined) input.seed = options.seed
+    }
+    return input
+  }
+
+  // VEO 3.1 / VEO 3.1 FAST — same input schema, different endpoint.
+  // Native audio toggle is `audio` (not generate_audio). Resolution
+  // includes true 4K. Duration capped at 8s per fal's docs.
+  if (model.id === 'veo-3.1' || model.id === 'veo-3.1-fast') {
+    input.prompt = prompt
+    if (options.aspectRatio && model.aspectRatios.includes(options.aspectRatio)) {
+      input.aspect_ratio = options.aspectRatio
+    } else {
+      input.aspect_ratio = model.defaultAspectRatio
+    }
+    if (options.duration && model.durations?.includes(options.duration)) {
+      input.duration = parseInt(options.duration)
+    } else if (model.defaultDuration) {
+      input.duration = parseInt(model.defaultDuration)
+    }
+    if (model.resolutions && options.resolution && model.resolutions.includes(options.resolution)) {
+      input.resolution = options.resolution
+    } else if (model.defaultResolution) {
+      input.resolution = model.defaultResolution
+    }
+    if (options.enableAudio !== undefined) input.audio = options.enableAudio
+    return input
+  }
+
+  // ALIBABA HAPPY HORSE — image-to-video only. Prompt optional,
+  // attached if supplied. Resolution + duration straightforward.
+  if (model.id === 'happy-horse') {
+    if (prompt && prompt.trim()) input.prompt = prompt
+    if (options.duration && model.durations?.includes(options.duration)) {
+      input.duration = parseInt(options.duration)
+    } else if (model.defaultDuration) {
+      input.duration = parseInt(model.defaultDuration)
+    }
+    if (model.resolutions && options.resolution && model.resolutions.includes(options.resolution)) {
+      input.resolution = options.resolution
+    } else if (model.defaultResolution) {
+      input.resolution = model.defaultResolution
+    }
+    return input
+  }
+
+  // LTX-VIDEO 13B (distilled) — image-to-video only on this variant.
+  // Duration is implicit in num_frames; we don't expose it. The
+  // distilled model takes resolution + aspect_ratio + num_frames.
+  if (model.id === 'ltx-video-13b') {
+    input.prompt = prompt
+    if (model.resolutions && options.resolution && model.resolutions.includes(options.resolution)) {
+      input.resolution = options.resolution
+    } else if (model.defaultResolution) {
+      input.resolution = model.defaultResolution
+    }
+    if (options.aspectRatio && model.aspectRatios.includes(options.aspectRatio)) {
+      input.aspect_ratio = options.aspectRatio
+    } else {
+      input.aspect_ratio = model.defaultAspectRatio
+    }
+    input.num_frames = 121  // ≈ 5 s at 24 fps; fixed for now.
+    return input
+  }
+
+  // PIXVERSE V6 — image-to-video. Optional audio via generate_audio_switch.
+  if (model.id === 'pixverse-v6') {
+    input.prompt = prompt
+    if (options.duration && model.durations?.includes(options.duration)) {
+      input.duration = parseInt(options.duration)
+    } else if (model.defaultDuration) {
+      input.duration = parseInt(model.defaultDuration)
+    }
+    if (model.resolutions && options.resolution && model.resolutions.includes(options.resolution)) {
+      input.resolution = options.resolution
+    } else if (model.defaultResolution) {
+      input.resolution = model.defaultResolution
+    }
+    if (options.enableAudio) input.generate_audio_switch = true
     return input
   }
 

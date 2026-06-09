@@ -17,6 +17,11 @@ const COST_TABLE: Record<string, { unit: Unit; price: number }> = {
   'flux-schnell':        { unit: 'image', price: 0.003 },
   'flux-dev':            { unit: 'image', price: 0.025 },
   'kling-o1':            { unit: 'image', price: 0.10 },
+  // 2026 additions — pricing not published on fal docs; estimates
+  // err high so the gate is conservative until real bills come in.
+  'gpt-image-2':         { unit: 'image', price: 0.05 },
+  'flux-2-pro':          { unit: 'image', price: 0.05 },
+  'ideogram-v4':         { unit: 'image', price: 0.05 },
   // Video models
   'seedance-1.5':        { unit: 'video', price: 4.50 },  // ~5sec 720p — same tier as 2.0
   'seedance-2.0':        { unit: 'video', price: 4.50 },  // ~5sec 720p Seedance
@@ -30,6 +35,15 @@ const COST_TABLE: Record<string, { unit: Unit; price: number }> = {
   'minimax-hailuo':      { unit: 'video', price: 0.50 },
   'minimax-hailuo-2.3':  { unit: 'video', price: 0.65 },  // 2.3 is slightly pricier than original
   'luma-ray2':           { unit: 'video', price: 1.50 },
+  // 2026 video additions.
+  // Veo 3.1: docs say $0.20/s base, $0.40/s with audio at 720p/1080p.
+  // Splitting the difference at $0.30/s as a conservative blended rate.
+  'veo-3.1':             { unit: 'sec',   price: 0.30 },
+  // Veo 3.1 Fast: $0.10/s base, $0.15/s with audio. ~$0.12/s blended.
+  'veo-3.1-fast':        { unit: 'sec',   price: 0.12 },
+  'happy-horse':         { unit: 'video', price: 0.40 },  // unknown; 1080p i2v
+  'ltx-video-13b':       { unit: 'video', price: 0.10 },  // open source, cheap
+  'pixverse-v6':         { unit: 'video', price: 0.30 },  // unknown; estimate
   // Upscalers — flat-rate estimate covering up to ~10sec at 4x.
   'topaz-video-upscale': { unit: 'video', price: 1.00 },
 }
