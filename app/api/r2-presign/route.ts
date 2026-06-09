@@ -1,4 +1,4 @@
-import { S3Client, PutObjectCommand, PutBucketCorsCommand } from '@aws-sdk/client-s3'
+import { S3Client, PutObjectCommand, PutBucketCorsCommand, GetBucketCorsCommand } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -56,26 +56,95 @@ function getAllowedOrigins(): string[] {
   return Array.from(origins)
 }
 
-// One-shot CORS configuration. R2 buckets ship CORS-locked, so the
-// browser's PUT to the presigned URL fails with "Failed to fetch" until
-// we add a rule allowing it. Apply on the first presign request after a
-// cold start; cache the fact that we've done it so subsequent presigns
-// are pure signing work. Each cold start re-applies — that's how we
-// safely migrate buckets that were previously configured with the old
-// wildcard rule.
-let corsEnsured = false
-async function ensureBucketCors(client: S3Client) {
-  if (corsEnsured) return
-  const allowed = getAllowedOrigins()
-  if (allowed.length === 0) {
-    // No origins configured — refuse to touch the bucket rather than
-    // either reverting to '*' or wiping the existing rule entirely.
+// Decide if an origin is allowed to be added to the bucket CORS rule.
+// We accept anything matching an env-configured entry verbatim, plus
+// HTTPS Vercel preview/production URLs (which is where the legitimate
+// drift comes from). Anything else stays out — preventing a logged-in
+// user being tricked into clicking attacker.example.com and silently
+// extending our bucket's allow-list to include their origin.
+function isSafeOrigin(origin: string, configured: Set<string>): boolean {
+  if (configured.has(origin)) return true
+  try {
+    const url = new URL(origin)
+    if (url.protocol === 'http:' && url.hostname === 'localhost') return true
+    if (url.protocol !== 'https:') return false
+    if (url.hostname.endsWith('.vercel.app')) return true
+  } catch {}
+  return false
+}
+
+// Self-healing CORS. R2 buckets ship CORS-locked and have exactly one
+// rule that gets replaced on every PutBucketCors. The previous code
+// PUT a rule containing just `getAllowedOrigins()` on the first
+// presign of each cold start — which clobbered any other preview /
+// production deployment's origin from the rule. New preview deploys
+// effectively kicked older ones out of their own bucket; that's the
+// "Failed to fetch" the user kept hitting.
+//
+// New behaviour:
+//   1. On the first call of this serverless instance, GET the
+//      bucket's current CORS rule and seed our in-memory allow-set
+//      from it (so we don't clobber whatever other deploys already
+//      put there).
+//   2. Add the env-configured origins to the set.
+//   3. Add the requesting origin if it passes isSafeOrigin.
+//   4. If we added anything not already present in the bucket's rule,
+//      PUT the union back. Origins ACCUMULATE; no deploy uninvites
+//      another.
+//
+// The bucket rule grows monotonically across deploys. There's no
+// "stale" branch that gets uninvited the moment the next preview ships.
+let corsInitialized = false
+const corsAllowed = new Set<string>()
+
+async function ensureBucketCorsForRequest(
+  client: S3Client,
+  requestOrigin: string | null,
+) {
+  const configured = new Set(getAllowedOrigins())
+  let dirty = false
+
+  if (!corsInitialized) {
+    // Seed from the bucket's existing rule, so other deploys' origins
+    // are preserved across the PUT we're about to do.
+    try {
+      const current = await client.send(new GetBucketCorsCommand({
+        Bucket: process.env.R2_BUCKET_NAME!,
+      }))
+      for (const rule of current.CORSRules ?? []) {
+        for (const o of rule.AllowedOrigins ?? []) corsAllowed.add(o)
+      }
+    } catch {
+      // No CORS rule yet (or transient fetch failure). Either way we
+      // proceed with whatever we have; the PUT below installs a rule
+      // for the first time.
+    }
+    for (const o of configured) {
+      if (!corsAllowed.has(o)) {
+        corsAllowed.add(o)
+        dirty = true
+      }
+    }
+    corsInitialized = true
+  }
+
+  if (
+    requestOrigin &&
+    isSafeOrigin(requestOrigin, configured) &&
+    !corsAllowed.has(requestOrigin)
+  ) {
+    corsAllowed.add(requestOrigin)
+    dirty = true
+  }
+
+  if (!dirty) return
+  if (corsAllowed.size === 0) {
     console.warn(
       '[r2-presign] no allowed origins resolved; leaving existing CORS rule in place. Set NEXT_PUBLIC_SITE_URL or VERCEL_URL.',
     )
-    corsEnsured = true
     return
   }
+
   try {
     await client.send(new PutBucketCorsCommand({
       Bucket: process.env.R2_BUCKET_NAME!,
@@ -83,7 +152,7 @@ async function ensureBucketCors(client: S3Client) {
         CORSRules: [
           {
             AllowedMethods: ['PUT', 'GET', 'HEAD'],
-            AllowedOrigins: allowed,
+            AllowedOrigins: Array.from(corsAllowed),
             AllowedHeaders: ['*'],
             ExposeHeaders: ['ETag'],
             MaxAgeSeconds: 3600,
@@ -91,13 +160,14 @@ async function ensureBucketCors(client: S3Client) {
         ],
       },
     }))
-    corsEnsured = true
-    console.log('[r2-presign] bucket CORS applied:', allowed.join(', '))
+    console.log('[r2-presign] CORS allow-list extended:', Array.from(corsAllowed).join(', '))
   } catch (err) {
-    // Don't block the presign — surface the error to the caller via
-    // headers (they can still try). If CORS really is the problem the
-    // PUT will fail and we'll see it in the browser.
-    console.error('[r2-presign] failed to set bucket CORS', err)
+    // Don't block the presign. If CORS really matters for this request
+    // the browser's PUT will fail and the catch in canvas-workspace
+    // will surface a toast. Roll the failed origin out of the cache so
+    // the next request retries.
+    if (requestOrigin) corsAllowed.delete(requestOrigin)
+    console.error('[r2-presign] failed to extend CORS:', err)
   }
 }
 
@@ -116,9 +186,12 @@ export async function POST(req: NextRequest) {
     const key = `uploads/${Date.now()}-${safeName}`
     const client = getS3()
 
-    // First presign of this serverless instance also installs CORS rules
-    // — quick fix-up for fresh R2 buckets that ship CORS-locked.
-    await ensureBucketCors(client)
+    // Pull the requesting browser's origin out of the headers so we can
+    // add it to the bucket CORS rule if it isn't already there. This is
+    // how new Vercel preview deploys self-add to the allow-list instead
+    // of getting uninvited by whichever deploy cold-started first.
+    const requestOrigin = req.headers.get('origin')
+    await ensureBucketCorsForRequest(client, requestOrigin)
 
     const command = new PutObjectCommand({
       Bucket: process.env.R2_BUCKET_NAME,

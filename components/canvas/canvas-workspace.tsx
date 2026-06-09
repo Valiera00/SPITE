@@ -771,29 +771,25 @@ function CanvasInner({ projectId }: { projectId: string }) {
     n.data = { ...n.data, thumbnail: tempUrl, isUploading: true, mediaType }
     setNodes(ns => [...ns, n])
     
-    // Upload to R2 in background. Picks the path based on file size:
+    // Upload to R2 in background. Two paths:
     //
-    //   - Small files (< 4 MB): route through /api/r2-upload, which
-    //     uses S3 PutObject server-side. Bypasses R2's CORS preflight
-    //     entirely. Audio always goes this way; the presigned-PUT
-    //     path was failing for audio/* and (recently) image/* with
-    //     "Failed to fetch" whenever the bucket's CORS allow-origin
-    //     list didn't include the active Vercel preview URL.
+    //   - Audio files: route through /api/r2-upload (server-side
+    //     PutObject). Audio is always small enough for Vercel's body
+    //     limit and the server-side path avoids a CORS preflight on
+    //     audio/* content types that R2 was historically picky about.
     //
-    //   - Large files (>= 4 MB): presigned PUT direct to R2, so big
-    //     videos and high-res images don't hit Vercel's 4.5 MB
-    //     function body limit. If R2 CORS rejects this we catch and
-    //     surface a real error toast (one drop per error, no silent
-    //     blob URLs persisted).
+    //   - Everything else (image, video): presigned PUT direct to R2.
+    //     Bypasses Vercel's 4.5 MB body limit. CORS is kept current
+    //     by ensureBucketCorsForRequest in /api/r2-presign — the
+    //     bucket's allow-origin list now ACCUMULATES across deploys
+    //     instead of getting clobbered every time a new preview ships
+    //     (the underlying "Failed to fetch" root cause).
     //
-    // Threshold sits at 4 MB to leave headroom for multipart form
-    // wrapping under the Vercel limit. Most generated/upscaled
-    // images land under that; only very large videos cross it.
-    const VERCEL_PROXY_LIMIT_BYTES = 4 * 1024 * 1024
-    const useVercelProxy = file.size < VERCEL_PROXY_LIMIT_BYTES
+    // The catch surfaces a toast — no silent blob URLs persisted to
+    // DB ever again, regardless of which path failed.
     try {
       let proxyUrl: string
-      if (useVercelProxy) {
+      if (isAudioFile) {
         const formData = new FormData()
         formData.append('file', file)
         formData.append('filename', file.name)
