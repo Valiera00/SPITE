@@ -263,9 +263,12 @@ ReferenceNode.displayName = 'ReferenceNode'
 // a glance which audio node is active on the canvas.
 function AudioPreview({ url, label }: { url: string; label: string }) {
   const audioRef = useRef<HTMLAudioElement>(null)
+  const waveformRef = useRef<HTMLDivElement>(null)
   const [isPlaying, setIsPlaying] = useState(false)
   const [peaks, setPeaks] = useState<number[] | null>(null)
   const [decodeFailed, setDecodeFailed] = useState(false)
+  const [currentTime, setCurrentTime] = useState(0)
+  const [duration, setDuration] = useState(0)
 
   useEffect(() => {
     let cancelled = false
@@ -302,24 +305,64 @@ function AudioPreview({ url, label }: { url: string; label: string }) {
     }
   }, [url])
 
+  // Played fraction (0..1). When duration is still 0 (metadata not loaded
+  // yet), treat as nothing played so the whole waveform reads as dim.
+  const playedRatio = duration > 0 ? currentTime / duration : 0
+
+  // Click anywhere on the waveform → seek the underlying <audio> to the
+  // corresponding timestamp. Same logic for clicks AND drags so the user
+  // can scrub by holding mouse-down + moving.
+  const seekFromClientX = (clientX: number) => {
+    const el = waveformRef.current
+    const audio = audioRef.current
+    if (!el || !audio || !duration) return
+    const rect = el.getBoundingClientRect()
+    const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width))
+    audio.currentTime = ratio * duration
+    setCurrentTime(ratio * duration)
+  }
+
+  const handleWaveformMouseDown = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    seekFromClientX(e.clientX)
+    const onMove = (ev: MouseEvent) => seekFromClientX(ev.clientX)
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }
+
   return (
     <div className="px-3 py-4 flex flex-col gap-3">
-      {/* Waveform */}
-      <div className="flex items-center gap-[2px] h-14">
+      {/* Waveform — click anywhere to seek, drag to scrub. */}
+      <div
+        ref={waveformRef}
+        onMouseDown={handleWaveformMouseDown}
+        className="flex items-center gap-[2px] h-14 cursor-pointer relative nodrag select-none"
+        title="Click or drag to seek"
+      >
         {peaks ? (
-          peaks.map((p, i) => (
-            <div
-              key={i}
-              className="flex-1 rounded-sm transition-colors"
-              style={{
-                height: `${Math.max(6, p * 100)}%`,
-                background: isPlaying
-                  ? 'rgba(251,191,36,0.75)'
-                  : 'rgba(251,191,36,0.3)',
-                minWidth: 2,
-              }}
-            />
-          ))
+          peaks.map((p, i) => {
+            // Each bar represents a slice of the timeline; played bars
+            // brighten, unplayed stay dim. Using i+1 means the last bar
+            // only lights up when the audio is fully through.
+            const isPlayed = (i + 1) / peaks.length <= playedRatio
+            return (
+              <div
+                key={i}
+                className="flex-1 rounded-sm transition-colors pointer-events-none"
+                style={{
+                  height: `${Math.max(6, p * 100)}%`,
+                  background: isPlayed
+                    ? 'rgba(251,191,36,0.85)'
+                    : 'rgba(251,191,36,0.22)',
+                  minWidth: 2,
+                }}
+              />
+            )
+          })
         ) : decodeFailed ? (
           <div className="w-full text-center text-[10px] font-mono text-red-400/60">
             waveform unavailable
@@ -329,9 +372,26 @@ function AudioPreview({ url, label }: { url: string; label: string }) {
             decoding…
           </div>
         )}
+
+        {/* Playhead — a thin vertical line at the current playback
+            position. Hidden until metadata loads so we don't show a
+            playhead sitting at position 0 forever. */}
+        {peaks && duration > 0 && (
+          <div
+            className="absolute top-0 bottom-0 w-px pointer-events-none"
+            style={{
+              left: `${playedRatio * 100}%`,
+              background: isPlaying
+                ? 'rgba(251,191,36,0.95)'
+                : 'rgba(251,191,36,0.6)',
+            }}
+          />
+        )}
       </div>
 
-      {/* Native audio controls */}
+      {/* Native audio controls — still useful for play/pause toggle and
+          accessibility. Timeupdate / loadedmetadata events sync state
+          back into the waveform above so both stay in sync. */}
       <audio
         ref={audioRef}
         src={url}
@@ -342,6 +402,9 @@ function AudioPreview({ url, label }: { url: string; label: string }) {
         onPlay={() => setIsPlaying(true)}
         onPause={() => setIsPlaying(false)}
         onEnded={() => setIsPlaying(false)}
+        onTimeUpdate={e => setCurrentTime((e.target as HTMLAudioElement).currentTime)}
+        onLoadedMetadata={e => setDuration((e.target as HTMLAudioElement).duration)}
+        onDurationChange={e => setDuration((e.target as HTMLAudioElement).duration)}
       >
         {label}
       </audio>
