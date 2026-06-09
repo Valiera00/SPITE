@@ -47,9 +47,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: `Unknown model: ${modelId}` }, { status: 400 })
   }
 
-  // Prompt is required only if the model accepts text input. Upscalers
-  // (inputTypes: ['video']) take a video and never use a text prompt.
-  if (model.inputTypes.includes('text') && !prompt) {
+  // Prompt is required only if the model accepts text input AND doesn't
+  // mark it as optional. Topaz Upscale declares text in inputTypes (so
+  // the field shows in the node) but flags optionalPrompt: true so an
+  // empty prompt is a valid "plug-n-play" submission.
+  if (model.inputTypes.includes('text') && !model.optionalPrompt && !prompt) {
     return NextResponse.json({ error: 'prompt is required for this model' }, { status: 400 })
   }
 
@@ -210,10 +212,14 @@ export async function POST(request: NextRequest) {
   // Pick the endpoint: separate reference endpoint > image-to-image /
   // image-to-video (frames, elements-style refs, OR image-slot refs from
   // folder mentions on models like Nano Banana / FLUX Dev) > text-to-video.
+  // For optional-prompt models (Topaz), editModel is the "creative" /
+  // prompt-aware variant — switch to it when the user filled the prompt.
   let endpoint = model.falModel
   if (usesSeparateRefEndpoint) {
     endpoint = model.referenceModel!
   } else if ((hasRefsViaRefParam || hasRefsViaImageParam || hasFrame) && model.editModel) {
+    endpoint = model.editModel
+  } else if (model.optionalPrompt && prompt && prompt.trim() && model.editModel) {
     endpoint = model.editModel
   }
 

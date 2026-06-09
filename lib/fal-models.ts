@@ -21,6 +21,11 @@ export interface ModelConfig {
   resolutions?: string[]        // Optional resolution control
   supportsAudio?: boolean       // For video models with sound generation
   supportsLoop?: boolean        // For video models with loop option
+  // True when the model declares 'text' in inputTypes but a prompt is
+  // not required to run it. Used by Topaz: empty prompt → plug-n-play
+  // endpoint, filled prompt → creative endpoint. Submit-route validation
+  // skips the "prompt required" check when this is set.
+  optionalPrompt?: boolean
   defaultAspectRatio: string
   defaultDuration?: string
   defaultResolution?: string
@@ -313,23 +318,30 @@ export const FAL_MODELS: ModelConfig[] = [
   },
 
   // ===== UPSCALERS =====
-  // Take a video INPUT (no prompt needed) and return a higher-resolution
-  // version. Wire your low-res clip into the video-in handle on the
-  // generator node, pick this model, hit Generate. Output matches the
-  // input's duration and aspect ratio — only the resolution changes.
+  // Wire your low-res clip into the video-in handle on the generator
+  // node, pick this model, hit Generate. Output matches the input's
+  // duration and aspect ratio — only the resolution changes.
+  //
+  // The same model entry handles BOTH Topaz modes; the prompt field
+  // decides which one runs:
+  //  - Empty prompt → "plug-n-play" endpoint, just upscales.
+  //  - Filled prompt → "creative" endpoint, uses the prompt to guide
+  //    the enhancement (denoise, sharpen, restore details, etc.).
   {
     id: 'topaz-video-upscale',
     name: 'Topaz Video Upscale',
-    falModel: 'fal-ai/topaz/upscale/video',
+    falModel: 'fal-ai/topaz/upscale/video',                  // plug-n-play
+    editModel: 'fal-ai/topaz/upscale/video/creative',        // creative (with prompt)
     category: 'video',
-    inputTypes: ['video'],          // No text, no image — video only.
+    inputTypes: ['text', 'video'],  // text is shown but optional (see below).
+    optionalPrompt: true,           // Submit route doesn't reject an empty prompt.
     aspectRatios: [],               // Output inherits from input.
     durations: [],                  // Output inherits from input.
     resolutions: ['2x', '4x'],      // Re-used as the upscale factor selector.
     supportsAudio: false,
     defaultAspectRatio: '16:9',
     defaultResolution: '2x',
-    description: 'Upscale a video 2x or 4x with Topaz'
+    description: 'Upscale a video 2x or 4x. Add a prompt to guide enhancement.'
   },
 ]
 
@@ -644,12 +656,17 @@ export function buildModelInput(
     return input
   }
 
-  // TOPAZ VIDEO UPSCALE — no prompt. video_url is attached by the submit
-  // route after this returns (from the connected video-in handle). We
-  // reuse the resolution selector as the upscale-factor picker: "2x"
-  // → 2, anything else (incl. default "4x") → 4.
+  // TOPAZ VIDEO UPSCALE — video_url is attached by the submit route
+  // from the connected video-in handle. The resolution selector is
+  // reused as the upscale-factor picker: "2x" → 2, "4x" → 4. The
+  // prompt is included only when the user actually typed one; submit
+  // also swaps to the /creative endpoint in that case (handled in
+  // submit/route.ts via model.editModel).
   if (model.id === 'topaz-video-upscale') {
     input.upscale_factor = options.resolution === '4x' ? 4 : 2
+    if (prompt && prompt.trim()) {
+      input.prompt = prompt
+    }
     return input
   }
 
