@@ -55,8 +55,14 @@ const EDGE_TYPES: EdgeTypes = {
 let nodeCount = 1
 function makeId() { return `node-${Date.now()}-${Math.random().toString(36).slice(2, 7)}` }
 
-let sceneCount = 2  // Start at 2 since scene-1 exists
-function makeSceneId() { return `scene-${sceneCount++}` }
+// Scene IDs are timestamp + random so they NEVER collide with whatever's
+// already in the loaded scenes list. The previous module-level counter
+// (`sceneCount = 2`) reset on every page load, so after scenes started
+// persisting (commit c735535) the first "Add scene" click would return
+// `scene-2` again — colliding with the saved scene-2 and silently
+// inheriting any orphan nodes that already had sceneId='scene-2' from a
+// pre-persistence session.
+function makeSceneId() { return `scene-${Date.now()}-${Math.random().toString(36).slice(2, 7)}` }
 
 let assetCount = 1
 function makeAssetId() { return `asset-${assetCount++}` }
@@ -438,16 +444,25 @@ function CanvasInner({ projectId }: { projectId: string }) {
     setNodes((ns: Node[]) => [...ns, makeNode(type, pos, undefined, activeSceneId, initialData)] as Node[])
   }, [screenToFlowPosition, setNodes, activeSceneId])
 
-  // Scene handlers
+  // Scene handlers. Name = highest existing "Scene N" + 1 so deletes
+  // don't reuse numbers (deleting Scene 3 then adding a new one gives
+  // you Scene 6, not Scene 3 again — names monotonically increase
+  // like shot numbers do, which avoids confusion when a node is
+  // tagged to "Scene 3" and a different scene later wears that name).
   const handleAddScene = useCallback(() => {
+    let maxNum = 0
+    for (const s of scenes) {
+      const m = s.name.match(/^Scene (\d+)$/)
+      if (m) maxNum = Math.max(maxNum, parseInt(m[1], 10))
+    }
     const newScene: Scene = {
       id: makeSceneId(),
-      name: `Scene ${scenes.length + 1}`,
+      name: `Scene ${maxNum + 1}`,
       shots: [],
     }
     setScenes(s => [...s, newScene])
     setActiveSceneId(newScene.id)
-  }, [scenes.length])
+  }, [scenes])
 
   // Delete a scene: remove the scene itself, every node tagged with
   // that sceneId, and every edge between those nodes. Auto-save will
