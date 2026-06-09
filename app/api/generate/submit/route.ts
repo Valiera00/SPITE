@@ -135,6 +135,15 @@ export async function POST(request: NextRequest) {
     return host ? `${proto}://${host}` : ''
   }
   const baseUrl = getPublicBaseUrl()
+  // TEMP diagnostic — surfaces which URL fal will be told to fetch
+  // references from. If this prints the preview URL (long, with the
+  // commit-hash and team slug) instead of a clean production URL,
+  // VERCEL_PROJECT_PRODUCTION_URL isn't being injected and the user
+  // needs to set SITE_URL explicitly.
+  console.log('[generate/submit] baseUrl for fal references:', baseUrl, {
+    SITE_URL_set: !!process.env.SITE_URL,
+    VERCEL_PROJECT_PRODUCTION_URL_set: !!process.env.VERCEL_PROJECT_PRODUCTION_URL,
+  })
   const referenceImageSigned = toFalFetchableUrl(referenceImageUrl, baseUrl)
   const endImageSigned = toFalFetchableUrl(endImageUrl, baseUrl)
   // Accept either grouped refs (preferred) or the legacy flat list. Sign
