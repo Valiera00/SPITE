@@ -95,7 +95,13 @@ function getConnectionError(sourceHandle: string | null, targetHandle: string | 
   return `Cannot connect ${sourceName} to ${targetName}`
 }
 
-function makeNode(type: string, position: { x: number; y: number }, label?: string, sceneId?: string) {
+function makeNode(
+  type: string,
+  position: { x: number; y: number },
+  label?: string,
+  sceneId?: string,
+  initialData?: Record<string, any>,
+) {
   const count = nodeCount++
   const labels: Record<string, string> = {
     imageGen: `Image Generator #${count}`,
@@ -115,6 +121,9 @@ function makeNode(type: string, position: { x: number; y: number }, label?: stri
       thumbnail: undefined as string | undefined,
       isUploading: false,
       uploadError: false,
+      // Spread initialData last so callers (e.g. menu presets) can
+      // override fields like `modelId` without us clobbering them.
+      ...(initialData || {}),
     } as Record<string, any>,
   }
 }
@@ -384,9 +393,9 @@ function CanvasInner({ projectId }: { projectId: string }) {
   }, [projectId, viewport.x, viewport.y, viewport.zoom])
   const flowRef = useRef<HTMLDivElement>(null)
 
-  const addNode = useCallback((type: string, flowPos?: { x: number; y: number }) => {
+  const addNode = useCallback((type: string, flowPos?: { x: number; y: number }, initialData?: Record<string, any>) => {
     const pos = flowPos || screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 })
-    setNodes((ns: Node[]) => [...ns, makeNode(type, pos, undefined, activeSceneId)] as Node[])
+    setNodes((ns: Node[]) => [...ns, makeNode(type, pos, undefined, activeSceneId, initialData)] as Node[])
   }, [screenToFlowPosition, setNodes, activeSceneId])
 
   // Scene handlers
@@ -1086,7 +1095,10 @@ function CanvasInner({ projectId }: { projectId: string }) {
     setContextMenu(null)
     return
   }
-  addNode(item.nodeType, contextMenu.flowPos)
+  // Pass any menu-supplied preset (e.g. Upscaler → topaz-video-upscale) as
+  // initial node data so the new node starts on the right model.
+  const initialData = item.defaultModelId ? { modelId: item.defaultModelId } : undefined
+  addNode(item.nodeType, contextMenu.flowPos, initialData)
   setContextMenu(null)
   }}
             onClose={() => setContextMenu(null)}

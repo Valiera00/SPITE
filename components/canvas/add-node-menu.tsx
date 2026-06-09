@@ -11,6 +11,7 @@ import {
   MagnifyingGlass,
   FrameCorners,
   Sliders,
+  ArrowsOut,
 } from '@phosphor-icons/react'
 
 export type NodeMenuItem = {
@@ -20,25 +21,33 @@ export type NodeMenuItem = {
   icon: React.ElementType
   category: string
   nodeType: string
+  // Optional model preset — when set, the new node is created with this
+  // model already selected. Used by category presets like Upscaler that
+  // spawn a video generator pre-configured to a specific model.
+  defaultModelId?: string
 }
 
 const ITEMS: NodeMenuItem[] = [
-  { id: 'text',      label: 'Text',             shortcut: 'T', icon: TextT,          category: 'BASICS', nodeType: 'prompt'    },
-  { id: 'image-gen', label: 'Image Generator',  shortcut: 'N', icon: ImageSquare,    category: 'BASICS', nodeType: 'imageGen'  },
-  { id: 'video-gen', label: 'Video Generator',  shortcut: 'K', icon: FilmSlate,      category: 'BASICS', nodeType: 'videoGen'  },
-  { id: 'assistant', label: 'Assistant',         shortcut: 'A', icon: Robot,          category: 'BASICS', nodeType: 'prompt'    },
-  { id: 'upload',    label: 'Upload',            shortcut: 'U', icon: ArrowFatLineUp, category: 'MEDIA',  nodeType: 'reference' },
-  { id: 'assets',    label: 'Assets',            shortcut: '',  icon: Stack,          category: 'MEDIA',  nodeType: 'reference' },
-  { id: 'stock',     label: 'Stock',             shortcut: '',  icon: MagnifyingGlass,category: 'MEDIA',  nodeType: 'reference' },
-  { id: 'frame',     label: 'Frame',             shortcut: 'F', icon: FrameCorners,   category: 'MODIFIERS', nodeType: 'prompt' },
+  { id: 'text',          label: 'Text',             shortcut: 'T', icon: TextT,          category: 'BASICS',   nodeType: 'prompt'    },
+  { id: 'image-gen',     label: 'Image Generator',  shortcut: 'N', icon: ImageSquare,    category: 'BASICS',   nodeType: 'imageGen'  },
+  { id: 'video-gen',     label: 'Video Generator',  shortcut: 'K', icon: FilmSlate,      category: 'BASICS',   nodeType: 'videoGen'  },
+  { id: 'assistant',     label: 'Assistant',        shortcut: 'A', icon: Robot,          category: 'BASICS',   nodeType: 'prompt'    },
+  { id: 'upload',        label: 'Upload',           shortcut: 'U', icon: ArrowFatLineUp, category: 'MEDIA',    nodeType: 'reference' },
+  { id: 'assets',        label: 'Assets',           shortcut: '',  icon: Stack,          category: 'MEDIA',    nodeType: 'reference' },
+  { id: 'stock',         label: 'Stock',            shortcut: '',  icon: MagnifyingGlass,category: 'MEDIA',    nodeType: 'reference' },
+  { id: 'frame',         label: 'Frame',            shortcut: 'F', icon: FrameCorners,   category: 'MODIFIERS',nodeType: 'prompt'    },
+  // UPSCALER: spawns a video generator with the Topaz upscaler model
+  // already selected. Same node body, just pre-configured.
+  { id: 'video-upscale', label: 'Video Upscaler',   shortcut: 'V', icon: ArrowsOut,      category: 'UPSCALER', nodeType: 'videoGen', defaultModelId: 'topaz-video-upscale' },
 ]
 
-const CATEGORIES = ['BASICS', 'MEDIA', 'MODIFIERS']
+const CATEGORIES = ['BASICS', 'MEDIA', 'MODIFIERS', 'UPSCALER']
 
 const CATEGORY_ICONS: Record<string, React.ElementType> = {
   BASICS: Stack,
   MEDIA: ImageSquare,
   MODIFIERS: Sliders,
+  UPSCALER: ArrowsOut,
 }
 
 interface AddNodeMenuProps {
