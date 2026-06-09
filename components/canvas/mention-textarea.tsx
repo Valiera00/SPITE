@@ -11,15 +11,19 @@ import {
 } from 'react'
 import { createPortal } from 'react-dom'
 import { X, User, Package, MapPin, Folder, Check, PencilSimple, Trash } from '@phosphor-icons/react'
+import { AssetThumb } from './asset-thumb'
 
 export type FolderType = 'character' | 'prop' | 'location' | 'general'
 
 // One folder available for @-mention. Comes straight from /api/folders.
+// asset.type was previously `string` — tightened to the actual three
+// values the assets API emits so AssetThumb can consume it without a
+// cast at every call site.
 export interface MentionFolder {
   id: string
   name: string
   type: FolderType
-  assets: { id: string; r2_url: string; type: string }[]
+  assets: { id: string; r2_url: string; type: 'image' | 'video' | 'audio' }[]
 }
 
 // One inserted mention: a folder + the subset of its assets the user chose.
@@ -495,11 +499,7 @@ export const MentionTextarea = forwardRef<MentionTextareaRef, Props>(function Me
                         }`}
                         title={isSel ? 'Click to deselect' : 'Click to select'}
                       >
-                        {asset.type === 'video' ? (
-                          <video src={asset.r2_url} className="w-full h-full object-cover" muted preload="metadata" />
-                        ) : (
-                          <img src={asset.r2_url} alt="" className="w-full h-full object-cover" loading="lazy" decoding="async" />
-                        )}
+                        <AssetThumb url={asset.r2_url} type={asset.type} />
                         {isSel && (
                           <div className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full bg-accent flex items-center justify-center">
                             <Check size={9} weight="bold" className="text-white" />

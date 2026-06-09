@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useMemo } from 'react'
 import { toast } from 'sonner'
 import useSWR from 'swr'
 import { AddToFolderModal } from './add-to-folder-modal'
+import { AssetThumb } from './asset-thumb'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -162,7 +163,7 @@ export function LeftToolbar({
     name: string
     description: string | null
     type: 'character' | 'prop' | 'location' | 'general'
-    assets: { id: string; r2_url: string; type: string; prompt: string }[]
+    assets: { id: string; r2_url: string; type: 'image' | 'video' | 'audio'; prompt: string }[]
   } | null>(null)
 
   // Bulk-select state for the assets panel (works in both compact + expanded
@@ -220,7 +221,7 @@ export function LeftToolbar({
     name: string
     description: string | null
     type: 'character' | 'prop' | 'location' | 'general'
-    assets: { id: string; r2_url: string; type: string; prompt: string }[]
+    assets: { id: string; r2_url: string; type: 'image' | 'video' | 'audio'; prompt: string }[]
   }[]>(
     foldersKey,
     (url: string) => {
@@ -1065,15 +1066,7 @@ export function LeftToolbar({
                               }`}
                               title={selectMode ? 'Click to toggle selection' : 'Click to view · drag to canvas'}
                             >
-                              {a.type === 'video' ? (
-                                <video src={a.r2_url} className="w-full h-full object-cover" muted preload="metadata" />
-                              ) : a.type === 'audio' ? (
-                                <div className="w-full h-full bg-gradient-to-br from-amber-950/40 to-zinc-900 flex items-center justify-center">
-                                  <SpeakerHigh size={32} weight="duotone" className="text-amber-400/70" />
-                                </div>
-                              ) : (
-                                <img src={a.r2_url} alt="" className="w-full h-full object-cover" loading="lazy" decoding="async" />
-                              )}
+                              <AssetThumb url={a.r2_url} type={a.type} />
                               <div className="absolute top-2 left-2 flex gap-1">
                                 {a.type === 'video' && (
                                   <div className="w-5 h-5 rounded bg-black/60 flex items-center justify-center">
@@ -1142,15 +1135,7 @@ export function LeftToolbar({
                                 : 'border-border/30 hover:border-accent/50 hover:scale-[1.02]'
                             }`}
                           >
-                            {asset.type === 'video' ? (
-                              <video src={asset.r2_url} className="w-full h-full object-cover" muted preload="metadata" />
-                            ) : asset.type === 'audio' ? (
-                              <div className="w-full h-full bg-gradient-to-br from-amber-950/40 to-zinc-900 flex items-center justify-center">
-                                <SpeakerHigh size={32} weight="duotone" className="text-amber-400/70" />
-                              </div>
-                            ) : (
-                              <img src={asset.r2_url} alt="" className="w-full h-full object-cover" loading="lazy" decoding="async" />
-                            )}
+                            <AssetThumb url={asset.r2_url} type={asset.type} />
                             <div className="absolute top-2 left-2 flex gap-1">
                               {asset.type === 'video' && (
                                 <div className="w-5 h-5 rounded bg-black/60 flex items-center justify-center">
@@ -1219,16 +1204,12 @@ export function LeftToolbar({
                     full frame is visible without cropping. Old code used
                     object-cover, which cropped the video to fit. */}
                 <div className="rounded-lg overflow-hidden bg-black border border-border/30 mb-4 aspect-video">
-                  {selectedGenAsset.type === 'video' ? (
-                    <video src={selectedGenAsset.r2_url} controls className="w-full h-full object-contain" preload="metadata" />
-                  ) : selectedGenAsset.type === 'audio' ? (
-                    <div className="w-full h-full bg-gradient-to-br from-amber-950/40 to-zinc-900 flex flex-col items-center justify-center gap-4 px-4">
-                      <SpeakerHigh size={48} weight="duotone" className="text-amber-400/70" />
-                      <audio src={selectedGenAsset.r2_url} controls preload="metadata" className="w-full max-w-xs" />
-                    </div>
-                  ) : (
-                    <img src={selectedGenAsset.r2_url} alt="" className="w-full h-full object-cover" loading="lazy" decoding="async" />
-                  )}
+                  <AssetThumb
+                    url={selectedGenAsset.r2_url}
+                    type={selectedGenAsset.type}
+                    variant="preview"
+                    fit="contain"
+                  />
                 </div>
 
                 {/* Metadata — only the fields we actually have. The earlier
@@ -1669,15 +1650,7 @@ export function LeftToolbar({
                                 : 'border-border/30 hover:border-accent/50'
                             }`}
                           >
-                            {asset.type === 'video' ? (
-                              <video src={asset.r2_url} className="w-full h-full object-cover" muted preload="metadata" />
-                            ) : asset.type === 'audio' ? (
-                              <div className="w-full h-full bg-gradient-to-br from-amber-950/40 to-zinc-900 flex items-center justify-center">
-                                <SpeakerHigh size={24} weight="duotone" className="text-amber-400/70" />
-                              </div>
-                            ) : (
-                              <img src={asset.r2_url} alt="" className="w-full h-full object-cover" loading="lazy" decoding="async" />
-                            )}
+                            <AssetThumb url={asset.r2_url} type={asset.type} audioIconSize={24} />
                             <div className="absolute top-1 left-1 flex gap-0.5">
                               {asset.type === 'video' && (
                                 <div className="w-4 h-4 rounded bg-black/60 flex items-center justify-center">
@@ -1731,16 +1704,11 @@ export function LeftToolbar({
               </button>
 
               <div className="rounded-lg overflow-hidden bg-card border border-border/30 mb-3 aspect-video">
-                {selectedGenAsset.type === 'video' ? (
-                  <video src={selectedGenAsset.r2_url} controls className="w-full h-full object-cover" />
-                ) : selectedGenAsset.type === 'audio' ? (
-                  <div className="w-full h-full bg-gradient-to-br from-amber-950/40 to-zinc-900 flex flex-col items-center justify-center gap-4 px-4">
-                    <SpeakerHigh size={48} weight="duotone" className="text-amber-400/70" />
-                    <audio src={selectedGenAsset.r2_url} controls preload="metadata" className="w-full max-w-xs" />
-                  </div>
-                ) : (
-                  <img src={selectedGenAsset.r2_url} alt="" className="w-full h-full object-cover" />
-                )}
+                <AssetThumb
+                  url={selectedGenAsset.r2_url}
+                  type={selectedGenAsset.type}
+                  variant="preview"
+                />
               </div>
 
               <div className="space-y-2 mb-4 text-xs font-mono">
@@ -2176,15 +2144,7 @@ export function LeftToolbar({
                                 className="aspect-square rounded overflow-hidden bg-card border border-border/30 hover:border-accent/50 cursor-grab active:cursor-grabbing"
                                 title={asset.prompt || 'Drag to canvas'}
                               >
-                                {asset.type === 'video' ? (
-                                  <video src={asset.r2_url} className="w-full h-full object-cover" muted preload="metadata" />
-                                ) : asset.type === 'audio' ? (
-                                  <div className="w-full h-full bg-gradient-to-br from-amber-950/40 to-zinc-900 flex items-center justify-center">
-                                    <SpeakerHigh size={20} weight="duotone" className="text-amber-400/70" />
-                                  </div>
-                                ) : (
-                                  <img src={asset.r2_url} alt="" className="w-full h-full object-cover" loading="lazy" decoding="async" />
-                                )}
+                                <AssetThumb url={asset.r2_url} type={asset.type} audioIconSize={20} />
                               </div>
                             ))}
                           </div>
