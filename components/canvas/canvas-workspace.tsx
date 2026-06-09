@@ -693,31 +693,55 @@ function CanvasInner({ projectId }: { projectId: string }) {
     n.data = { ...n.data, thumbnail: tempUrl, isUploading: true, mediaType }
     setNodes(ns => [...ns, n])
     
-    // Upload to R2 in background — presigned-PUT flow, so file bytes
-    // go straight to R2 and never hit Vercel's 4.5MB function body limit.
+    // Upload to R2 in background. Two paths:
+    //   - Audio files: route bytes through /api/r2-upload (server-side
+    //     PutObject). Audio files are always small (typical mp3 is
+    //     <2 MB, well under Vercel's 4.5 MB body limit) and routing
+    //     server-side dodges the R2 CORS preflight that was silently
+    //     failing for audio/* content types from the browser.
+    //   - Everything else: presigned PUT direct to R2, so big images
+    //     and video files bypass Vercel's body limit.
     try {
-      const presignRes = await fetch('/api/r2-presign', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          filename: file.name,
-          contentType: file.type || 'application/octet-stream',
-        }),
-      })
-      if (!presignRes.ok) {
-        const detail = await presignRes.text().catch(() => '')
-        throw new Error(`presign failed: ${presignRes.status} ${detail}`)
-      }
-      const { presignedUrl, proxyUrl } = await presignRes.json() as { presignedUrl: string; proxyUrl: string }
+      let proxyUrl: string
+      if (isAudioFile) {
+        const formData = new FormData()
+        formData.append('file', file)
+        formData.append('filename', file.name)
+        const uploadRes = await fetch('/api/r2-upload', {
+          method: 'POST',
+          body: formData,
+        })
+        if (!uploadRes.ok) {
+          const detail = await uploadRes.text().catch(() => '')
+          throw new Error(`audio upload failed: ${uploadRes.status} ${detail}`)
+        }
+        const { url } = await uploadRes.json() as { url: string }
+        proxyUrl = url
+      } else {
+        const presignRes = await fetch('/api/r2-presign', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            filename: file.name,
+            contentType: file.type || 'application/octet-stream',
+          }),
+        })
+        if (!presignRes.ok) {
+          const detail = await presignRes.text().catch(() => '')
+          throw new Error(`presign failed: ${presignRes.status} ${detail}`)
+        }
+        const { presignedUrl, proxyUrl: signedProxyUrl } = await presignRes.json() as { presignedUrl: string; proxyUrl: string }
 
-      const putRes = await fetch(presignedUrl, {
-        method: 'PUT',
-        headers: { 'Content-Type': file.type || 'application/octet-stream' },
-        body: file,
-      })
-      if (!putRes.ok) {
-        const detail = await putRes.text().catch(() => '')
-        throw new Error(`R2 PUT failed: ${putRes.status} ${detail}`)
+        const putRes = await fetch(presignedUrl, {
+          method: 'PUT',
+          headers: { 'Content-Type': file.type || 'application/octet-stream' },
+          body: file,
+        })
+        if (!putRes.ok) {
+          const detail = await putRes.text().catch(() => '')
+          throw new Error(`R2 PUT failed: ${putRes.status} ${detail}`)
+        }
+        proxyUrl = signedProxyUrl
       }
 
       // Update node with proxy URL
@@ -753,10 +777,16 @@ function CanvasInner({ projectId }: { projectId: string }) {
       // Revoke temp blob URL
       URL.revokeObjectURL(tempUrl)
     } catch (error) {
-      console.error('[v0] Failed to upload image:', error)
-      // Keep temp URL if upload fails - user can still work with it
-      setNodes(ns => ns.map(node => 
-        node.id === n.id 
+      console.error('[v0] Failed to upload media:', error)
+      // Surface the failure — the previous silent catch left users
+      // with a node that worked in the current session and then died
+      // on reload because the blob URL was scoped to the session.
+      const msg = error instanceof Error ? error.message : 'Upload failed'
+      toast.error(`${mediaType} upload failed: ${msg.split(':')[0]}. Drop again to retry.`)
+      // Keep temp URL if upload fails — user can still work with it
+      // for the current session, but it will not persist.
+      setNodes(ns => ns.map(node =>
+        node.id === n.id
           ? { ...node, data: { ...node.data, isUploading: false, uploadError: true } }
           : node
       ))
