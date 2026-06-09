@@ -31,9 +31,10 @@ const COST_TABLE: Record<string, { unit: Unit; price: number }> = {
   'kling-3.0-standard':  { unit: 'sec',   price: 0.14 },
   'kling-3.0-pro':       { unit: 'sec',   price: 0.30 },
   'kling-3.0-4k':        { unit: 'sec',   price: 0.50 },
-  'kling-o1-video':      { unit: 'video', price: 1.50 },
   'minimax-hailuo':      { unit: 'video', price: 0.50 },
   'minimax-hailuo-2.3':  { unit: 'video', price: 0.65 },  // 2.3 is slightly pricier than original
+  // Kling o1 first-frame-last-frame: docs say $0.112 per second.
+  'kling-o1-video':      { unit: 'sec',   price: 0.112 },
   'luma-ray2':           { unit: 'video', price: 1.50 },
   // 2026 video additions.
   // Veo 3.1: docs say $0.20/s base, $0.40/s with audio at 720p/1080p.

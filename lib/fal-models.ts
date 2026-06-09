@@ -292,12 +292,37 @@ export const FAL_MODELS: ModelConfig[] = [
     description: 'Native 4K resolution, top-tier quality'
   },
 
-  // Kling o1 video — REMOVED. The endpoints (fal-ai/kling-video/o1/*)
-  // return 404 as of June 2026; this model was deprecated. Users on
-  // older canvases referencing 'kling-o1-video' will see a "model not
-  // configured" error and need to switch to Kling 3.0 (recommended) or
-  // an earlier 1.x variant.
-
+  // Kling o1 — FIRST-FRAME-LAST-FRAME video model. There's no
+  // text-to-video or reference-to-video endpoint; the ONLY working
+  // path is image-to-video. Wire a start image into image-in (required),
+  // optionally wire an end image into end-frame-in, type a prompt
+  // describing the transition, submit.
+  //
+  // The prompt can use `@Image1` to reference the start frame and
+  // `@Image2` for the end frame, but most prompts just describe the
+  // transition naturally — fal handles both forms.
+  //
+  // Duration is a STRING enum ("3" through "10"), unlike the integer
+  // duration Kling 1.x/3.x use; buildModelInput's kling-o1 branch
+  // sends the string form.
+  {
+    id: 'kling-o1-video',
+    name: 'Kling o1',
+    // Same endpoint for both falModel and editModel — there's no
+    // text-only variant. Users who skip the start frame get a fal-side
+    // "image required" error surfaced in the jobs panel.
+    falModel: 'fal-ai/kling-video/o1/image-to-video',
+    editModel: 'fal-ai/kling-video/o1/image-to-video',
+    imageParam: 'start_image_url',
+    category: 'video',
+    inputTypes: ['text', 'image'],
+    aspectRatios: [],  // Inherits from input image (300px min, 0.4:1 to 2.5:1)
+    durations: ['3s', '4s', '5s', '6s', '7s', '8s', '9s', '10s'],
+    supportsAudio: false,
+    defaultAspectRatio: '16:9',
+    defaultDuration: '5s',
+    description: 'First-frame → last-frame interpolation with prompted transition'
+  },
 
   {
     id: 'minimax-hailuo',
@@ -713,7 +738,22 @@ export function buildModelInput(
     return input
   }
 
-  // KLING VIDEO models (1.0, 1.5, 1.6, 3.0, 3.0 Pro, 3.0 4K, o1)
+  // KLING o1 — has its own schema: prompt + start_image_url +
+  // optional end_image_url + duration STRING enum. start_image_url
+  // and end_image_url are attached by submit/route.ts. No aspect
+  // ratio (inherits from input), no resolution, no audio.
+  if (model.id === 'kling-o1-video') {
+    input.prompt = prompt
+    if (options.duration && model.durations?.includes(options.duration)) {
+      // fal expects the duration as a string ("5"), not an integer (5).
+      input.duration = options.duration.replace(/s$/, '')
+    } else {
+      input.duration = (model.defaultDuration || '5s').replace(/s$/, '')
+    }
+    return input
+  }
+
+  // KLING VIDEO models (1.0, 1.5, 1.6, 3.0, 3.0 Pro, 3.0 4K)
   if (model.id.includes('kling')) {
     input.prompt = prompt
     if (options.aspectRatio && model.aspectRatios.includes(options.aspectRatio)) {
