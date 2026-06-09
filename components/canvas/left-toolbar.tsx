@@ -42,6 +42,7 @@ import {
   Copy,
   Download,
   VideoCamera,
+  SpeakerHigh,
   ShieldCheck,
   ArrowsOut,
   Cursor,
@@ -79,7 +80,7 @@ const ASSET_CATEGORIES: { id: AssetCategory; icon: typeof User; label: string; c
 
 interface GeneratedAsset {
   id: string
-  type: 'image' | 'video'
+  type: 'image' | 'video' | 'audio'
   model: string
   prompt: string
   r2_url: string
@@ -136,7 +137,7 @@ export function LeftToolbar({
   
   const [historyOpen, setHistoryOpen] = useState(showHistory)
   const [historyExpanded, setHistoryExpanded] = useState(false)
-  const [historyFilter, setHistoryFilter] = useState<'all' | 'image' | 'video' | 'uploads'>('all')
+  const [historyFilter, setHistoryFilter] = useState<'all' | 'image' | 'video' | 'audio' | 'uploads'>('all')
   const [historySearch, setHistorySearch] = useState('')
   const [selectedGenAsset, setSelectedGenAsset] = useState<GeneratedAsset | null>(null)
   // What the expanded panel's main area is showing. The sidebar drives this.
@@ -271,6 +272,7 @@ export function LeftToolbar({
       const matchFilter = historyFilter === 'all' ||
         (historyFilter === 'image' && a.type === 'image') ||
         (historyFilter === 'video' && a.type === 'video') ||
+        (historyFilter === 'audio' && a.type === 'audio') ||
         (historyFilter === 'uploads' && a.is_upload)
       return matchSearch && matchFilter
     })
@@ -738,7 +740,7 @@ export function LeftToolbar({
                 </h2>
                 {showFilterTabs && (
                   <div className="flex gap-1">
-                    {(['all', 'image', 'video', 'uploads'] as const).map((filter) => (
+                    {(['all', 'image', 'video', 'audio', 'uploads'] as const).map((filter) => (
                       <button
                         key={filter}
                         onClick={() => setHistoryFilter(filter)}
@@ -1065,6 +1067,10 @@ export function LeftToolbar({
                             >
                               {a.type === 'video' ? (
                                 <video src={a.r2_url} className="w-full h-full object-cover" muted preload="metadata" />
+                              ) : a.type === 'audio' ? (
+                                <div className="w-full h-full bg-gradient-to-br from-amber-950/40 to-zinc-900 flex items-center justify-center">
+                                  <SpeakerHigh size={32} weight="duotone" className="text-amber-400/70" />
+                                </div>
                               ) : (
                                 <img src={a.r2_url} alt="" className="w-full h-full object-cover" loading="lazy" decoding="async" />
                               )}
@@ -1072,6 +1078,11 @@ export function LeftToolbar({
                                 {a.type === 'video' && (
                                   <div className="w-5 h-5 rounded bg-black/60 flex items-center justify-center">
                                     <VideoCamera size={12} className="text-white" />
+                                  </div>
+                                )}
+                                {a.type === 'audio' && (
+                                  <div className="w-5 h-5 rounded bg-amber-500/80 flex items-center justify-center">
+                                    <SpeakerHigh size={12} className="text-white" />
                                   </div>
                                 )}
                                 {full?.recovered && (
@@ -1133,6 +1144,10 @@ export function LeftToolbar({
                           >
                             {asset.type === 'video' ? (
                               <video src={asset.r2_url} className="w-full h-full object-cover" muted preload="metadata" />
+                            ) : asset.type === 'audio' ? (
+                              <div className="w-full h-full bg-gradient-to-br from-amber-950/40 to-zinc-900 flex items-center justify-center">
+                                <SpeakerHigh size={32} weight="duotone" className="text-amber-400/70" />
+                              </div>
                             ) : (
                               <img src={asset.r2_url} alt="" className="w-full h-full object-cover" loading="lazy" decoding="async" />
                             )}
@@ -1140,6 +1155,11 @@ export function LeftToolbar({
                               {asset.type === 'video' && (
                                 <div className="w-5 h-5 rounded bg-black/60 flex items-center justify-center">
                                   <VideoCamera size={12} className="text-white" />
+                                </div>
+                              )}
+                              {asset.type === 'audio' && (
+                                <div className="w-5 h-5 rounded bg-amber-500/80 flex items-center justify-center">
+                                  <SpeakerHigh size={12} className="text-white" />
                                 </div>
                               )}
                               {asset.used_in_canvas && (
@@ -1201,6 +1221,11 @@ export function LeftToolbar({
                 <div className="rounded-lg overflow-hidden bg-black border border-border/30 mb-4 aspect-video">
                   {selectedGenAsset.type === 'video' ? (
                     <video src={selectedGenAsset.r2_url} controls className="w-full h-full object-contain" preload="metadata" />
+                  ) : selectedGenAsset.type === 'audio' ? (
+                    <div className="w-full h-full bg-gradient-to-br from-amber-950/40 to-zinc-900 flex flex-col items-center justify-center gap-4 px-4">
+                      <SpeakerHigh size={48} weight="duotone" className="text-amber-400/70" />
+                      <audio src={selectedGenAsset.r2_url} controls preload="metadata" className="w-full max-w-xs" />
+                    </div>
                   ) : (
                     <img src={selectedGenAsset.r2_url} alt="" className="w-full h-full object-cover" loading="lazy" decoding="async" />
                   )}
@@ -1381,7 +1406,11 @@ export function LeftToolbar({
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                           url: proxyUrl,
-                          type: file.type.startsWith('video/') ? 'video' : 'image',
+                          type: file.type.startsWith('audio/')
+                            ? 'audio'
+                            : file.type.startsWith('video/')
+                              ? 'video'
+                              : 'image',
                           filename: file.name.replace(/\.[^.]+$/, ''),
                           projectId,
                         }),
@@ -1460,7 +1489,7 @@ export function LeftToolbar({
 
         {/* Filter tabs */}
         <div className="flex gap-1 px-3 py-2 border-b border-border/30">
-          {(['all', 'image', 'video', 'uploads'] as const).map((filter) => (
+          {(['all', 'image', 'video', 'audio', 'uploads'] as const).map((filter) => (
             <button
               key={filter}
               onClick={() => setHistoryFilter(filter)}
@@ -1642,6 +1671,10 @@ export function LeftToolbar({
                           >
                             {asset.type === 'video' ? (
                               <video src={asset.r2_url} className="w-full h-full object-cover" muted preload="metadata" />
+                            ) : asset.type === 'audio' ? (
+                              <div className="w-full h-full bg-gradient-to-br from-amber-950/40 to-zinc-900 flex items-center justify-center">
+                                <SpeakerHigh size={24} weight="duotone" className="text-amber-400/70" />
+                              </div>
                             ) : (
                               <img src={asset.r2_url} alt="" className="w-full h-full object-cover" loading="lazy" decoding="async" />
                             )}
@@ -1649,6 +1682,11 @@ export function LeftToolbar({
                               {asset.type === 'video' && (
                                 <div className="w-4 h-4 rounded bg-black/60 flex items-center justify-center">
                                   <VideoCamera size={10} className="text-white" />
+                                </div>
+                              )}
+                              {asset.type === 'audio' && (
+                                <div className="w-4 h-4 rounded bg-amber-500/80 flex items-center justify-center">
+                                  <SpeakerHigh size={10} className="text-white" />
                                 </div>
                               )}
                               {asset.used_in_canvas && (
@@ -1695,6 +1733,11 @@ export function LeftToolbar({
               <div className="rounded-lg overflow-hidden bg-card border border-border/30 mb-3 aspect-video">
                 {selectedGenAsset.type === 'video' ? (
                   <video src={selectedGenAsset.r2_url} controls className="w-full h-full object-cover" />
+                ) : selectedGenAsset.type === 'audio' ? (
+                  <div className="w-full h-full bg-gradient-to-br from-amber-950/40 to-zinc-900 flex flex-col items-center justify-center gap-4 px-4">
+                    <SpeakerHigh size={48} weight="duotone" className="text-amber-400/70" />
+                    <audio src={selectedGenAsset.r2_url} controls preload="metadata" className="w-full max-w-xs" />
+                  </div>
                 ) : (
                   <img src={selectedGenAsset.r2_url} alt="" className="w-full h-full object-cover" />
                 )}
@@ -2135,6 +2178,10 @@ export function LeftToolbar({
                               >
                                 {asset.type === 'video' ? (
                                   <video src={asset.r2_url} className="w-full h-full object-cover" muted preload="metadata" />
+                                ) : asset.type === 'audio' ? (
+                                  <div className="w-full h-full bg-gradient-to-br from-amber-950/40 to-zinc-900 flex items-center justify-center">
+                                    <SpeakerHigh size={20} weight="duotone" className="text-amber-400/70" />
+                                  </div>
                                 ) : (
                                   <img src={asset.r2_url} alt="" className="w-full h-full object-cover" loading="lazy" decoding="async" />
                                 )}
