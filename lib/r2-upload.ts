@@ -138,26 +138,36 @@ function imageProxySecret(): string {
   return secret
 }
 
-// Turn an internal proxy path (/api/r2-image/<key>) into an absolute,
-// token-signed URL fal can fetch. Non-proxy URLs are returned unchanged.
-// Token rides in the PATH (`/s/<exp>/<sig>/<key>`) instead of a query string
-// so the URL ends in the asset's file extension — some fal validators (e.g.
-// Kling 3.0's `elements.frontal_image_url`) reject URLs containing `?...`.
-// Path segments are percent-encoded so user-uploaded filenames containing
-// spaces or other reserved characters still produce a valid HTTPS URL.
-export function toFalFetchableUrl(
+// Turn an internal proxy path (/api/r2-image/<key>) into an absolute
+// URL fal can fetch. Non-proxy URLs are returned unchanged.
+//
+// Uses R2 presigned URLs so fal fetches DIRECTLY from R2 (no Vercel
+// function in the loop) — this bypasses Vercel Deployment Protection
+// entirely. Previously we constructed our own HMAC-signed proxy URL
+// pointing at the deployment, which broke any time the deployment was
+// behind Vercel Auth (preview deploys with default protection) unless
+// the user had set SITE_URL or VERCEL_PROJECT_PRODUCTION_URL.
+//
+// 1-hour expiry matches the previous proxy-token TTL.
+//
+// Trade-off: presigned URLs end in `?X-Amz-Algorithm=...&X-Amz-Credential=...`.
+// Some fal models historically rejected query strings on specific
+// reference fields (Kling 3.0's `elements.frontal_image_url`). If that
+// bites again we'll need a per-field check that falls back to the
+// path-token proxy URL for those.
+export async function toFalFetchableUrl(
   url: string | null | undefined,
-  baseUrl: string
-): string | null | undefined {
+): Promise<string | null | undefined> {
   if (!url) return url
   const marker = '/api/r2-image/'
   const idx = url.indexOf(marker)
-  if (idx === -1) return url // already an absolute, externally-fetchable URL
+  if (idx === -1) return url // already absolute, externally-fetchable
   const key = url.slice(idx + marker.length)
-  const exp = Date.now() + 3600_000 // 1 hour
-  const sig = crypto.createHmac('sha256', imageProxySecret()).update(`${key}:${exp}`).digest('hex')
-  const encodedKey = key.split('/').map(encodeURIComponent).join('/')
-  return `${baseUrl}/api/r2-image/s/${exp}/${sig}/${encodedKey}`
+  const command = new GetObjectCommand({
+    Bucket: process.env.R2_BUCKET_NAME!,
+    Key: key,
+  })
+  return await getSignedUrl(getR2Client(), command, { expiresIn: 3600 })
 }
 
 // Validate a token produced by toFalFetchableUrl, used by the proxy route.

@@ -109,61 +109,36 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  // Reference media is stored behind our private R2 proxy. Turn it into an
-  // absolute, token-signed proxy URL fal.ai can fetch (1-hour validity).
-  //
-  // Choosing the base URL is non-obvious: Vercel preview deployments are
-  // gated by Deployment Protection by default, which means fal.ai (no
-  // cookie, no bypass token) can't reach /api/r2-image on a preview.
-  // Production deployments are publicly accessible on the same project,
-  // share the same DATABASE_URL and APP_PASSWORD (signing secret), and
-  // can serve the same image bytes — so we always sign references using
-  // the production URL when we know it. Order of preference:
-  //   1. SITE_URL — explicit override, for self-hosters with a custom
-  //      domain or non-Vercel host.
-  //   2. VERCEL_PROJECT_PRODUCTION_URL — Vercel auto-injects this on
-  //      every deploy; points at the public production hostname.
-  //   3. request.headers.get('host') — last resort. Works for local
-  //      dev and for any setup with no protection.
-  function getPublicBaseUrl(): string {
-    if (process.env.SITE_URL) return process.env.SITE_URL.replace(/\/$/, '')
-    if (process.env.VERCEL_PROJECT_PRODUCTION_URL) {
-      return `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
-    }
-    const host = request.headers.get('host')
-    const proto = request.headers.get('x-forwarded-proto') || 'https'
-    return host ? `${proto}://${host}` : ''
-  }
-  const baseUrl = getPublicBaseUrl()
-  // TEMP diagnostic — surfaces which URL fal will be told to fetch
-  // references from. If this prints the preview URL (long, with the
-  // commit-hash and team slug) instead of a clean production URL,
-  // VERCEL_PROJECT_PRODUCTION_URL isn't being injected and the user
-  // needs to set SITE_URL explicitly.
-  console.log('[generate/submit] baseUrl for fal references:', baseUrl, {
-    SITE_URL_set: !!process.env.SITE_URL,
-    VERCEL_PROJECT_PRODUCTION_URL_set: !!process.env.VERCEL_PROJECT_PRODUCTION_URL,
-  })
-  const referenceImageSigned = toFalFetchableUrl(referenceImageUrl, baseUrl)
-  const endImageSigned = toFalFetchableUrl(endImageUrl, baseUrl)
+  // Reference media is stored in our private R2 bucket. Hand fal R2
+  // presigned URLs so it fetches DIRECTLY from cloudflarestorage.com
+  // (1-hour validity). This bypasses our Vercel function entirely,
+  // which means fal can reach references regardless of whether the
+  // deployment is gated by Vercel Deployment Protection — the previous
+  // approach of routing through a custom signed proxy URL only worked
+  // when SITE_URL or VERCEL_PROJECT_PRODUCTION_URL pointed at a
+  // publicly-accessible deployment, and that was a brittle setup step.
+  const [referenceImageSigned, endImageSigned] = await Promise.all([
+    toFalFetchableUrl(referenceImageUrl),
+    toFalFetchableUrl(endImageUrl),
+  ])
   // Accept either grouped refs (preferred) or the legacy flat list. Sign
   // every URL per-group so the structure can be preserved for
   // element-based models (Kling v3 elements).
   type IncomingGroup = { urls?: string[]; folderName?: string; folderType?: string }
-  const refGroupsSigned: { urls: string[] }[] = Array.isArray(referenceGroups)
-    ? (referenceGroups as IncomingGroup[]).map((g) => ({
-        urls: Array.isArray(g.urls)
-          ? (g.urls
-              .map((u) => toFalFetchableUrl(u, baseUrl))
-              .filter(Boolean) as string[])
-          : [],
-      })).filter((g) => g.urls.length > 0)
+  const incomingGroups: IncomingGroup[] = Array.isArray(referenceGroups)
+    ? (referenceGroups as IncomingGroup[])
     : Array.isArray(referenceImageUrls)
-      ? (referenceImageUrls as string[])
-          .map((u) => toFalFetchableUrl(u, baseUrl))
-          .filter(Boolean)
-          .map((u) => ({ urls: [u as string] }))
+      ? (referenceImageUrls as string[]).map((u) => ({ urls: [u] }))
       : []
+  const refGroupsSigned: { urls: string[] }[] = (
+    await Promise.all(
+      incomingGroups.map(async (g) => ({
+        urls: Array.isArray(g.urls)
+          ? ((await Promise.all(g.urls.map(toFalFetchableUrl))).filter(Boolean) as string[])
+          : [],
+      })),
+    )
+  ).filter((g) => g.urls.length > 0)
   const refsSigned: string[] = refGroupsSigned.flatMap((g) => g.urls)
 
   // Reference images use a different endpoint/param per model:
@@ -218,7 +193,7 @@ export async function POST(request: NextRequest) {
   // Video-to-video: pass a connected source video through if provided
   // (also signed so fal can fetch it).
   if (settings?.videoUrl) {
-    input.video_url = toFalFetchableUrl(settings.videoUrl, baseUrl)
+    input.video_url = await toFalFetchableUrl(settings.videoUrl)
   }
 
   // Pick the endpoint: separate reference endpoint > image-to-image /
