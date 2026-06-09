@@ -239,6 +239,24 @@ export const FAL_MODELS: ModelConfig[] = [
   },
 
   {
+    id: 'kling-2.6',
+    name: 'Kling 2.6 Pro',
+    // Image-to-video only (no text-to-video variant). The "pro" tier is
+    // the only one documented for v2.6 on fal as of June 2026.
+    falModel: 'fal-ai/kling-video/v2.6/pro/image-to-video',
+    editModel: 'fal-ai/kling-video/v2.6/pro/image-to-video',
+    imageParam: 'start_image_url',
+    category: 'video',
+    inputTypes: ['text', 'image'],
+    aspectRatios: [],          // Inherits from input image.
+    durations: ['5s', '10s'],  // String enum on fal side ("5"/"10").
+    supportsAudio: true,       // Native audio + voice control. Default ON server-side.
+    defaultAspectRatio: '16:9',
+    defaultDuration: '5s',
+    description: 'Cinematic visuals, fluid motion, native audio + voice control'
+  },
+
+  {
     id: 'kling-3.0-standard',
     name: 'Kling 3.0',
     falModel: 'fal-ai/kling-video/v3/standard/text-to-video',
@@ -750,6 +768,24 @@ export function buildModelInput(
     } else {
       input.duration = (model.defaultDuration || '5s').replace(/s$/, '')
     }
+    return input
+  }
+
+  // KLING 2.6 PRO — image-to-video with native audio + voice control.
+  // Duration is a STRING enum (like Kling o1), not an integer. fal's
+  // server-side default for generate_audio is `true`; we still send
+  // the user's toggle state explicitly so toggling off actually saves
+  // them the audio-tier cost (~2x the base rate).
+  if (model.id === 'kling-2.6') {
+    input.prompt = prompt
+    if (options.duration && model.durations?.includes(options.duration)) {
+      input.duration = options.duration.replace(/s$/, '')  // "5s" → "5"
+    } else {
+      input.duration = (model.defaultDuration || '5s').replace(/s$/, '')
+    }
+    // Always send the boolean — defaulting to fal's `true` would silently
+    // bill the user 2x for a setting they couldn't see.
+    input.generate_audio = !!options.enableAudio
     return input
   }
 

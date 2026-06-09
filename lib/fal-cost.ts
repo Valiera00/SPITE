@@ -28,6 +28,10 @@ const COST_TABLE: Record<string, { unit: Unit; price: number }> = {
   'kling-1.0':           { unit: 'video', price: 0.50 },
   'kling-1.5':           { unit: 'video', price: 0.50 },
   'kling-1.6':           { unit: 'video', price: 0.50 },
+  // Kling 2.6 Pro: $0.07/s without audio, $0.14/s with audio,
+  // $0.168/s with audio + voice control. Splitting at $0.10/s
+  // blended for the typical with-audio path.
+  'kling-2.6':           { unit: 'sec',   price: 0.10 },
   'kling-3.0-standard':  { unit: 'sec',   price: 0.14 },
   'kling-3.0-pro':       { unit: 'sec',   price: 0.30 },
   'kling-3.0-4k':        { unit: 'sec',   price: 0.50 },
