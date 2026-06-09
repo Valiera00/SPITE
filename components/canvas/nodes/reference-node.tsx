@@ -2,7 +2,7 @@
 
 import { Position, NodeProps, Handle, useReactFlow } from '@xyflow/react'
 import { useParams } from 'next/navigation'
-import { Image as ImageIcon, UploadSimple, CircleNotch, VideoCamera } from '@phosphor-icons/react'
+import { Image as ImageIcon, UploadSimple, CircleNotch, VideoCamera, SpeakerHigh } from '@phosphor-icons/react'
 import { memo, useState, useEffect, useRef } from 'react'
 import { NodeActionToolbar } from './node-toolbar'
 import { ShotSelector, type ShotOption } from './shot-selector'
@@ -38,7 +38,8 @@ function ReferenceNodeImpl({ id, data, selected }: NodeProps) {
   const selectedShotId = (data.selectedShotId as string) || undefined
   const isTaggedToShot = !!selectedShotId
   const isUploading = data.isUploading as boolean
-  const isVideo = (data.mediaType as string) === 'video' || /\.(mp4|webm|mov|m4v)(\?|$)/i.test(thumbnail || '')
+  const isAudio = (data.mediaType as string) === 'audio' || /\.(mp3|wav|m4a|ogg|aac|flac)(\?|$)/i.test(thumbnail || '')
+  const isVideo = !isAudio && ((data.mediaType as string) === 'video' || /\.(mp4|webm|mov|m4v)(\?|$)/i.test(thumbnail || ''))
 
   const handleShotSelect = (shotId: string) => {
     setNodes(ns => ns.map(n => n.id === id ? { ...n, data: { ...n.data, selectedShotId: shotId } } : n))
@@ -96,17 +97,19 @@ function ReferenceNodeImpl({ id, data, selected }: NodeProps) {
         nodeLabel={(data.label as string) || 'Reference'}
         assetId={data.assetId as string}
         assetUrl={thumbnail || undefined}
-        assetType={isVideo ? 'video' : 'image'}
+        assetType={isAudio ? 'image' : isVideo ? 'video' : 'image'}
         onAddToFolder={handleAddToFolder}
-        onViewFullscreen={thumbnail ? () => setLightboxOpen(true) : undefined}
+        onViewFullscreen={thumbnail && !isAudio ? () => setLightboxOpen(true) : undefined}
       />
 
-      <Lightbox
-        open={lightboxOpen}
-        url={thumbnail}
-        type={isVideo ? 'video' : 'image'}
-        onClose={() => setLightboxOpen(false)}
-      />
+      {!isAudio && (
+        <Lightbox
+          open={lightboxOpen}
+          url={thumbnail}
+          type={isVideo ? 'video' : 'image'}
+          onClose={() => setLightboxOpen(false)}
+        />
+      )}
 
       {/* Header above card */}
       <div className="absolute -top-8 left-0 flex items-center gap-2 z-10">
@@ -125,11 +128,12 @@ function ReferenceNodeImpl({ id, data, selected }: NodeProps) {
       <Handle type="target" position={Position.Left} style={{ opacity: 0, zIndex: 5 }} />
       <Handle
         type="source"
-        id={isVideo ? 'video-out' : 'image-out'}
+        id={isAudio ? 'audio-out' : isVideo ? 'video-out' : 'image-out'}
         position={Position.Right}
         style={{ top: '50%', right: -12, width: 24, height: 24, transform: 'translateY(-50%)', opacity: 0, zIndex: 5 }}
       />
-      {/* Visible output indicator so the reference can be wired into a generator */}
+      {/* Visible output indicator so the reference can be wired into a generator.
+          Color by media type: blue=image, pink=video, amber=audio. */}
       <div
         className="absolute flex items-center justify-center"
         style={{
@@ -137,7 +141,11 @@ function ReferenceNodeImpl({ id, data, selected }: NodeProps) {
           height: 24,
           borderRadius: '50%',
           background: '#111316',
-          border: `1.5px solid ${isVideo ? 'rgba(244,114,182,0.85)' : 'rgba(96,165,250,0.85)'}`,
+          border: `1.5px solid ${
+            isAudio ? 'rgba(251,191,36,0.85)' :
+            isVideo ? 'rgba(244,114,182,0.85)' :
+            'rgba(96,165,250,0.85)'
+          }`,
           top: '50%',
           right: -12,
           transform: 'translateY(-50%)',
@@ -145,9 +153,11 @@ function ReferenceNodeImpl({ id, data, selected }: NodeProps) {
           pointerEvents: 'none',
         }}
       >
-        {isVideo
-          ? <VideoCamera size={11} weight="bold" style={{ color: 'rgba(244,114,182,0.95)' }} />
-          : <ImageIcon size={11} weight="bold" style={{ color: 'rgba(96,165,250,0.95)' }} />}
+        {isAudio
+          ? <SpeakerHigh size={11} weight="bold" style={{ color: 'rgba(251,191,36,0.95)' }} />
+          : isVideo
+            ? <VideoCamera size={11} weight="bold" style={{ color: 'rgba(244,114,182,0.95)' }} />
+            : <ImageIcon size={11} weight="bold" style={{ color: 'rgba(96,165,250,0.95)' }} />}
       </div>
 
       {/* Card */}
@@ -163,13 +173,15 @@ function ReferenceNodeImpl({ id, data, selected }: NodeProps) {
               : '1.5px solid rgba(107,143,168,0.25)',
         }}
       >
-        {/* Image area */}
+        {/* Media area */}
         {thumbnail ? (
           <div
             className="relative"
-            onDoubleClick={() => { if (thumbnail && !isUploading) setLightboxOpen(true) }}
+            onDoubleClick={() => { if (thumbnail && !isUploading && !isAudio) setLightboxOpen(true) }}
           >
-            {isVideo ? (
+            {isAudio ? (
+              <AudioPreview url={thumbnail} label={(data.label as string) || 'audio'} />
+            ) : isVideo ? (
               <video
                 src={thumbnail}
                 className="w-full h-auto block cursor-zoom-in"
@@ -198,7 +210,7 @@ function ReferenceNodeImpl({ id, data, selected }: NodeProps) {
         ) : (
           <div className="flex flex-col items-center justify-center gap-2 py-12 text-muted-foreground/40">
             <ImageIcon size={28} />
-            <span className="text-xs">Drop image or video</span>
+            <span className="text-xs">Drop image, video, or audio</span>
           </div>
         )}
 
@@ -244,3 +256,95 @@ function ReferenceNodeImpl({ id, data, selected }: NodeProps) {
 
 export const ReferenceNode = memo(ReferenceNodeImpl)
 ReferenceNode.displayName = 'ReferenceNode'
+
+// Audio preview: extracts waveform peaks client-side via the Web Audio
+// API and renders them as amber bars. Native <audio> controls below for
+// scrub/play/volume. Bars brighten while playing so the user can see at
+// a glance which audio node is active on the canvas.
+function AudioPreview({ url, label }: { url: string; label: string }) {
+  const audioRef = useRef<HTMLAudioElement>(null)
+  const [isPlaying, setIsPlaying] = useState(false)
+  const [peaks, setPeaks] = useState<number[] | null>(null)
+  const [decodeFailed, setDecodeFailed] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    async function load() {
+      try {
+        const res = await fetch(url)
+        if (!res.ok) throw new Error(`fetch ${res.status}`)
+        const arrayBuffer = await res.arrayBuffer()
+        const Ctx = (window as any).AudioContext || (window as any).webkitAudioContext
+        if (!Ctx) throw new Error('AudioContext unavailable')
+        const audioCtx = new Ctx()
+        const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer)
+        const channel = audioBuffer.getChannelData(0)
+        const bars = 80
+        const blockSize = Math.max(1, Math.floor(channel.length / bars))
+        const samples: number[] = []
+        for (let i = 0; i < bars; i++) {
+          let sum = 0
+          for (let j = 0; j < blockSize; j++) {
+            sum += Math.abs(channel[i * blockSize + j] || 0)
+          }
+          samples.push(sum / blockSize)
+        }
+        const max = Math.max(...samples, 0.001)
+        if (!cancelled) setPeaks(samples.map(s => s / max))
+      } catch (err) {
+        console.error('[audio-preview] decode failed:', err)
+        if (!cancelled) setDecodeFailed(true)
+      }
+    }
+    load()
+    return () => {
+      cancelled = true
+    }
+  }, [url])
+
+  return (
+    <div className="px-3 py-4 flex flex-col gap-3">
+      {/* Waveform */}
+      <div className="flex items-center gap-[2px] h-14">
+        {peaks ? (
+          peaks.map((p, i) => (
+            <div
+              key={i}
+              className="flex-1 rounded-sm transition-colors"
+              style={{
+                height: `${Math.max(6, p * 100)}%`,
+                background: isPlaying
+                  ? 'rgba(251,191,36,0.75)'
+                  : 'rgba(251,191,36,0.3)',
+                minWidth: 2,
+              }}
+            />
+          ))
+        ) : decodeFailed ? (
+          <div className="w-full text-center text-[10px] font-mono text-red-400/60">
+            waveform unavailable
+          </div>
+        ) : (
+          <div className="w-full text-center text-[10px] font-mono text-muted-foreground/40">
+            decoding…
+          </div>
+        )}
+      </div>
+
+      {/* Native audio controls */}
+      <audio
+        ref={audioRef}
+        src={url}
+        controls
+        preload="metadata"
+        className="w-full nodrag"
+        style={{ height: 32 }}
+        onPlay={() => setIsPlaying(true)}
+        onPause={() => setIsPlaying(false)}
+        onEnded={() => setIsPlaying(false)}
+      >
+        {label}
+      </audio>
+    </div>
+  )
+}

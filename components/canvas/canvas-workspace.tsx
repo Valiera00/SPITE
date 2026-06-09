@@ -454,7 +454,9 @@ function CanvasInner({ projectId }: { projectId: string }) {
 
     // Desktop file drop
     const files = Array.from(e.dataTransfer.files).filter(f =>
-      f.type.startsWith('image/') || f.type.startsWith('video/')
+      f.type.startsWith('image/') ||
+      f.type.startsWith('video/') ||
+      f.type.startsWith('audio/'),
     )
     if (files.length > 0) {
       e.preventDefault()
@@ -685,8 +687,10 @@ function CanvasInner({ projectId }: { projectId: string }) {
     
     // Create temp blob URL for immediate display
     const isVideoFile = file.type.startsWith('video/')
+    const isAudioFile = file.type.startsWith('audio/')
     const tempUrl = URL.createObjectURL(file)
-    n.data = { ...n.data, thumbnail: tempUrl, isUploading: true, mediaType: isVideoFile ? 'video' : 'image' }
+    const mediaType = isAudioFile ? 'audio' : isVideoFile ? 'video' : 'image'
+    n.data = { ...n.data, thumbnail: tempUrl, isUploading: true, mediaType }
     setNodes(ns => [...ns, n])
     
     // Upload to R2 in background — presigned-PUT flow, so file bytes
@@ -727,7 +731,7 @@ function CanvasInner({ projectId }: { projectId: string }) {
       const assetRes = await fetch('/api/assets', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: proxyUrl, type: isVideoFile ? 'video' : 'image', filename: nodeLabel, projectId }),
+        body: JSON.stringify({ url: proxyUrl, type: mediaType, filename: nodeLabel, projectId }),
       })
       const assetData = await assetRes.json()
       console.log('[v0] Asset recorded:', { assetData, status: assetRes.status })
