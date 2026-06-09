@@ -101,6 +101,33 @@ Open your Neon project's SQL editor and paste the contents of
 [`database-setup.sql`](./database-setup.sql). Hit Run. The script is
 idempotent — re-running it is safe and won't touch existing data.
 
+### R2 bucket CORS (do this once, or uploads fail)
+
+The browser uploads media files directly to R2 via a presigned URL. R2
+ships CORS-locked — without a CORS rule the browser's PUT dies with
+`Failed to fetch`, and assets never reach the bucket. Set this once
+in the Cloudflare dashboard:
+
+1. Cloudflare → **R2** → click your bucket
+2. **Settings** tab → **CORS Policy** → **Edit CORS policy**
+3. Paste this and save:
+
+```json
+[
+  {
+    "AllowedOrigins": ["https://*.vercel.app", "http://localhost:3000"],
+    "AllowedMethods": ["PUT", "GET", "HEAD"],
+    "AllowedHeaders": ["*"],
+    "ExposeHeaders": ["ETag"],
+    "MaxAgeSeconds": 3600
+  }
+]
+```
+
+If you deploy to a custom domain, add that too — e.g.
+`"https://your-app.example.com"`. The `https://*.vercel.app` wildcard
+already covers every Vercel preview and production URL Vercel hands you.
+
 ### Run
 
 ```bash
