@@ -25,6 +25,7 @@ import { ScissorsEdge } from './edges/scissors-edge'
 import '@xyflow/react/dist/style.css'
 import { useCanvasAutoSave } from '@/hooks/use-canvas-auto-save'
 import { CanvasToolbar } from './canvas-toolbar'
+import { JobsPanel } from './jobs-panel'
 import { LeftToolbar, type Asset, type AssetCategory } from './left-toolbar'
 import { BottomBar } from './bottom-bar'
 import { SceneTimeline, type Scene, type Shot } from './scene-timeline'
@@ -202,6 +203,21 @@ function CanvasInner({ projectId }: { projectId: string }) {
   
   // History panel state (for generations)
   const [showHistory, setShowHistory] = useState(false)
+  // Right-side jobs panel: open/close state lives here so the panel
+  // survives canvas re-renders and stays open while the user pans/zooms.
+  const [jobsPanelOpen, setJobsPanelOpen] = useState(false)
+  // Count of jobs currently running on this canvas — used to show a
+  // small accent dot on the toolbar's Jobs button so the user knows
+  // something is in flight even when the panel is closed.
+  const activeJobCount = useMemo(
+    () =>
+      nodes.filter(n => {
+        if (n.type !== 'imageGen' && n.type !== 'videoGen') return false
+        const s = (n.data as any)?.status as string | undefined
+        return s === 'submitting' || s === 'in_queue' || s === 'in_progress'
+      }).length,
+    [nodes],
+  )
   
   // Active tool state
   const [activeTool, setActiveTool] = useState<'select' | 'cut' | 'sticker' | 'comment'>('select')
@@ -924,7 +940,14 @@ function CanvasInner({ projectId }: { projectId: string }) {
         onProjectNameChange={handleProjectNameChange}
         saveStatus={saveStatus === 'saving' ? 'unsaved' : saveStatus}
         projectId={projectId}
+        jobsPanelOpen={jobsPanelOpen}
+        onToggleJobsPanel={() => setJobsPanelOpen(v => !v)}
+        activeJobCount={activeJobCount}
       />
+
+      {/* Right-side jobs panel — fixed position, doesn't capture canvas
+          clicks so the user can pan/zoom/edit while it stays open. */}
+      <JobsPanel open={jobsPanelOpen} onClose={() => setJobsPanelOpen(false)} />
 
       <div className="flex-1 relative" ref={flowRef} onDragOver={handleDragOver} onDrop={handleDrop} onDragLeave={handleDragLeave}>
         {isDragOver && (

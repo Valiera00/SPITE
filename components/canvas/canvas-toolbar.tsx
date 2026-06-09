@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { ArrowLeft, MagnifyingGlassPlus, MagnifyingGlassMinus, CornersOut, Lock, CheckCircle, Circle, GearSix } from '@phosphor-icons/react'
+import { ArrowLeft, MagnifyingGlassPlus, MagnifyingGlassMinus, CornersOut, Lock, CheckCircle, Circle, GearSix, ListChecks } from '@phosphor-icons/react'
 import { useReactFlow } from '@xyflow/react'
 import { useState } from 'react'
 import { useAuth } from '@/components/auth-provider'
@@ -12,9 +12,15 @@ interface CanvasToolbarProps {
   onProjectNameChange: (name: string) => void
   saveStatus: 'saved' | 'unsaved'
   projectId: string
+  // Right-side jobs panel: workspace owns the open/close state so the
+  // panel persists across canvas interactions and the toolbar just
+  // triggers the toggle.
+  jobsPanelOpen?: boolean
+  onToggleJobsPanel?: () => void
+  activeJobCount?: number
 }
 
-export function CanvasToolbar({ projectName, onProjectNameChange, saveStatus, projectId }: CanvasToolbarProps) {
+export function CanvasToolbar({ projectName, onProjectNameChange, saveStatus, projectId, jobsPanelOpen, onToggleJobsPanel, activeJobCount = 0 }: CanvasToolbarProps) {
   const { zoomIn, zoomOut, fitView } = useReactFlow()
   const [editing, setEditing] = useState(false)
   const { logout } = useAuth()
@@ -93,6 +99,29 @@ export function CanvasToolbar({ projectName, onProjectNameChange, saveStatus, pr
         </div>
 
         <div className="w-px h-4 bg-border mx-1" />
+
+        {/* Jobs panel toggle — only renders when the workspace wires
+            it up (effectively always, but the prop is optional so the
+            toolbar can render without it during early init). */}
+        {onToggleJobsPanel && (
+          <button
+            onClick={onToggleJobsPanel}
+            className={`relative flex items-center justify-center w-7 h-7 rounded-lg transition-colors ${
+              jobsPanelOpen
+                ? 'bg-accent/20 text-accent'
+                : 'glass-hover text-muted-foreground hover:text-foreground'
+            }`}
+            title={jobsPanelOpen ? 'Close jobs panel' : 'Open jobs panel'}
+          >
+            <ListChecks size={13} weight="thin" />
+            {activeJobCount > 0 && !jobsPanelOpen && (
+              <span
+                className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-accent animate-pulse"
+                title={`${activeJobCount} active job${activeJobCount === 1 ? '' : 's'}`}
+              />
+            )}
+          </button>
+        )}
 
         <FalBalanceBadge />
 

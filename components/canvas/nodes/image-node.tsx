@@ -153,6 +153,11 @@ function ImageNodeImpl({ id, data, selected }: NodeProps) {
   const [error, setError] = useState<string | null>(null)
   const [outputUrl, setOutputUrl] = useState<string | null>((data.outputUrl as string) || null)
   const [requestId, setRequestId] = useState<string | null>(null)
+  // Timestamp of the most recent submission. Powers the relative-age
+  // display in the right-side jobs panel.
+  const [submittedAt, setSubmittedAt] = useState<number | undefined>(
+    (data.submittedAt as number) || undefined,
+  )
   // The exact fal queue path to poll, as told to us by the submit response.
   const [falEndpoint, setFalEndpoint] = useState<string | null>(null)
   const [imageAspect, setImageAspect] = useState<number | null>(null) // null = no image yet
@@ -327,9 +332,9 @@ function ImageNodeImpl({ id, data, selected }: NodeProps) {
   useEffect(() => {
     setNodes(ns => ns.map(n => n.id === id ? {
       ...n,
-      data: { ...n.data, prompt, modelId, aspectRatio, resolution, numImages, outputUrl, mentions }
+      data: { ...n.data, prompt, modelId, aspectRatio, resolution, numImages, outputUrl, mentions, status, error, submittedAt }
     } : n))
-  }, [prompt, modelId, aspectRatio, resolution, numImages, outputUrl, mentions, id, setNodes])
+  }, [prompt, modelId, aspectRatio, resolution, numImages, outputUrl, mentions, status, error, submittedAt, id, setNodes])
 
   // Auto-name: once a generation completes, replace the default
   // "Image Generator #N" label with the first few words of the prompt.
@@ -621,6 +626,7 @@ function ImageNodeImpl({ id, data, selected }: NodeProps) {
       return
     }
 
+    setSubmittedAt(Date.now())
     setStatus('submitting')
     setError(null)
     setOutputUrl(null)
