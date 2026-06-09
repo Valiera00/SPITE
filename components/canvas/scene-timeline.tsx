@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef } from 'react'
-import { Plus, CaretDown, Play, CaretLeft, CaretRight, Image as ImageIcon, DownloadSimple, CircleNotch } from '@phosphor-icons/react'
+import { Plus, CaretDown, Play, CaretLeft, CaretRight, Image as ImageIcon, DownloadSimple, CircleNotch, Trash } from '@phosphor-icons/react'
 import { toast } from 'sonner'
 import { exportScenesAsZip } from '@/lib/export-scenes'
 
@@ -29,6 +29,7 @@ interface SceneTimelineProps {
   activeSceneId: string
   onSceneChange: (sceneId: string) => void
   onAddScene: () => void
+  onDeleteScene?: (sceneId: string) => void
   onShotClick?: (sceneId: string, shotId: string) => void
   onReorderShot?: (sceneId: string, shotId: string, newIndex: number) => void
   // Optional project name used as the downloaded zip's filename.
@@ -40,11 +41,16 @@ export function SceneTimeline({
   activeSceneId,
   onSceneChange,
   onAddScene,
+  onDeleteScene,
   onShotClick,
   onReorderShot,
   projectName,
 }: SceneTimelineProps) {
   const [exporting, setExporting] = useState(false)
+  // Confirmation modal for scene deletion. Null = no modal. Stores
+  // the scene id + name so the message can name the scene the user
+  // is about to delete.
+  const [pendingDelete, setPendingDelete] = useState<{ id: string; name: string; shotCount: number } | null>(null)
 
   // Down the line we could open a small dialog asking "one zip vs zip
   // per scene" / "rename to Shot1.. or keep labels" — for now the chosen
@@ -135,10 +141,14 @@ export function SceneTimeline({
           <CaretLeft size={16} weight="bold" />
         </button>
 
-        {/* Scrollable scene tabs — ~20% taller than before (h-20 → h-24) */}
+        {/* Scrollable scene tabs — ~20% taller than before (h-20 → h-24).
+            Scrollbar is now visible + dark-themed (see globals.css) so the
+            user can drag the thumb instead of relying on the +/- arrows.
+            Without the hidden class the default browser scrollbar showed
+            up as bright white against the near-black canvas. */}
         <div
           ref={scrollRef}
-          className="flex-1 flex items-stretch h-24 overflow-x-auto gap-1.5 px-1 py-2 scrollbar-hide"
+          className="flex-1 flex items-stretch h-24 overflow-x-auto gap-1.5 px-1 py-2"
         >
           {scenes.map((scene) => {
             const isActive = scene.id === activeSceneId
@@ -156,8 +166,13 @@ export function SceneTimeline({
               <div
                 key={scene.id}
                 onClick={() => onSceneChange(scene.id)}
+                // shrink-0 is the critical bit — without it, flex would
+                // shrink tiles below their min-width when many scenes
+                // are added (the symptom was 17 squished tiles instead
+                // of a scrollable strip). Collapsed tiles get a slightly
+                // larger min so even the compact form stays readable.
                 className={`
-                  relative flex items-center gap-2.5 px-4 ${isCollapsed ? 'min-w-[140px]' : 'min-w-[200px]'} rounded-lg cursor-pointer transition-all
+                  group/scene relative flex items-center gap-2.5 px-4 shrink-0 ${isCollapsed ? 'min-w-[160px]' : 'min-w-[220px]'} rounded-lg cursor-pointer transition-all
                   ${isActive
                     ? 'bg-accent/10 border border-accent/40'
                     : 'bg-card/30 border border-border/30 hover:bg-card/50 hover:border-border/50'}
@@ -275,6 +290,31 @@ export function SceneTimeline({
                 >
                   <Plus size={14} weight="bold" />
                 </button>
+
+                {/* Delete scene — only revealed on hover so the bar
+                    stays calm, and only when the parent provided an
+                    onDeleteScene handler. Also hidden when there's
+                    only one scene left (can't delete the last one
+                    without leaving the user with nothing to switch
+                    back to). Clicking opens a confirmation modal
+                    rather than nuking immediately. */}
+                {onDeleteScene && scenes.length > 1 && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setPendingDelete({
+                        id: scene.id,
+                        name: scene.name,
+                        shotCount: realShots.length,
+                      })
+                    }}
+                    className="shrink-0 w-7 h-7 rounded flex items-center justify-center text-muted-foreground/30 hover:bg-red-500/15 hover:text-red-400 opacity-0 group-hover/scene:opacity-100 transition-all"
+                    aria-label={`Delete ${scene.name}`}
+                    title={`Delete ${scene.name}`}
+                  >
+                    <Trash size={13} weight="bold" />
+                  </button>
+                )}
               </div>
             )
           })}
@@ -335,6 +375,49 @@ export function SceneTimeline({
           </button>
         </div>
       </div>
+
+      {/* Delete-scene confirmation modal. Backdrop closes (treats as
+          cancel), escape key closes via the backdrop's onClick. The
+          parent owns the actual deletion via onDeleteScene; we just
+          gate it on a user confirmation. */}
+      {pendingDelete && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm"
+          onClick={() => setPendingDelete(null)}
+        >
+          <div
+            className="w-[420px] max-w-[90vw] rounded-xl border border-border/40 bg-[#0a0c0e] p-6 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-base font-medium text-foreground mb-2">
+              Delete {pendingDelete.name}?
+            </h3>
+            <p className="text-[13px] text-muted-foreground leading-relaxed mb-5">
+              {pendingDelete.shotCount > 0
+                ? `This scene has ${pendingDelete.shotCount} tagged shot${pendingDelete.shotCount === 1 ? '' : 's'}. Every node on its canvas will be deleted along with it.`
+                : 'All nodes on this scene’s canvas will be deleted.'}
+              {' '}This can’t be undone.
+            </p>
+            <div className="flex items-center justify-end gap-2">
+              <button
+                onClick={() => setPendingDelete(null)}
+                className="px-3 py-1.5 rounded text-[13px] text-muted-foreground hover:text-foreground hover:bg-white/5 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  onDeleteScene?.(pendingDelete.id)
+                  setPendingDelete(null)
+                }}
+                className="px-3 py-1.5 rounded text-[13px] bg-red-500/15 text-red-400 hover:bg-red-500/25 transition-colors"
+              >
+                Delete scene
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -1,6 +1,47 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
 
+/* Dark-theme scrollbars. The browser default is a pale grey track that
+   reads as white on our near-black surfaces; this overrides it. Applies
+   to every scrollable surface in the app — there is no other scrollbar
+   styling so this is the single source of truth.
+
+   `.scrollbar-hide` actually hides the scrollbar (the class was used
+   in scene-timeline before but had no definition, leaving the default
+   pale scrollbar visible). */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(107, 143, 168, 0.35) rgba(255, 255, 255, 0.03);
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.03);
+}
+*::-webkit-scrollbar-thumb {
+  background: rgba(107, 143, 168, 0.35);
+  border-radius: 6px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(107, 143, 168, 0.55);
+  background-clip: padding-box;
+  border: 2px solid transparent;
+}
+
+.scrollbar-hide {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
 @keyframes shake {
   0%, 100% { transform: translateX(0); }
   10%, 30%, 50%, 70%, 90% { transform: translateX(-4px); }

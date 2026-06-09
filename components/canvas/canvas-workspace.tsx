@@ -393,7 +393,7 @@ function CanvasInner({ projectId }: { projectId: string }) {
   
   const [minimapOpen, setMinimapOpen] = useState(true)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; flowPos: { x: number; y: number } } | null>(null)
-  const { fitView, screenToFlowPosition, setCenter, setViewport } = useReactFlow()
+  const { fitView, screenToFlowPosition, setCenter, setViewport, getNodes } = useReactFlow()
   const viewport = useViewport()
 
   // Persist the viewport (pan + zoom) per-project to localStorage so the
@@ -428,6 +428,45 @@ function CanvasInner({ projectId }: { projectId: string }) {
     setScenes(s => [...s, newScene])
     setActiveSceneId(newScene.id)
   }, [scenes.length])
+
+  // Delete a scene: remove the scene itself, every node tagged with
+  // that sceneId, and every edge between those nodes. Auto-save will
+  // catch up and remove the rows from the canvas_nodes / canvas_edges
+  // tables on the next debounced write.
+  //
+  // If the active scene is being deleted, switch to the previous scene
+  // in the list (or the first one if we're deleting the first scene)
+  // before the removal so the user isn't left looking at an empty
+  // canvas with no active sceneId.
+  const handleDeleteScene = useCallback((sceneId: string) => {
+    // Snapshot the doomed node ids BEFORE mutating state so we can
+    // filter edges in the same pass without depending on setState
+    // ordering. setNodes/setEdges are queued in React and the edge
+    // filter ran against a stale nodes array in the previous draft.
+    const doomedNodeIds = new Set(
+      getNodes()
+        .filter(n => (n.data as any)?.sceneId === sceneId)
+        .map(n => n.id),
+    )
+    setScenes(prev => {
+      const idx = prev.findIndex(s => s.id === sceneId)
+      if (idx === -1) return prev
+      const next = prev.filter(s => s.id !== sceneId)
+      if (sceneId === activeSceneId && next.length > 0) {
+        // Switch to the neighbour: previous scene if there is one,
+        // otherwise the new first scene.
+        const fallback = next[Math.max(0, idx - 1)]
+        setActiveSceneId(fallback.id)
+      }
+      return next
+    })
+    setNodes((ns: Node[]) =>
+      (ns as Node[]).filter(n => !doomedNodeIds.has(n.id)),
+    )
+    setEdges((es: Edge[]) =>
+      (es as Edge[]).filter(e => !doomedNodeIds.has(e.source) && !doomedNodeIds.has(e.target)),
+    )
+  }, [activeSceneId, setNodes, setEdges, getNodes])
 
   // Asset handlers
   const handleSelectAsset = useCallback((asset: Asset) => {}, [])
@@ -968,6 +1007,7 @@ function CanvasInner({ projectId }: { projectId: string }) {
         activeSceneId={activeSceneId}
         onSceneChange={setActiveSceneId}
         onAddScene={handleAddScene}
+        onDeleteScene={handleDeleteScene}
         onShotClick={handleShotClick}
         projectName={projectName}
       />
