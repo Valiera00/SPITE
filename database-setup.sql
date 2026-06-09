@@ -129,6 +129,16 @@ CREATE TABLE IF NOT EXISTS spend_ledger (
     created_at     timestamptz NOT NULL DEFAULT now()
 );
 
+-- Voice ID cache: maps an audio asset's SPITE proxy URL to the
+-- fal-issued voice_id created from it (Kling 2.6 voice cloning).
+-- Each unique audio file costs one fal create-voice call; everything
+-- after that hits the cache and is instant.
+CREATE TABLE IF NOT EXISTS voice_id_cache (
+    audio_url   text PRIMARY KEY,
+    voice_id    text NOT NULL,
+    created_at  timestamptz NOT NULL DEFAULT now()
+);
+
 -- Helpful indexes for the most common lookups.
 CREATE INDEX IF NOT EXISTS idx_generation_history_project ON generation_history (project_id);
 CREATE INDEX IF NOT EXISTS idx_assets_project           ON assets (projectid);

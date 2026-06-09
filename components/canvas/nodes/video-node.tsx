@@ -541,6 +541,7 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
     let connectedEndImageUrl: string | null = null
     let connectedReferenceUrls: string[] = []
     let connectedVideoUrl: string | null = null
+    let connectedAudioUrl: string | null = null
 
     const urlOfSource = (edge: any) => {
       const sourceNode = nodes.find(n => n.id === edge.source)
@@ -610,6 +611,24 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
         const sourceVideoUrl = (sourceNode?.data?.outputUrl || sourceNode?.data?.thumbnail) as string | undefined
         if (sourceVideoUrl) {
           connectedVideoUrl = sourceVideoUrl
+        }
+      }
+
+      // Connected audio (Kling 2.6 only). Matches audio-in handle or
+      // any edge whose source is the audio-out handle on an audio
+      // reference node. Server-side will auto-create voice_id via fal.
+      const incomingAudioEdges = edges.filter(
+        edge => edge.target === id && (
+          edge.targetHandle === 'audio-in' ||
+          edge.sourceHandle === 'audio-out'
+        )
+      )
+      if (incomingAudioEdges.length > 0) {
+        const audioEdge = incomingAudioEdges[0]
+        const sourceNode = nodes.find(n => n.id === audioEdge.source)
+        const sourceAudioUrl = (sourceNode?.data?.thumbnail || sourceNode?.data?.outputUrl) as string | undefined
+        if (sourceAudioUrl) {
+          connectedAudioUrl = sourceAudioUrl
         }
       }
       
@@ -696,6 +715,10 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
           enableAudio,
           enableLoop,
           videoUrl: connectedVideoUrl || undefined,
+          // Connected audio asset URL (Kling 2.6 only). Server creates
+          // and caches a fal voice_id for this audio, appends it to the
+          // voice_ids array, runs the generation.
+          audioUrl: connectedAudioUrl || undefined,
           // Upscaler mode picks the Topaz model variant server-side.
           upscaleMode,
           // Kling 2.6 voice IDs — parsed server-side into array.
@@ -968,6 +991,17 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
         <>
           <Handle type="target" id="reference-in" title="Reference image(s)" position={Position.Left} style={{ top: 250, left: -12, opacity: 0, width: 24, height: 24, zIndex: 5 }} />
           <HandleIcon icon={ImageIcon} color="rgba(236,72,153,0.9)" position="left" top={250} visible />
+        </>
+      )}
+
+      {/* Audio voice (amber) — Kling 2.6 only. Wire an audio reference
+          here and SPITE auto-creates a voice_id via fal's create-voice
+          endpoint, caches it, and uses it without the user having to
+          paste anything. */}
+      {currentModel?.id === 'kling-2.6' && (
+        <>
+          <Handle type="target" id="audio-in" title="Voice reference audio" position={Position.Left} style={{ top: 370, left: -12, opacity: 0, width: 24, height: 24, zIndex: 5 }} />
+          <HandleIcon icon={SpeakerHigh} color="rgba(251,191,36,0.9)" position="left" top={370} visible />
         </>
       )}
 

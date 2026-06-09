@@ -3,6 +3,7 @@ import { getModelById, buildModelInput } from '@/lib/fal-models'
 import { toFalFetchableUrl } from '@/lib/r2-upload'
 import { estimateGenerationCost } from '@/lib/fal-cost'
 import { reserveSpend, rollbackSpend } from '@/lib/spend-gate'
+import { getOrCreateVoiceId } from '@/lib/fal-voices'
 
 export async function POST(request: NextRequest) {
   // KILL SWITCH — set GENERATION_DISABLED=1 in Vercel env vars to halt
@@ -197,6 +198,41 @@ export async function POST(request: NextRequest) {
   // (also signed so fal can fetch it).
   if (settings?.videoUrl) {
     input.video_url = await toFalFetchableUrl(settings.videoUrl)
+  }
+
+  // Kling 2.6 + wired audio reference → auto-create a voice_id via
+  // fal's create-voice endpoint, cache it, append to whatever the user
+  // typed in the manual voice-IDs box. The voice_id refresh path is
+  // expensive (~10–30 s the first time per unique audio), but the
+  // cache means subsequent uses are instant.
+  if (model.id === 'kling-2.6' && settings?.audioUrl) {
+    try {
+      const audioFetchable = await toFalFetchableUrl(settings.audioUrl)
+      if (audioFetchable) {
+        const autoVoiceId = await getOrCreateVoiceId(
+          settings.audioUrl,  // cache key — proxy URL is stable per asset
+          audioFetchable,     // sent to fal — presigned R2 URL
+          falKey,
+        )
+        // Prepend the auto-created voice_id so it occupies <<<voice_1>>>
+        // unless the user explicitly put their own first.
+        if (autoVoiceId) {
+          const existing = (input.voice_ids as string[] | undefined) || []
+          input.voice_ids = Array.from(new Set([autoVoiceId, ...existing])).slice(0, 2)
+        }
+      }
+    } catch (err) {
+      console.error('[generate/submit] voice creation failed:', err)
+      // Rollback the spend reservation and surface a usable error.
+      await rollbackSpend(reservation.ledgerId)
+      return NextResponse.json(
+        {
+          error:
+            'Voice creation from the wired audio failed. Try again, or paste a voice_id manually in the Voice IDs field.',
+        },
+        { status: 500 },
+      )
+    }
   }
 
   // Pick the endpoint: separate reference endpoint > image-to-image /
