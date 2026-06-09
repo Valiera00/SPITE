@@ -625,7 +625,12 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
       compiledPrompt = prompt.trim()
     }
 
-    if (!compiledPrompt) {
+    // Upscalers (Topaz Standard mode) don't take a prompt — a connected
+    // video on video-in is the readiness signal. Don't block submission
+    // here for those; let the server handle whatever's missing.
+    const isUpscalerStandard =
+      modelId === 'topaz-video-upscale' && upscaleMode === 'standard'
+    if (!compiledPrompt && !isUpscalerStandard) {
       setError('Please enter a prompt')
       return
     }
