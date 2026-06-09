@@ -1032,8 +1032,16 @@ function CanvasInner({ projectId }: { projectId: string }) {
       const isActive = selectedNodeIds.has(edge.source) || selectedNodeIds.has(edge.target)
       return {
         ...edge,
-        animated: isActive,
-        style: { stroke: '#6B8FA8', strokeWidth: 2, opacity: isActive ? 1 : 0.5 },
+        // Force the braided-cord edge component. Saved/loaded edges and edges
+        // from onConnect don't carry a type, so without this they'd fall back
+        // to React Flow's built-in line (which goes dashed when animated).
+        type: 'scissors',
+        // The cord runs its own hover/active animation; don't use React Flow's
+        // `animated` (that's what produced the dashed look). Pass the active
+        // state through data so a selected node lights up its connected cords.
+        animated: false,
+        data: { ...(edge.data || {}), active: isActive },
+        style: { stroke: '#aec3d2' },
       }
     })
   }, [sceneNodes, sceneEdges])

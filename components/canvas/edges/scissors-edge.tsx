@@ -145,16 +145,24 @@ export function ScissorsEdge({
   targetPosition,
   style,
   selected,
+  data,
 }: EdgeProps) {
   const [hovered, setHovered] = useState(false)
   const { setEdges, getEdges } = useReactFlow()
 
-  // "live" = brighter styling (hover or selected). "animate" = run the twist:
-  // always on hover (1 cord), and on selection only while the selected-cord
-  // count stays within ANIM_CAP — otherwise fall back to a static highlight.
-  const live = hovered || !!selected
-  const selectedCount = selected ? getEdges().filter((e) => e.selected).length : 0
-  const animate = hovered || (!!selected && selectedCount <= ANIM_CAP)
+  // "active" = a node this cord connects to is selected (flagged by the canvas
+  // in edge.data.active), or the edge itself is selected. "live" = brighter
+  // styling. "animate" = run the gentle twist: always on hover (1 cord), and
+  // for active cords only while the active count stays within ANIM_CAP —
+  // above that they brighten statically instead of all animating at once.
+  const active = !!(data as { active?: boolean } | undefined)?.active || !!selected
+  const live = hovered || active
+  const activeCount = active
+    ? getEdges().filter(
+        (e) => (e.data as { active?: boolean } | undefined)?.active || e.selected,
+      ).length
+    : 0
+  const animate = hovered || (active && activeCount <= ANIM_CAP)
 
   // Bezier control points from the handle directions; gentle braid amplitude.
   const geo = useMemo(() => {
