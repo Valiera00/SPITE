@@ -553,6 +553,10 @@ export function buildModelInput(
     // Topaz upscaler mode — picks which underlying Topaz model variant
     // to send. Doesn't affect any other model.
     upscaleMode?: 'standard' | 'creative'
+    // Kling 2.6 voice IDs — comma-separated string of fal-issued voice
+    // IDs from the create-voice endpoint. Server splits into array;
+    // max 2 used by fal even if more supplied.
+    voiceIds?: string
   } = {}
 ): Record<string, any> {
   const input: Record<string, any> = {}
@@ -786,6 +790,19 @@ export function buildModelInput(
     // Always send the boolean — defaulting to fal's `true` would silently
     // bill the user 2x for a setting they couldn't see.
     input.generate_audio = !!options.enableAudio
+    // Voice IDs: split comma-separated input, trim, dedupe, cap at 2 per
+    // fal's documented max. Only sent when the user supplied at least one.
+    if (options.voiceIds && options.voiceIds.trim()) {
+      const ids = Array.from(
+        new Set(
+          options.voiceIds
+            .split(',')
+            .map(s => s.trim())
+            .filter(Boolean),
+        ),
+      ).slice(0, 2)
+      if (ids.length > 0) input.voice_ids = ids
+    }
     return input
   }
 

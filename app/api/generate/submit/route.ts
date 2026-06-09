@@ -183,6 +183,9 @@ export async function POST(request: NextRequest) {
     // Pass through the upscaler mode so buildModelInput can pick the
     // right Topaz model variant (Proteus vs Starlight HQ).
     upscaleMode: settings?.upscaleMode,
+    // Kling 2.6 voice IDs (comma-separated string). buildModelInput
+    // parses, dedupes, and caps at 2 per fal's documented max.
+    voiceIds: settings?.voiceIds,
   })
 
   // Batch image count — image models only (video models produce one clip).

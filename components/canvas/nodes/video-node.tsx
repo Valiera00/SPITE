@@ -148,6 +148,11 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
   const [resolution, setResolution] = useState((data.resolution as string) || '')
   const [enableAudio, setEnableAudio] = useState((data.enableAudio as boolean) || false)
   const [enableLoop, setEnableLoop] = useState((data.enableLoop as boolean) || false)
+  // Kling 2.6 voice IDs — up to 2, comma-separated in the input box.
+  // User pastes IDs they generated from fal's create-voice endpoint;
+  // SPITE forwards them as voice_ids on submit. They reference voices
+  // in the prompt with <<<voice_1>>> / <<<voice_2>>>.
+  const [voiceIds, setVoiceIds] = useState((data.voiceIds as string) || '')
   // Video models are expensive enough (Seedance ≈ $4.50 per 5-sec clip,
   // Kling Pro variants higher) that we deliberately DON'T persist the
   // counter across reloads. Every session starts at 1, and bumping it
@@ -285,9 +290,9 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
   useEffect(() => {
     setNodes(ns => ns.map(n => n.id === id ? {
       ...n,
-      data: { ...n.data, prompt, modelId, duration, aspectRatio, resolution, enableAudio, enableLoop, numVideos, outputUrl, mentions, upscaleMode, status, error, submittedAt }
+      data: { ...n.data, prompt, modelId, duration, aspectRatio, resolution, enableAudio, enableLoop, numVideos, outputUrl, mentions, upscaleMode, voiceIds, status, error, submittedAt }
     } : n))
-  }, [prompt, modelId, duration, aspectRatio, resolution, enableAudio, enableLoop, numVideos, outputUrl, mentions, upscaleMode, status, error, submittedAt, id, setNodes])
+  }, [prompt, modelId, duration, aspectRatio, resolution, enableAudio, enableLoop, numVideos, outputUrl, mentions, upscaleMode, voiceIds, status, error, submittedAt, id, setNodes])
 
   // Auto-name: once a generation completes, replace the default
   // "Video Generator #N" label with the first few words of the prompt.
@@ -693,6 +698,8 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
           videoUrl: connectedVideoUrl || undefined,
           // Upscaler mode picks the Topaz model variant server-side.
           upscaleMode,
+          // Kling 2.6 voice IDs — parsed server-side into array.
+          voiceIds: voiceIds.trim() || undefined,
         },
       })
 
@@ -1059,6 +1066,27 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
               className="nodrag w-full bg-transparent resize-none outline-none text-[12px] text-foreground/90 placeholder:text-muted-foreground/40 leading-relaxed disabled:opacity-50 cursor-text"
               rows={2}
             />
+          </div>
+        )}
+
+        {/* Kling 2.6 voice ID slots. Only shown for kling-2.6 since it's
+            the only model on our list that supports this. Max 2 voices
+            per fal docs; user references them in the prompt with
+            <<<voice_1>>> and <<<voice_2>>>. Comma-separated input;
+            server splits and sends as voice_ids array. */}
+        {modelId === 'kling-2.6' && (
+          <div className="px-3 pb-2">
+            <input
+              type="text"
+              value={voiceIds}
+              onChange={e => setVoiceIds(e.target.value)}
+              placeholder="Voice IDs — paste from fal create-voice (max 2, comma-separated)"
+              disabled={isGenerating}
+              className="nodrag w-full bg-white/[0.03] border border-white/[0.06] rounded-md px-2 py-1.5 text-[11px] font-mono text-foreground/90 placeholder:text-muted-foreground/40 outline-none focus:border-accent/40 disabled:opacity-50"
+            />
+            <p className="text-[9px] font-mono text-muted-foreground/40 mt-1 leading-snug">
+              Reference in prompt as {`<<<voice_1>>>`} / {`<<<voice_2>>>`}. Get IDs from fal&apos;s create-voice endpoint.
+            </p>
           </div>
         )}
 
