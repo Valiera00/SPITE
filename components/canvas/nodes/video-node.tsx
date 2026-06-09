@@ -177,6 +177,7 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
   let hasConnectedPrompts = false
   let hasConnectedFirstFrame = false
   let hasConnectedReferences = false
+  let hasConnectedVideo = false
   try {
     const edges = getEdges()
     const allIncomingEdges = edges.filter(edge => edge.target === id)
@@ -188,6 +189,9 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
       (e.sourceHandle === 'image-out' && e.targetHandle !== 'end-frame-in' && e.targetHandle !== 'reference-in' && e.targetHandle !== 'video-in')
     )
     hasConnectedReferences = allIncomingEdges.some(e => e.targetHandle === 'reference-in')
+    hasConnectedVideo = allIncomingEdges.some(e =>
+      e.targetHandle === 'video-in' || e.sourceHandle === 'video-out'
+    )
   } catch { /* ignore */ }
 
   // Get current model config
@@ -1188,7 +1192,17 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
           ) : (
             <button
               onClick={requestGenerate}
-              disabled={isGenerating || (!prompt.trim() && !hasConnectedPrompts) || blockedNoFirstFrame}
+              // Upscalers are video-in, not prompt-in — the "needs a prompt or
+              // a connected prompt node" check would always reject them. A
+              // connected video on video-in is the upscaler's equivalent
+              // readiness signal.
+              disabled={
+                isGenerating ||
+                blockedNoFirstFrame ||
+                (modelId === 'topaz-video-upscale'
+                  ? !hasConnectedVideo
+                  : !prompt.trim() && !hasConnectedPrompts)
+              }
               className="w-6 h-6 rounded-full bg-accent/20 hover:bg-accent text-accent hover:text-accent-foreground flex items-center justify-center transition-colors accent-glow disabled:opacity-50 disabled:cursor-not-allowed"
               title={generateTooltip}
             >
