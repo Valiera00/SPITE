@@ -1,12 +1,12 @@
 import { getDb } from '@/lib/db'
 import { NextRequest, NextResponse } from 'next/server'
 
-const sql = getDb()
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ projectId: string }> }
 ) {
   try {
+    const sql = getDb()
     const { projectId } = await params
 
     // Simple query - get all assets for project
@@ -24,6 +24,7 @@ export async function POST(
   { params }: { params: Promise<{ projectId: string }> }
 ) {
   try {
+    const sql = getDb()
     const { projectId } = await params
     const { assetId, tags } = await req.json()
 

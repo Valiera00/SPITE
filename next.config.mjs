@@ -1,7 +1,11 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   typescript: {
-    ignoreBuildErrors: true,
+    // Type errors fail the build. The codebase is TS-strict and currently
+    // type-clean, so this just stops a future type regression from silently
+    // shipping. If a forker's build ever fails here, the error message tells
+    // them exactly what to fix — don't flip this back to true to paper over it.
+    ignoreBuildErrors: false,
   },
   images: {
     unoptimized: true,

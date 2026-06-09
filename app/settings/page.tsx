@@ -312,7 +312,12 @@ export default function SettingsPage() {
               <p className="text-xs text-destructive">{passwordError}</p>
             )}
             {passwordSuccess && (
-              <p className="text-xs text-accent">Password changed successfully</p>
+              <p className="text-xs text-accent leading-relaxed">
+                Current password verified. The password can&apos;t be changed from
+                here at runtime — update <span className="font-mono">APP_PASSWORD</span>{' '}
+                in your Vercel environment variables and redeploy to make the new
+                one take effect.
+              </p>
             )}
             <button
               onClick={handlePasswordChange}

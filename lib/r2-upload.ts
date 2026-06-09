@@ -153,14 +153,14 @@ export async function rehostToR2(sourceUrl: string): Promise<string> {
 // that haven't migrated to the dedicated var yet. No literal-string default
 // — a public-knowledge fallback would let anyone mint signed URLs and
 // exfiltrate the entire bucket.
-function imageProxySecret(): string {
-  const secret = process.env.R2_PROXY_SIGNING_SECRET || process.env.APP_PASSWORD
-  if (!secret) {
-    throw new Error(
-      'imageProxySecret: set R2_PROXY_SIGNING_SECRET (preferred) or APP_PASSWORD',
-    )
-  }
-  return secret
+// Dedicated signing secret for the legacy /api/r2-image HMAC path-token URLs.
+// No APP_PASSWORD fallback: reusing the login password as an HMAC key couples
+// two unrelated secrets, and the current fal flow hands out R2 presigned URLs
+// (toFalFetchableUrl) rather than these tokens anyway. Returns null when
+// unset — verifyImageToken then treats the token path as disabled and callers
+// fall back to cookie auth, instead of throwing and breaking every image load.
+function imageProxySecret(): string | null {
+  return process.env.R2_PROXY_SIGNING_SECRET || null
 }
 
 // Turn an internal proxy path (/api/r2-image/<key>) into an absolute
@@ -198,9 +198,11 @@ export async function toFalFetchableUrl(
 // Validate a token produced by toFalFetchableUrl, used by the proxy route.
 export function verifyImageToken(key: string, exp: string | null, sig: string | null): boolean {
   if (!exp || !sig) return false
+  const secret = imageProxySecret()
+  if (!secret) return false // token path disabled unless R2_PROXY_SIGNING_SECRET is set
   const e = Number(exp)
   if (!e || Date.now() > e) return false
-  const expected = crypto.createHmac('sha256', imageProxySecret()).update(`${key}:${e}`).digest('hex')
+  const expected = crypto.createHmac('sha256', secret).update(`${key}:${e}`).digest('hex')
   try {
     return crypto.timingSafeEqual(Buffer.from(sig, 'hex'), Buffer.from(expected, 'hex'))
   } catch {

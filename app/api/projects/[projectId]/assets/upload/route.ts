@@ -3,12 +3,12 @@ import { getR2Client } from '@/lib/r2-upload'
 import { getDb } from '@/lib/db'
 import { NextRequest, NextResponse } from 'next/server'
 
-const sql = getDb()
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ projectId: string }> }
 ) {
   try {
+    const sql = getDb()
     const { projectId } = await params
     const formData = await req.formData()
     const file = formData.get('file') as File
@@ -57,6 +57,7 @@ export async function DELETE(
   { params }: { params: Promise<{ projectId: string }> }
 ) {
   try {
+    const sql = getDb()
     const { projectId } = await params
     const { assetId, filename } = await req.json()
 

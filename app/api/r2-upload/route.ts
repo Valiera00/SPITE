@@ -1,14 +1,6 @@
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3'
+import { PutObjectCommand } from '@aws-sdk/client-s3'
 import { NextRequest, NextResponse } from 'next/server'
-
-const s3Client = new S3Client({
-  region: 'auto',
-  credentials: {
-    accessKeyId: process.env.R2_ACCESS_KEY_ID!,
-    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY!,
-  },
-  endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
-})
+import { getR2Client } from '@/lib/r2-upload'
 
 export async function POST(req: NextRequest) {
   console.log('[R2 Upload] Starting upload...')
@@ -48,7 +40,7 @@ export async function POST(req: NextRequest) {
     console.log('[R2 Upload] Uploading to R2 key:', key)
 
     // Upload to R2
-    await s3Client.send(
+    await getR2Client().send(
       new PutObjectCommand({
         Bucket: process.env.R2_BUCKET_NAME!,
         Key: key,
