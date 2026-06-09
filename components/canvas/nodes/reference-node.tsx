@@ -5,7 +5,8 @@ import { useParams } from 'next/navigation'
 import { Image as ImageIcon, UploadSimple, CircleNotch, VideoCamera, SpeakerHigh } from '@phosphor-icons/react'
 import { memo, useState, useEffect, useRef } from 'react'
 import { NodeActionToolbar } from './node-toolbar'
-import { ShotSelector, type ShotOption } from './shot-selector'
+import { ShotSelector } from './shot-selector'
+import { useSceneShots } from './use-scene-shots'
 import { AddToFolderModal } from '../add-to-folder-modal'
 import { Lightbox } from '../lightbox'
 
@@ -32,20 +33,61 @@ function ReferenceNodeImpl({ id, data, selected }: NodeProps) {
     }
   }, [data.thumbnail, thumbnail])
 
-  const shots: ShotOption[] = (data.availableShots as ShotOption[]) || [
-    { id: 'shot-1', label: 'Select shot' },
-  ]
-  const selectedShotId = (data.selectedShotId as string) || undefined
+  // Reference nodes used to read/write `selectedShotId` while image and
+  // video generator nodes used `shotId`. That field-name split made the
+  // dashboard thumbnail SQL and the scene timeline derivation blind to
+  // reference-node assignments — picking a shot did nothing visible.
+  // Fix: standardise on `shotId` (matches image/video-gen, what
+  // useSceneShots and the dashboard look at), but still READ
+  // `selectedShotId` so any assignments saved by the previous code
+  // keep working until the user re-touches them.
+  const shots = useSceneShots(id)
+  const selectedShotId =
+    (data.shotId as string | undefined) ||
+    (data.selectedShotId as string | undefined) ||
+    undefined
   const isTaggedToShot = !!selectedShotId
   const isUploading = data.isUploading as boolean
   const isAudio = (data.mediaType as string) === 'audio' || /\.(mp3|wav|m4a|ogg|aac|flac)(\?|$)/i.test(thumbnail || '')
   const isVideo = !isAudio && ((data.mediaType as string) === 'video' || /\.(mp4|webm|mov|m4v)(\?|$)/i.test(thumbnail || ''))
 
   const handleShotSelect = (shotId: string) => {
-    setNodes(ns => ns.map(n => n.id === id ? { ...n, data: { ...n.data, selectedShotId: shotId } } : n))
+    // Empty string from the selector means "unassign". Storing undefined
+    // keeps the data object clean and matches the image/video-gen path.
+    // Also strips the legacy `selectedShotId` so the two fields can't
+    // drift apart for the same node from this point on.
+    setNodes(ns => ns.map(n => n.id === id ? {
+      ...n,
+      data: {
+        ...n.data,
+        shotId: shotId || undefined,
+        selectedShotId: undefined,
+      },
+    } : n))
   }
 
-  const handleNewShot = () => {}
+  // Mirror image/video-gen handleNewShot: tag this node as the next
+  // shot number after the highest existing shot in the SAME scene.
+  // Scenes are isolated by sceneId so two scenes can both have a
+  // "Shot 1" without colliding.
+  const handleNewShot = () => {
+    setNodes(ns => {
+      const self = ns.find(n => n.id === id)
+      const sceneId = (self?.data as any)?.sceneId as string | undefined
+      let maxNum = 0
+      for (const n of ns) {
+        if (sceneId && (n.data as any)?.sceneId !== sceneId) continue
+        const sid = (n.data as any)?.shotId || (n.data as any)?.selectedShotId
+        const m = String(sid || '').match(/^shot-(\d+)$/)
+        if (m) maxNum = Math.max(maxNum, parseInt(m[1], 10))
+      }
+      const next = maxNum + 1
+      return ns.map(n => n.id === id ? {
+        ...n,
+        data: { ...n.data, shotId: `shot-${next}`, selectedShotId: undefined },
+      } : n)
+    })
+  }
 
   const handleAddToFolder = (type: 'character' | 'prop' | 'location') => {
     setFolderType(type)

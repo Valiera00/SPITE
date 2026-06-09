@@ -138,14 +138,29 @@ export function ProjectCard({ id, name, thumbnail, lastModified, genre, onMutate
             )}
           </div>
 
-          {/* Thumbnail */}
+          {/* Thumbnail. The SQL prefers videoThumbnail (a poster image)
+              over outputUrl for video shots, so the URL we get here is
+              usually an image. But uploaded video references tagged as
+              shot-1 land here as a raw .mp4 with no poster, in which
+              case we render a <video> instead of a <img> so the user
+              sees the first frame instead of a broken image icon. */}
           <div className="relative w-full aspect-video overflow-hidden bg-[#0D0F12] dot-grid">
             {thumbnail ? (
-              <img
-                src={thumbnail}
-                alt={`${name} thumbnail`}
-                className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity duration-300"
-              />
+              /\.(mp4|webm|mov|m4v)(\?|$)/i.test(thumbnail) ? (
+                <video
+                  src={thumbnail}
+                  className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity duration-300"
+                  muted
+                  playsInline
+                  preload="metadata"
+                />
+              ) : (
+                <img
+                  src={thumbnail}
+                  alt={`${name} thumbnail`}
+                  className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity duration-300"
+                />
+              )
             ) : (
               <div className="absolute inset-0 flex items-center justify-center">
                 <FilmSlate

@@ -20,7 +20,13 @@ export function useSceneShots(selfNodeId: string): ShotOption[] {
     const parts: string[] = []
     for (const n of state.nodes) {
       if (sceneId && (n.data as any)?.sceneId !== sceneId) continue
-      const shotId = (n.data as any)?.shotId
+      // Read both fields: image/video-gen + new reference-node writes
+      // land in `shotId`; legacy reference-node assignments are in
+      // `selectedShotId`. We want the dropdown to expose both so an
+      // existing project keeps working until the user re-touches the
+      // old refs.
+      const shotId =
+        (n.data as any)?.shotId || (n.data as any)?.selectedShotId
       if (!shotId) continue
       const match = String(shotId).match(/^shot-(\d+)$/)
       if (!match) continue

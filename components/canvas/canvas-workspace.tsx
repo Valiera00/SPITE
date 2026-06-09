@@ -319,12 +319,16 @@ function CanvasInner({ projectId }: { projectId: string }) {
   const scenesWithShots = useMemo(() => {
     return scenes.map(scene => {
       const sceneNodes = (nodes as Node[]).filter(n => n.data.sceneId === scene.id)
-      // Build a map of shot number -> node for tagged nodes
-      const taggedNodes = sceneNodes.filter(n => n.data.shotId)
+      // Build a map of shot number -> node for tagged nodes. Falls back to
+      // the legacy `selectedShotId` field that older reference-node code
+      // wrote (before we standardised on `shotId`). Once a user re-touches
+      // an old reference-node assignment, the new code clears the legacy
+      // field so the two can't drift.
+      const taggedNodes = sceneNodes.filter(n => n.data.shotId || n.data.selectedShotId)
       const shotMap = new Map<number, Node>()
       for (const n of taggedNodes) {
-        // shotId is like 'shot-1', 'shot-2', etc. Parse the number out.
-        const match = String(n.data.shotId).match(/(\d+)$/)
+        const sid = (n.data.shotId || n.data.selectedShotId) as string
+        const match = String(sid).match(/(\d+)$/)
         if (match) shotMap.set(parseInt(match[1]), n)
       }
       // Fill every slot from 1 to max with either a real shot or a placeholder

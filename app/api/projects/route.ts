@@ -52,18 +52,29 @@ export async function GET() {
         p.updatedat
       FROM projects p
       LEFT JOIN LATERAL (
+        -- COALESCE order matters here. videoThumbnail is the poster
+        -- frame the video node captures from the first frame of the
+        -- generated clip; outputUrl is the .mp4 itself. The dashboard
+        -- renders the result inside an <img> tag — if we hand it the
+        -- .mp4 first, it shows a broken image. Always prefer the
+        -- poster, fall through to outputUrl only when no poster
+        -- exists (e.g. image-gen shots that don't have one).
+        --
+        -- Also accept selectedShotId as a legacy alias for shotId.
+        -- Older reference-node code wrote to selectedShotId and never
+        -- showed up here; new code writes shotId.
         SELECT COALESCE(
-          data->>'outputUrl',
           data->>'videoThumbnail',
+          data->>'outputUrl',
           data->>'thumbnail',
           data->>'assetUrl'
         ) AS thumb
         FROM canvas_nodes
         WHERE projectId = p.id::text
-          AND data->>'shotId' = 'shot-1'
+          AND (data->>'shotId' = 'shot-1' OR data->>'selectedShotId' = 'shot-1')
           AND COALESCE(
-            data->>'outputUrl',
             data->>'videoThumbnail',
+            data->>'outputUrl',
             data->>'thumbnail',
             data->>'assetUrl'
           ) IS NOT NULL
