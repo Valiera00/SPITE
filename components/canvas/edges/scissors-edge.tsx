@@ -10,20 +10,31 @@ import {
 import { Scissors } from '@phosphor-icons/react'
 
 // ---------------------------------------------------------------------------
-// Braided "cord" edge — ported from the landing-page manifesto connectors.
+// Braided "cord" edge — inspired by the landing-page manifesto connectors.
 //
-// Each connection is drawn as three strands woven along a bezier curve, with
-// a lit "plug" at each end. The braid SHAPE is static (computed once, cheap)
-// so a canvas full of edges stays smooth. The living twist animation — the
-// part that's expensive at scale — runs ONLY on the hovered/selected edge,
-// so at most one or two cords animate at a time. No SVG blur filters (the
-// other big cost); the glow is faked with stacked strokes.
+// Two states, on purpose:
+//   - IDLE        → one clean, soft, smooth glowing wire. No braid, no grain.
+//   - HOVER/SELECT→ a gentle braided living cord (slow, soft twist) like the
+//                    landing page, plus brighter strands and lit plugs.
+//
+// Performance guardrails:
+//   - Idle cords draw two static strokes, no filters, no animation — so a
+//     canvas full of edges costs almost nothing.
+//   - The living twist only runs on the hovered cord (always 1) OR on a
+//     SMALL multi-selection. If more than ANIM_CAP edges are selected at
+//     once (e.g. a big box-select), they fall back to a bright *static*
+//     highlight instead — you still see the selection, but we never animate
+//     dozens of cords at once.
 // ---------------------------------------------------------------------------
 
+// Max number of simultaneously-selected cords we'll animate. Above this we
+// fall back to a static highlight to protect frame rate.
+const ANIM_CAP = 8
+
+interface XY { x: number; y: number }
+
 // Cubic bezier point + tangent at parameter t.
-function cubic(
-  p0: XY, c1: XY, c2: XY, p1: XY, t: number,
-): XY {
+function cubic(p0: XY, c1: XY, c2: XY, p1: XY, t: number): XY {
   const m = 1 - t
   return {
     x: m * m * m * p0.x + 3 * m * m * t * c1.x + 3 * m * t * t * c2.x + t * t * t * p1.x,
@@ -38,13 +49,11 @@ function cubicTan(p0: XY, c1: XY, c2: XY, p1: XY, t: number): XY {
   }
 }
 
-interface XY { x: number; y: number }
+const SAMPLES = 26
 
-const SAMPLES = 26 // points per strand — enough for a smooth braid, cheap to draw
-
-// One strand: a sine-waved offset along the bezier normal, enveloped so it
-// tapers to zero at both ends (clean plug-in at the ports). amp=0 yields the
-// plain centerline (used for the invisible hit area).
+// One strand sampled along the bezier with a sine-waved normal offset,
+// enveloped so it tapers to zero at both ends (clean plug-in at the ports).
+// amp = 0 yields the plain smooth centerline (used for the idle cord + hit).
 function strand(
   p0: XY, c1: XY, c2: XY, p1: XY,
   amp: number, twists: number, phase: number,
@@ -53,6 +62,10 @@ function strand(
   for (let i = 0; i <= SAMPLES; i++) {
     const t = i / SAMPLES
     const pt = cubic(p0, c1, c2, p1, t)
+    if (amp === 0) {
+      d += (i === 0 ? 'M' : 'L') + pt.x.toFixed(1) + ' ' + pt.y.toFixed(1)
+      continue
+    }
     const tn = cubicTan(p0, c1, c2, p1, t)
     const L = Math.hypot(tn.x, tn.y) || 1
     const nx = -tn.y / L
@@ -64,13 +77,13 @@ function strand(
   return d
 }
 
-// Morph targets for the hover animation: the same strand at phases swept
-// through a full turn, so SMIL can cycle them into a living twist.
+// Morph targets for the gentle living twist: the strand at phases swept
+// through a full turn, so SMIL cycles them smoothly.
 function variants(
   p0: XY, c1: XY, c2: XY, p1: XY,
   amp: number, twists: number, phase0: number,
 ): string {
-  const K = 5
+  const K = 6
   const v: string[] = []
   for (let k = 0; k <= K; k++) {
     v.push(strand(p0, c1, c2, p1, amp, twists, phase0 + (k / K) * Math.PI * 2))
@@ -78,7 +91,6 @@ function variants(
   return v.join(';')
 }
 
-// Outward unit normal for a handle side.
 function normalFor(pos: Position | undefined): XY {
   switch (pos) {
     case Position.Left: return { x: -1, y: 0 }
@@ -89,39 +101,36 @@ function normalFor(pos: Position | undefined): XY {
   }
 }
 
-// A single strand <path>. When `animate` is set it carries a SMIL morph;
-// otherwise it's a static braid frozen mid-twist.
-function Strand({
-  d, values, dur, width, color, opacity, animate, glow,
+// An animated strand (used only on live cords).
+function LiveStrand({
+  values, dur, width, color, opacity, glow,
 }: {
-  d: string
   values: string
   dur: number
   width: number
   color: string
   opacity: number
-  animate: boolean
   glow?: boolean
 }) {
+  // Initial `d` is the first morph target so there's no flash before SMIL starts.
+  const first = values.split(';')[0]
   return (
     <path
-      d={d}
+      d={first}
       fill="none"
       stroke={color}
       strokeWidth={width}
       strokeLinecap="round"
       opacity={opacity}
-      style={glow ? { filter: 'drop-shadow(0 0 2px rgba(170,195,210,0.55))' } : undefined}
+      style={glow ? { filter: 'drop-shadow(0 0 2.5px rgba(180,205,225,0.6))' } : undefined}
     >
-      {animate && (
-        <animate
-          attributeName="d"
-          dur={`${dur}s`}
-          repeatCount="indefinite"
-          calcMode="linear"
-          values={values}
-        />
-      )}
+      <animate
+        attributeName="d"
+        dur={`${dur}s`}
+        repeatCount="indefinite"
+        calcMode="linear"
+        values={values}
+      />
     </path>
   )
 }
@@ -136,15 +145,18 @@ export function ScissorsEdge({
   targetPosition,
   style,
   selected,
-  data,
 }: EdgeProps) {
   const [hovered, setHovered] = useState(false)
-  const { setEdges } = useReactFlow()
-  const live = hovered || !!selected
+  const { setEdges, getEdges } = useReactFlow()
 
-  // Build the bezier control points from the handle directions (same idea as
-  // the manifesto cords): push the controls outward along each side's normal,
-  // scaled by the endpoint distance so short and long hops both curve nicely.
+  // "live" = brighter styling (hover or selected). "animate" = run the twist:
+  // always on hover (1 cord), and on selection only while the selected-cord
+  // count stays within ANIM_CAP — otherwise fall back to a static highlight.
+  const live = hovered || !!selected
+  const selectedCount = selected ? getEdges().filter((e) => e.selected).length : 0
+  const animate = hovered || (!!selected && selectedCount <= ANIM_CAP)
+
+  // Bezier control points from the handle directions; gentle braid amplitude.
   const geo = useMemo(() => {
     const p0: XY = { x: sourceX, y: sourceY }
     const p1: XY = { x: targetX, y: targetY }
@@ -154,23 +166,23 @@ export function ScissorsEdge({
     const k = Math.min(Math.max(dist * 0.4, 40), 220)
     const c1: XY = { x: p0.x + ns.x * k, y: p0.y + ns.y * k }
     const c2: XY = { x: p1.x + nt.x * k, y: p1.y + nt.y * k }
-    const amp = Math.min(6, dist * 0.06) // gentle braid; vanishes on tiny edges
+    // Gentle: lower amplitude than before so the twist is soft, not busy.
+    const amp = Math.min(4, dist * 0.04)
+    const smooth = strand(p0, c1, c2, p1, 0, 0, 0) // clean centerline (idle + hit)
     const mid = cubic(p0, c1, c2, p1, 0.5)
-    // Three woven strands at offset phases (static "d"); plus the plain
-    // centerline for the invisible hover hit area.
-    const halo = strand(p0, c1, c2, p1, amp, 1.5, 0)
-    const glow = strand(p0, c1, c2, p1, amp * 0.8, 1.5, 2.1)
-    const core = strand(p0, c1, c2, p1, amp * 0.9, 1.5, 4.2)
-    const hit = strand(p0, c1, c2, p1, 0, 0, 0)
-    return {
-      p0, p1, c1, c2, amp, mid, halo, glow, core, hit,
-    }
+    return { p0, p1, c1, c2, amp, smooth, mid }
   }, [sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition])
 
-  // Animation values only computed (and only used) when the cord is live.
-  const vHalo = live ? variants(geo.p0, geo.c1, geo.c2, geo.p1, geo.amp, 1.5, 0) : ''
-  const vGlow = live ? variants(geo.p0, geo.c1, geo.c2, geo.p1, geo.amp * 0.8, 1.5, 2.1) : ''
-  const vCore = live ? variants(geo.p0, geo.c1, geo.c2, geo.p1, geo.amp * 0.9, 1.5, 4.2) : ''
+  // Animation morph sets — only built when actually animating.
+  const anim = useMemo(() => {
+    if (!animate) return null
+    const { p0, c1, c2, p1, amp } = geo
+    return {
+      halo: variants(p0, c1, c2, p1, amp, 1.5, 0),
+      mid: variants(p0, c1, c2, p1, amp * 0.8, 1.5, 2.1),
+      core: variants(p0, c1, c2, p1, amp * 0.9, 1.5, 4.2),
+    }
+  }, [animate, geo])
 
   const baseColor = (style?.stroke as string) || '#aec3d2'
   const coreColor = live ? '#dcebf7' : baseColor
@@ -184,7 +196,7 @@ export function ScissorsEdge({
     <>
       {/* Invisible wide stroke for easy hover / cut targeting. */}
       <path
-        d={geo.hit}
+        d={geo.smooth}
         fill="none"
         stroke="transparent"
         strokeWidth={16}
@@ -193,43 +205,41 @@ export function ScissorsEdge({
         style={{ cursor: 'pointer' }}
       />
 
-      {/* Strand 1 — wide, faint halo (the "glow" without a blur filter). */}
-      <Strand
-        d={geo.halo}
-        values={vHalo}
-        dur={9}
-        width={live ? 6 : 5}
-        color={baseColor}
-        opacity={live ? 0.16 : 0.1}
-        animate={live}
-      />
-      {/* Strand 2 — mid body. */}
-      <Strand
-        d={geo.glow}
-        values={vGlow}
-        dur={7}
-        width={2.2}
-        color={baseColor}
-        opacity={live ? 0.55 : 0.4}
-        animate={live}
-      />
-      {/* Strand 3 — bright core (gets the subtle glow on hover). */}
-      <Strand
-        d={geo.core}
-        values={vCore}
-        dur={8}
-        width={1}
-        color={coreColor}
-        opacity={live ? 0.95 : 0.6}
-        animate={live}
-        glow={live}
-      />
+      {animate && anim ? (
+        // LIVE: gentle braided living cord.
+        <>
+          <LiveStrand values={anim.halo} dur={9} width={6} color={baseColor} opacity={0.16} />
+          <LiveStrand values={anim.mid} dur={7} width={2.2} color={baseColor} opacity={0.55} />
+          <LiveStrand values={anim.core} dur={8} width={1.1} color={coreColor} opacity={0.95} glow />
+        </>
+      ) : (
+        // IDLE (or large multi-select fallback): clean, soft, smooth cord.
+        // Two stacked strokes give a gentle glow with no grain and no filter.
+        <>
+          <path
+            d={geo.smooth}
+            fill="none"
+            stroke={baseColor}
+            strokeWidth={live ? 5 : 4.5}
+            strokeLinecap="round"
+            opacity={live ? 0.18 : 0.12}
+          />
+          <path
+            d={geo.smooth}
+            fill="none"
+            stroke={coreColor}
+            strokeWidth={live ? 1.5 : 1.3}
+            strokeLinecap="round"
+            opacity={live ? 0.9 : 0.55}
+          />
+        </>
+      )}
 
       {/* Lit "plugs" where the cord meets each node. */}
       {[geo.p0, geo.p1].map((p, i) => (
         <g key={i}>
-          <circle cx={p.x} cy={p.y} r={live ? 5 : 4.5} fill="#aec3d2" opacity={live ? 0.28 : 0.18} />
-          <circle cx={p.x} cy={p.y} r={1.8} fill="#dcebf7" opacity={live ? 0.85 : 0.6} />
+          <circle cx={p.x} cy={p.y} r={live ? 5 : 4.5} fill="#aec3d2" opacity={live ? 0.28 : 0.16} />
+          <circle cx={p.x} cy={p.y} r={1.8} fill="#dcebf7" opacity={live ? 0.85 : 0.55} />
         </g>
       ))}
 
