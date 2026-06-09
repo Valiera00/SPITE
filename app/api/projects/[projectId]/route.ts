@@ -1,24 +1,7 @@
-import { neon } from '@neondatabase/serverless'
+import { getDb } from '@/lib/db'
+import { getR2Client } from '@/lib/r2-upload'
 import { NextRequest, NextResponse } from 'next/server'
-import { S3Client, DeleteObjectCommand } from '@aws-sdk/client-s3'
-
-function getDb() {
-  if (!process.env.DATABASE_URL) {
-    throw new Error('DATABASE_URL environment variable is not set')
-  }
-  return neon(process.env.DATABASE_URL)
-}
-
-function getS3Client() {
-  return new S3Client({
-    region: 'auto',
-    credentials: {
-      accessKeyId: process.env.R2_ACCESS_KEY_ID!,
-      secretAccessKey: process.env.R2_SECRET_ACCESS_KEY!,
-    },
-    endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
-  })
-}
+import { DeleteObjectCommand } from '@aws-sdk/client-s3'
 
 // Extract the R2 object key from a stored asset URL. Mirrors the logic in
 // app/api/assets/cleanup so we delete consistently across cleanup paths.
@@ -32,7 +15,7 @@ function keyFromUrl(url: string): string | null {
 
 async function deleteR2Key(key: string) {
   try {
-    const client = getS3Client()
+    const client = getR2Client()
     await client.send(new DeleteObjectCommand({
       Bucket: process.env.R2_BUCKET_NAME!,
       Key: key,
@@ -59,7 +42,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
     return NextResponse.json(result[0])
   } catch (error) {
-    console.error('[v0] Error fetching project:', error)
+    console.error('Error fetching project:', error)
     return NextResponse.json({ error: 'Failed to fetch project' }, { status: 500 })
   }
 }
@@ -83,7 +66,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 
     return NextResponse.json(result[0])
   } catch (error) {
-    console.error('[v0] Error updating project:', error)
+    console.error('Error updating project:', error)
     return NextResponse.json({ error: 'Failed to update project' }, { status: 500 })
   }
 }
@@ -165,7 +148,7 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
       assetsTransferred: assets.length - exclusiveAssetIds.length,
     })
   } catch (error) {
-    console.error('[v0] Error deleting project:', error)
+    console.error('Error deleting project:', error)
     return NextResponse.json({ error: 'Failed to delete project' }, { status: 500 })
   }
 }

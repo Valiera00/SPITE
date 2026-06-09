@@ -429,7 +429,7 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
 
       return false
     } catch (err) {
-      console.error('[v0] Poll error:', err)
+      console.error('Poll error:', err)
       return false
     }
   }, [clearPending])
@@ -650,7 +650,7 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
         compiledPrompt += prompt.trim()
       }
     } catch (error) {
-      console.error('[v0] Error compiling prompts:', error)
+      console.error('Error compiling prompts:', error)
       compiledPrompt = prompt.trim()
     }
 
@@ -894,7 +894,7 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
         body: JSON.stringify({ request_id: reqId, model: cancelModel }),
       })
     } catch (err) {
-      console.error('[v0] Cancel error:', err)
+      console.error('Cancel error:', err)
     }
   }
 

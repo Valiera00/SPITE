@@ -1,13 +1,5 @@
-import { neon } from '@neondatabase/serverless'
+import { getDb } from '@/lib/db'
 import { NextRequest, NextResponse } from 'next/server'
-
-// Lazy initialization - only create connection when needed
-function getDb() {
-  if (!process.env.DATABASE_URL) {
-    throw new Error('DATABASE_URL environment variable is not set')
-  }
-  return neon(process.env.DATABASE_URL)
-}
 
 // Self-bootstraps the rolling-backup table. Snapshots are tiny insurance
 // against an autosave race or accidental wipe: the last ~50 minutes of
@@ -246,7 +238,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error('[v0] Error saving canvas:', error)
+    console.error('Error saving canvas:', error)
     return NextResponse.json({ error: 'Failed to save canvas' }, { status: 500 })
   }
 }
@@ -317,7 +309,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
     return NextResponse.json({ nodes, edges, scenes, activeSceneId })
   } catch (error) {
-    console.error('[v0] Error loading canvas:', error)
+    console.error('Error loading canvas:', error)
     return NextResponse.json({ error: 'Failed to load canvas' }, { status: 500 })
   }
 }

@@ -1,24 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { neon } from '@neondatabase/serverless'
-import { S3Client, DeleteObjectCommand } from '@aws-sdk/client-s3'
-
-function getDb() {
-  if (!process.env.DATABASE_URL) {
-    throw new Error('DATABASE_URL environment variable is not set')
-  }
-  return neon(process.env.DATABASE_URL)
-}
-
-function getR2Client() {
-  return new S3Client({
-    region: 'auto',
-    credentials: {
-      accessKeyId: process.env.R2_ACCESS_KEY_ID!,
-      secretAccessKey: process.env.R2_SECRET_ACCESS_KEY!,
-    },
-    endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
-  })
-}
+import { getR2Client } from '@/lib/r2-upload'
+import { getDb } from '@/lib/db'
+import { DeleteObjectCommand } from '@aws-sdk/client-s3'
 
 // Update mutable fields on an asset. Currently:
 //   used_in_canvas — protection flag (true = never auto-delete)

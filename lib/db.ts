@@ -8,3 +8,8 @@ export function getDb() {
   }
   return neon(process.env.DATABASE_URL)
 }
+
+// Shape of the sql tagged-template returned by `neon()`. Exported for
+// helper modules that take a sql instance as a parameter (e.g. the
+// ensureSchema helpers in lib/sessions.ts, fal-voices.ts).
+export type Sql = ReturnType<typeof getDb>

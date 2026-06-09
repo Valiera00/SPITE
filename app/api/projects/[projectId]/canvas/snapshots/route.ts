@@ -1,12 +1,5 @@
-import { neon } from '@neondatabase/serverless'
+import { getDb } from '@/lib/db'
 import { NextRequest, NextResponse } from 'next/server'
-
-function getDb() {
-  if (!process.env.DATABASE_URL) {
-    throw new Error('DATABASE_URL environment variable is not set')
-  }
-  return neon(process.env.DATABASE_URL)
-}
 
 // GET /api/projects/<id>/canvas/snapshots
 // Returns the rolling list of canvas snapshots for this project (newest

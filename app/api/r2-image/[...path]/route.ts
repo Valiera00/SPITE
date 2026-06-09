@@ -1,16 +1,7 @@
-import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3'
+import { GetObjectCommand } from '@aws-sdk/client-s3'
 import { NextRequest, NextResponse } from 'next/server'
-import { verifyImageToken } from '@/lib/r2-upload'
+import { getR2Client, verifyImageToken } from '@/lib/r2-upload'
 import { SESSION_COOKIE_NAME, isSessionValid } from '@/lib/sessions'
-
-const s3Client = new S3Client({
-  region: 'auto',
-  credentials: {
-    accessKeyId: process.env.R2_ACCESS_KEY_ID!,
-    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY!,
-  },
-  endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
-})
 
 export async function GET(
   request: NextRequest,
@@ -49,7 +40,7 @@ export async function GET(
       Key: key,
     })
 
-    const response = await s3Client.send(command)
+    const response = await getR2Client().send(command)
     const buffer = await response.Body?.transformToByteArray()
 
     if (!buffer) {

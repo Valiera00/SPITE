@@ -1,8 +1,7 @@
-import { neon } from '@neondatabase/serverless'
+import { getDb } from '@/lib/db'
 import { NextRequest, NextResponse } from 'next/server'
 
-const sql = neon(process.env.DATABASE_URL!)
-
+const sql = getDb()
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ projectId: string }> }
@@ -15,7 +14,7 @@ export async function GET(
     
     return NextResponse.json(assets)
   } catch (error) {
-    console.error('[v0] Asset list error:', error)
+    console.error('Asset list error:', error)
     return NextResponse.json({ error: 'Failed to fetch assets' }, { status: 500 })
   }
 }
@@ -42,7 +41,7 @@ export async function POST(
 
     return NextResponse.json(result[0])
   } catch (error) {
-    console.error('[v0] Asset update error:', error)
+    console.error('Asset update error:', error)
     return NextResponse.json({ error: 'Update failed' }, { status: 500 })
   }
 }

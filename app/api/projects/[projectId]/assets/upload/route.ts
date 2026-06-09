@@ -1,18 +1,9 @@
-import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3'
-import { neon } from '@neondatabase/serverless'
+import { PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3'
+import { getR2Client } from '@/lib/r2-upload'
+import { getDb } from '@/lib/db'
 import { NextRequest, NextResponse } from 'next/server'
 
-const s3Client = new S3Client({
-  region: 'auto',
-  credentials: {
-    accessKeyId: process.env.R2_ACCESS_KEY_ID!,
-    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY!,
-  },
-  endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
-})
-
-const sql = neon(process.env.DATABASE_URL!)
-
+const sql = getDb()
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ projectId: string }> }
@@ -34,7 +25,7 @@ export async function POST(
     const buffer = await file.arrayBuffer()
 
     // Upload to R2
-    await s3Client.send(
+    await getR2Client().send(
       new PutObjectCommand({
         Bucket: process.env.R2_BUCKET_NAME!,
         Key: filename,
@@ -56,7 +47,7 @@ export async function POST(
 
     return NextResponse.json(result[0], { status: 201 })
   } catch (error) {
-    console.error('[v0] Upload error:', error)
+    console.error('Upload error:', error)
     return NextResponse.json({ error: 'Upload failed' }, { status: 500 })
   }
 }
@@ -70,7 +61,7 @@ export async function DELETE(
     const { assetId, filename } = await req.json()
 
     // Delete from R2
-    await s3Client.send(
+    await getR2Client().send(
       new DeleteObjectCommand({
         Bucket: process.env.R2_BUCKET_NAME!,
         Key: filename,
@@ -82,7 +73,7 @@ export async function DELETE(
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error('[v0] Delete error:', error)
+    console.error('Delete error:', error)
     return NextResponse.json({ error: 'Delete failed' }, { status: 500 })
   }
 }

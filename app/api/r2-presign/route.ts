@@ -1,4 +1,5 @@
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3'
+import { PutObjectCommand } from '@aws-sdk/client-s3'
+import { getR2Client } from '@/lib/r2-upload'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -25,21 +26,6 @@ import { NextRequest, NextResponse } from 'next/server'
 // content types and origin patterns. See README install steps for the
 // CORS JSON to paste into the R2 dashboard once.
 
-function getS3() {
-  return new S3Client({
-    region: 'auto',
-    credentials: {
-      accessKeyId: process.env.R2_ACCESS_KEY_ID!,
-      secretAccessKey: process.env.R2_SECRET_ACCESS_KEY!,
-    },
-    endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
-    // Match the rest of the codebase — stop the SDK injecting
-    // x-amz-checksum-mode into presigned URLs, which breaks R2.
-    requestChecksumCalculation: 'WHEN_REQUIRED',
-    responseChecksumValidation: 'WHEN_REQUIRED',
-  })
-}
-
 export async function POST(req: NextRequest) {
   try {
     if (!process.env.R2_BUCKET_NAME || !process.env.R2_ACCOUNT_ID) {
@@ -53,7 +39,7 @@ export async function POST(req: NextRequest) {
 
     const safeName = filename.replace(/[^\w.\-]+/g, '_')
     const key = `uploads/${Date.now()}-${safeName}`
-    const client = getS3()
+    const client = getR2Client()
 
     const command = new PutObjectCommand({
       Bucket: process.env.R2_BUCKET_NAME,

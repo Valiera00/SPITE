@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { neon } from '@neondatabase/serverless'
+import { getDb } from '@/lib/db'
 import { recordAsset, rehostToR2 } from '@/lib/r2-upload'
 import { isValidFalModel, isValidFalRequestId } from '@/lib/fal-validate'
 
@@ -24,13 +24,6 @@ import { isValidFalModel, isValidFalRequestId } from '@/lib/fal-validate'
 //
 // In both modes the response describes every request that was attempted
 // and what happened to it, so the UI / console can summarize.
-
-function getDb() {
-  if (!process.env.DATABASE_URL) {
-    throw new Error('DATABASE_URL is not set')
-  }
-  return neon(process.env.DATABASE_URL)
-}
 
 interface RecoveryItem {
   requestId: string

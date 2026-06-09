@@ -1,31 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { neon } from '@neondatabase/serverless'
-import { S3Client, DeleteObjectCommand } from '@aws-sdk/client-s3'
+import { getR2Client } from '@/lib/r2-upload'
+import { getDb } from '@/lib/db'
+import { DeleteObjectCommand } from '@aws-sdk/client-s3'
 import { timingSafeEqual } from 'crypto'
 import { purgeExpiredSessions } from '@/lib/sessions'
 import { purgeOldSpendLedger } from '@/lib/spend-gate'
 
-function getDb() {
-  if (!process.env.DATABASE_URL) {
-    throw new Error('DATABASE_URL environment variable is not set')
-  }
-  return neon(process.env.DATABASE_URL)
-}
-
-function getS3Client() {
-  return new S3Client({
-    region: 'auto',
-    credentials: {
-      accessKeyId: process.env.R2_ACCESS_KEY_ID!,
-      secretAccessKey: process.env.R2_SECRET_ACCESS_KEY!,
-    },
-    endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
-  })
-}
-
 async function deleteFromR2(key: string) {
   try {
-    const s3Client = getS3Client()
+    const s3Client = getR2Client()
     await s3Client.send(
       new DeleteObjectCommand({
         Bucket: process.env.R2_BUCKET_NAME!,

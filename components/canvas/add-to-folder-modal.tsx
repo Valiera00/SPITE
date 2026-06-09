@@ -246,7 +246,7 @@ export function AddToFolderModal({ open, onClose, folderType, projectId, assetId
       window.dispatchEvent(new CustomEvent('folders-changed'))
       onClose()
     } catch (err) {
-      console.error('[v0] Failed to add to folder:', err)
+      console.error('Failed to add to folder:', err)
     }
   }
 

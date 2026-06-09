@@ -331,7 +331,7 @@ export function LeftToolbar({
         onAssetsChange?.(updatedAssets)
       }
     } catch (error) {
-      console.error('[v0] Upload error:', error)
+      console.error('Upload error:', error)
     } finally {
       setUploading(false)
       if (fileInputRef.current) fileInputRef.current.value = ''
@@ -353,7 +353,7 @@ export function LeftToolbar({
         onAssetsChange?.(updatedAssets)
       }
     } catch (error) {
-      console.error('[v0] Delete error:', error)
+      console.error('Delete error:', error)
     }
   }
 

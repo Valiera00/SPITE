@@ -1,18 +1,16 @@
 import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
-import { neon } from '@neondatabase/serverless'
+import { getDb } from './db'
 import crypto from 'crypto'
 
-// Lazy initialization for database connection
-function getDb() {
-  if (!process.env.DATABASE_URL) {
-    throw new Error('DATABASE_URL environment variable is not set')
-  }
-  return neon(process.env.DATABASE_URL)
-}
-
-// Lazy initialization for R2 client
-function getR2Client() {
+// Lazy R2 S3 client — exported so other routes don't reinvent the
+// config (region 'auto', the Cloudflare endpoint URL, the checksum
+// settings that stop the AWS SDK from injecting headers R2 rejects).
+//
+// Lazy on purpose: env vars must be present at call time, not module
+// load time, so a misconfigured environment surfaces a clean error
+// from getDb() / getR2Client() instead of a cryptic crash at import.
+export function getR2Client(): S3Client {
   return new S3Client({
     region: 'auto',
     credentials: {

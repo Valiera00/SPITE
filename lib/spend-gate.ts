@@ -3,16 +3,7 @@
 // client-side $25 confirmation dialog is UX, not a control. This is the
 // control.
 
-import { neon } from '@neondatabase/serverless'
-
-type Sql = ReturnType<typeof neon>
-
-function getDb(): Sql {
-  if (!process.env.DATABASE_URL) {
-    throw new Error('DATABASE_URL not set')
-  }
-  return neon(process.env.DATABASE_URL)
-}
+import { getDb, type Sql } from './db'
 
 let schemaEnsured = false
 async function ensureSchema(sql: Sql) {

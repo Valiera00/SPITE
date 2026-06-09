@@ -1,13 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { neon } from '@neondatabase/serverless'
-
-function getDb() {
-  if (!process.env.DATABASE_URL) {
-    throw new Error('DATABASE_URL environment variable is not set')
-  }
-  return neon(process.env.DATABASE_URL)
-}
-
+import { getDb } from '@/lib/db'
 // Look up the generation_history asset id for a given r2 url, so the
 // "Add to folder" flow can pre-select an asset on a legacy reference
 // node that doesn't have data.assetId stored. Matches by key suffix to

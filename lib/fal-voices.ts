@@ -16,16 +16,7 @@
 // short-lived R2 presigned URL (regenerated each create-voice call,
 // which only happens once per unique audio file anyway).
 
-import { neon } from '@neondatabase/serverless'
-
-type Sql = ReturnType<typeof neon>
-
-function getDb(): Sql {
-  if (!process.env.DATABASE_URL) {
-    throw new Error('DATABASE_URL not set')
-  }
-  return neon(process.env.DATABASE_URL)
-}
+import { getDb, type Sql } from './db'
 
 let cacheSchemaEnsured = false
 async function ensureCacheSchema(sql: Sql) {

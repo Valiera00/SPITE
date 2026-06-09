@@ -1,24 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { neon } from '@neondatabase/serverless'
-import { S3Client, DeleteObjectsCommand, ListObjectsV2Command } from '@aws-sdk/client-s3'
-
-function getDb() {
-  if (!process.env.DATABASE_URL) {
-    throw new Error('DATABASE_URL environment variable is not set')
-  }
-  return neon(process.env.DATABASE_URL)
-}
-
-function getS3Client() {
-  return new S3Client({
-    region: 'auto',
-    endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
-    credentials: {
-      accessKeyId: process.env.R2_ACCESS_KEY_ID!,
-      secretAccessKey: process.env.R2_SECRET_ACCESS_KEY!,
-    },
-  })
-}
+import { getR2Client } from '@/lib/r2-upload'
+import { getDb } from '@/lib/db'
+import { DeleteObjectsCommand, ListObjectsV2Command } from '@aws-sdk/client-s3'
 
 // Both branches of this endpoint are catastrophically destructive — one
 // wipes every canvas + project, the other deletes every asset in R2 AND
@@ -67,7 +50,7 @@ export async function POST(request: NextRequest) {
       // Delete from R2 if there are files
       if (assets.length > 0 && process.env.R2_BUCKET_NAME) {
         try {
-          const s3Client = getS3Client()
+          const s3Client = getR2Client()
           // List all objects in bucket to delete
           const listCommand = new ListObjectsV2Command({
             Bucket: process.env.R2_BUCKET_NAME,

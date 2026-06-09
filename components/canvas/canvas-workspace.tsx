@@ -295,7 +295,7 @@ function CanvasInner({ projectId }: { projectId: string }) {
           setAssets(loadedAssets)
         }
       } catch (error) {
-        console.error('[v0] Error loading data:', error)
+        console.error('Error loading data:', error)
       }
     }
 
@@ -336,7 +336,7 @@ function CanvasInner({ projectId }: { projectId: string }) {
           body: JSON.stringify({ name: newName })
         })
       } catch (error) {
-        console.error('[v0] Error saving project name:', error)
+        console.error('Error saving project name:', error)
       }
     }, 500)
   }
@@ -592,7 +592,7 @@ function CanvasInner({ projectId }: { projectId: string }) {
         window.dispatchEvent(new CustomEvent('asset-status-changed'))
         return
       } catch (error) {
-        console.error('[v0] Folder drop error:', error)
+        console.error('Folder drop error:', error)
       }
     }
 
@@ -630,7 +630,7 @@ function CanvasInner({ projectId }: { projectId: string }) {
         window.dispatchEvent(new CustomEvent('asset-status-changed'))
       }).catch(() => {})
     } catch (error) {
-      console.error('[v0] Drop error:', error)
+      console.error('Drop error:', error)
     }
   }, [screenToFlowPosition, setNodes, activeSceneId])
 
@@ -844,7 +844,7 @@ function CanvasInner({ projectId }: { projectId: string }) {
         body: JSON.stringify({ url: proxyUrl, type: mediaType, filename: nodeLabel, projectId }),
       })
       const assetData = await assetRes.json()
-      console.log('[v0] Asset recorded:', { assetData, status: assetRes.status })
+      console.log('Asset recorded:', { assetData, status: assetRes.status })
 
       // Stash the asset's generation_history id on the node so the
       // node toolbar's "Add to folder" flow can pre-select it without
@@ -863,7 +863,7 @@ function CanvasInner({ projectId }: { projectId: string }) {
       // Revoke temp blob URL
       URL.revokeObjectURL(tempUrl)
     } catch (error) {
-      console.error('[v0] Failed to upload media:', error)
+      console.error('Failed to upload media:', error)
       // Surface the failure — the previous silent catch left users
       // with a node that worked in the current session and then died
       // on reload because the blob URL was scoped to the session.

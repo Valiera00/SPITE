@@ -1,13 +1,6 @@
-import { neon } from '@neondatabase/serverless'
+import { getDb } from '@/lib/db'
 import { NextRequest, NextResponse } from 'next/server'
 import { v4 as uuidv4 } from 'uuid'
-
-function getDb() {
-  if (!process.env.DATABASE_URL) {
-    throw new Error('DATABASE_URL environment variable is not set')
-  }
-  return neon(process.env.DATABASE_URL)
-}
 
 const DEFAULT_USER_ID = '00000000-0000-0000-0000-000000000001'
 

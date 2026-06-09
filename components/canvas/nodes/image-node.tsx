@@ -187,7 +187,7 @@ function ImageNodeImpl({ id, data, selected }: NodeProps) {
     )
     hasConnectedPrompts = incomingPromptEdges.length > 0
   } catch (err) {
-    console.log('[v0] Error checking connected prompts:', err)
+    console.log('Error checking connected prompts:', err)
     hasConnectedPrompts = false
   }
 
@@ -461,7 +461,7 @@ function ImageNodeImpl({ id, data, selected }: NodeProps) {
 
       return false
     } catch (err) {
-      console.error('[v0] Poll error:', err)
+      console.error('Poll error:', err)
       return false
     }
   }, [clearPending])
@@ -612,7 +612,7 @@ function ImageNodeImpl({ id, data, selected }: NodeProps) {
         compiledPrompt += prompt.trim()
       }
     } catch (error) {
-      console.error('[v0] Error compiling prompts:', error)
+      console.error('Error compiling prompts:', error)
       compiledPrompt = prompt.trim()
     }
 
@@ -839,7 +839,7 @@ function ImageNodeImpl({ id, data, selected }: NodeProps) {
         body: JSON.stringify({ request_id: reqId, model: cancelModel }),
       })
     } catch (err) {
-      console.error('[v0] Cancel error:', err)
+      console.error('Cancel error:', err)
     }
   }
 
