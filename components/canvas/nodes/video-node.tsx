@@ -134,6 +134,12 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
   // Route segment is [id], so the param is `id` (not `projectId`).
   const projectId = params.id as string
   const [prompt, setPrompt] = useState((data.prompt as string) || '')
+  // Upscaler mode (only meaningful when modelId is 'topaz-video-upscale').
+  // 'standard' hits the plug-n-play endpoint; 'creative' hits the
+  // prompt-aware variant. Persists in node data so it survives reload.
+  const [upscaleMode, setUpscaleMode] = useState<'standard' | 'creative'>(
+    (data.upscaleMode as 'standard' | 'creative') || 'standard',
+  )
   const [mentions, setMentions] = useState<Mention[]>((data.mentions as Mention[]) || [])
   const { folders } = useProjectFolders(projectId)
   const [modelId, setModelId] = useState((data.modelId as string) || 'seedance-1.5')
@@ -270,9 +276,9 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
   useEffect(() => {
     setNodes(ns => ns.map(n => n.id === id ? {
       ...n,
-      data: { ...n.data, prompt, modelId, duration, aspectRatio, resolution, enableAudio, enableLoop, numVideos, outputUrl, mentions }
+      data: { ...n.data, prompt, modelId, duration, aspectRatio, resolution, enableAudio, enableLoop, numVideos, outputUrl, mentions, upscaleMode }
     } : n))
-  }, [prompt, modelId, duration, aspectRatio, resolution, enableAudio, enableLoop, numVideos, outputUrl, mentions, id, setNodes])
+  }, [prompt, modelId, duration, aspectRatio, resolution, enableAudio, enableLoop, numVideos, outputUrl, mentions, upscaleMode, id, setNodes])
 
   // Auto-name: once a generation completes, replace the default
   // "Video Generator #N" label with the first few words of the prompt.
@@ -651,10 +657,17 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
     const referenceGroups = [...wiredGroups, ...compiled.refGroups]
 
     try {
+      // For the Topaz upscaler in Standard mode, force an empty prompt
+      // regardless of what's in state — the server uses prompt presence
+      // to switch between the plug-n-play and creative endpoints, and
+      // the user may have a Creative prompt left over from before.
+      const isStandardUpscale = modelId === 'topaz-video-upscale' && upscaleMode === 'standard'
+      const submitPrompt = isStandardUpscale ? '' : compiled.prompt
+
       // Send RAW settings; the server builds the model-specific payload.
       const body = JSON.stringify({
         modelId,
-        prompt: compiled.prompt,
+        prompt: submitPrompt,
         referenceImageUrl: connectedImageUrl,
         endImageUrl: connectedEndImageUrl,
         referenceGroups: referenceGroups.length ? referenceGroups : undefined,
@@ -1015,19 +1028,27 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
         </div>
 
         {/* Prompt input. @-mention any folder (Character/Prop/Location/General)
-            to attach its assets as references at generate time. */}
-        <div className="px-3 pt-3 pb-2">
-          <MentionTextarea
-            value={prompt}
-            mentions={mentions}
-            onChange={(text, ms) => { setPrompt(text); setMentions(ms) }}
-            folders={folders}
-            placeholder="Describe the video — type @ to reference a folder…"
-            disabled={isGenerating}
-            className="nodrag w-full bg-transparent resize-none outline-none text-[12px] text-foreground/90 placeholder:text-muted-foreground/40 leading-relaxed disabled:opacity-50 cursor-text"
-            rows={2}
-          />
-        </div>
+            to attach its assets as references at generate time.
+            Hidden for the Topaz upscaler in Standard mode — that endpoint
+            doesn't accept a prompt and showing the field is misleading. */}
+        {!(modelId === 'topaz-video-upscale' && upscaleMode === 'standard') && (
+          <div className="px-3 pt-3 pb-2">
+            <MentionTextarea
+              value={prompt}
+              mentions={mentions}
+              onChange={(text, ms) => { setPrompt(text); setMentions(ms) }}
+              folders={folders}
+              placeholder={
+                modelId === 'topaz-video-upscale'
+                  ? 'Guide the enhancement — denoise, sharpen, restore detail…'
+                  : 'Describe the video — type @ to reference a folder…'
+              }
+              disabled={isGenerating}
+              className="nodrag w-full bg-transparent resize-none outline-none text-[12px] text-foreground/90 placeholder:text-muted-foreground/40 leading-relaxed disabled:opacity-50 cursor-text"
+              rows={2}
+            />
+          </div>
+        )}
 
         {/* Controls - Dynamic based on model */}
         <div className="flex items-center justify-between px-3 pb-3 gap-2">
@@ -1058,7 +1079,20 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
               onChange={setModelId}
               disabled={isGenerating}
             />
-            
+
+            {/* Topaz mode toggle — only when the upscaler is selected. */}
+            {modelId === 'topaz-video-upscale' && (
+              <ControlSelect
+                value={upscaleMode === 'creative' ? 'Creative' : 'Standard'}
+                options={[
+                  { value: 'standard', label: 'Standard' },
+                  { value: 'creative', label: 'Creative' },
+                ]}
+                onChange={(v) => setUpscaleMode(v as 'standard' | 'creative')}
+                disabled={isGenerating}
+              />
+            )}
+
             {/* Duration - only if model supports it */}
             {durationOptions.length > 0 && (
               <ControlSelect 
