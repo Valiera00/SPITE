@@ -196,6 +196,9 @@ export async function POST(request: NextRequest) {
     endImageUrl: usesSeparateRefEndpoint ? undefined : (endImageSigned || undefined),
     referenceImageUrls: hasFolderRefs ? refsSigned : undefined,
     referenceGroups: hasFolderRefs ? refGroupsSigned : undefined,
+    // Pass through the upscaler mode so buildModelInput can pick the
+    // right Topaz model variant (Proteus vs Starlight HQ).
+    upscaleMode: settings?.upscaleMode,
   })
 
   // Batch image count — image models only (video models produce one clip).
@@ -212,14 +215,10 @@ export async function POST(request: NextRequest) {
   // Pick the endpoint: separate reference endpoint > image-to-image /
   // image-to-video (frames, elements-style refs, OR image-slot refs from
   // folder mentions on models like Nano Banana / FLUX Dev) > text-to-video.
-  // For optional-prompt models (Topaz), editModel is the "creative" /
-  // prompt-aware variant — switch to it when the user filled the prompt.
   let endpoint = model.falModel
   if (usesSeparateRefEndpoint) {
     endpoint = model.referenceModel!
   } else if ((hasRefsViaRefParam || hasRefsViaImageParam || hasFrame) && model.editModel) {
-    endpoint = model.editModel
-  } else if (model.optionalPrompt && prompt && prompt.trim() && model.editModel) {
     endpoint = model.editModel
   }
 

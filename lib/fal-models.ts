@@ -322,26 +322,28 @@ export const FAL_MODELS: ModelConfig[] = [
   // node, pick this model, hit Generate. Output matches the input's
   // duration and aspect ratio — only the resolution changes.
   //
-  // The same model entry handles BOTH Topaz modes; the prompt field
-  // decides which one runs:
-  //  - Empty prompt → "plug-n-play" endpoint, just upscales.
-  //  - Filled prompt → "creative" endpoint, uses the prompt to guide
-  //    the enhancement (denoise, sharpen, restore details, etc.).
+  // Both Standard and Creative modes hit the SAME fal endpoint
+  // (fal-ai/topaz/upscale/video). The difference is the `model`
+  // parameter in the body:
+  //   - Standard → "Proteus" (Topaz's traditional upscaler — fast,
+  //     accurate, best for clean source footage).
+  //   - Creative → "Starlight HQ" (diffusion-based generative
+  //     enhancement — slower but much better at restoring detail in
+  //     low-quality source).
+  // No prompt is sent in either mode — Topaz's API doesn't take one.
   {
     id: 'topaz-video-upscale',
     name: 'Topaz Video Upscale',
-    falModel: 'fal-ai/topaz/upscale/video',                  // plug-n-play
-    editModel: 'fal-ai/topaz/upscale/video/creative',        // creative (with prompt)
+    falModel: 'fal-ai/topaz/upscale/video',  // ONE endpoint; mode picks the model param
     category: 'video',
-    inputTypes: ['text', 'video'],  // text is shown but optional (see below).
-    optionalPrompt: true,           // Submit route doesn't reject an empty prompt.
+    inputTypes: ['video'],          // No prompt — Topaz doesn't accept one.
     aspectRatios: [],               // Output inherits from input.
     durations: [],                  // Output inherits from input.
-    resolutions: ['2x', '4x'],      // Re-used as the upscale factor selector.
+    resolutions: ['2x', '4x'],      // Reused as the upscale factor selector.
     supportsAudio: false,
     defaultAspectRatio: '16:9',
     defaultResolution: '2x',
-    description: 'Upscale a video 2x or 4x. Add a prompt to guide enhancement.'
+    description: 'Upscale 2x or 4x. Standard = Proteus model (fast). Creative = Starlight HQ (diffusion-based, better restoration).'
   },
 ]
 
@@ -381,6 +383,9 @@ export function buildModelInput(
     // If both are supplied, groups win.
     referenceGroups?: { urls: string[] }[]
     seed?: number
+    // Topaz upscaler mode — picks which underlying Topaz model variant
+    // to send. Doesn't affect any other model.
+    upscaleMode?: 'standard' | 'creative'
   } = {}
 ): Record<string, any> {
   const input: Record<string, any> = {}
@@ -658,15 +663,15 @@ export function buildModelInput(
 
   // TOPAZ VIDEO UPSCALE — video_url is attached by the submit route
   // from the connected video-in handle. The resolution selector is
-  // reused as the upscale-factor picker: "2x" → 2, "4x" → 4. The
-  // prompt is included only when the user actually typed one; submit
-  // also swaps to the /creative endpoint in that case (handled in
-  // submit/route.ts via model.editModel).
+  // reused as the upscale-factor picker: "2x" → 2, "4x" → 4.
+  //
+  // Mode controls the underlying Topaz model variant:
+  //   - Standard → "Proteus" (traditional upscaler, fast)
+  //   - Creative → "Starlight HQ" (diffusion-based, better restoration)
+  // Both go to the same fal endpoint; no prompt is ever sent.
   if (model.id === 'topaz-video-upscale') {
     input.upscale_factor = options.resolution === '4x' ? 4 : 2
-    if (prompt && prompt.trim()) {
-      input.prompt = prompt
-    }
+    input.model = options.upscaleMode === 'creative' ? 'Starlight HQ' : 'Proteus'
     return input
   }
 

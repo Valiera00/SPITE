@@ -666,12 +666,10 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
     const referenceGroups = [...wiredGroups, ...compiled.refGroups]
 
     try {
-      // For the Topaz upscaler in Standard mode, force an empty prompt
-      // regardless of what's in state — the server uses prompt presence
-      // to switch between the plug-n-play and creative endpoints, and
-      // the user may have a Creative prompt left over from before.
-      const isStandardUpscale = modelId === 'topaz-video-upscale' && upscaleMode === 'standard'
-      const submitPrompt = isStandardUpscale ? '' : compiled.prompt
+      // Topaz upscaler never takes a prompt — its API uses a `model`
+      // parameter (Proteus vs Starlight HQ) to pick the variant. Force
+      // empty so any stale prompt in node state doesn't leak through.
+      const submitPrompt = modelId === 'topaz-video-upscale' ? '' : compiled.prompt
 
       // Send RAW settings; the server builds the model-specific payload.
       const body = JSON.stringify({
@@ -687,6 +685,8 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
           enableAudio,
           enableLoop,
           videoUrl: connectedVideoUrl || undefined,
+          // Upscaler mode picks the Topaz model variant server-side.
+          upscaleMode,
         },
       })
 
@@ -1037,21 +1037,18 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
         </div>
 
         {/* Prompt input. @-mention any folder (Character/Prop/Location/General)
-            to attach its assets as references at generate time.
-            Hidden for the Topaz upscaler in Standard mode — that endpoint
-            doesn't accept a prompt and showing the field is misleading. */}
-        {!(modelId === 'topaz-video-upscale' && upscaleMode === 'standard') && (
+            to attach its assets as references at generate time. Hidden for
+            the Topaz upscaler entirely — Topaz's API takes a model param
+            ('Proteus' for Standard, 'Starlight HQ' for Creative), not a
+            prompt, so showing the field would be misleading in either mode. */}
+        {modelId !== 'topaz-video-upscale' && (
           <div className="px-3 pt-3 pb-2">
             <MentionTextarea
               value={prompt}
               mentions={mentions}
               onChange={(text, ms) => { setPrompt(text); setMentions(ms) }}
               folders={folders}
-              placeholder={
-                modelId === 'topaz-video-upscale'
-                  ? 'Guide the enhancement — denoise, sharpen, restore detail…'
-                  : 'Describe the video — type @ to reference a folder…'
-              }
+              placeholder="Describe the video — type @ to reference a folder…"
               disabled={isGenerating}
               className="nodrag w-full bg-transparent resize-none outline-none text-[12px] text-foreground/90 placeholder:text-muted-foreground/40 leading-relaxed disabled:opacity-50 cursor-text"
               rows={2}
