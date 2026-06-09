@@ -38,13 +38,19 @@ export async function POST(request: NextRequest) {
     settings,
   } = await request.json()
 
-  if (!modelId || !prompt) {
-    return NextResponse.json({ error: 'modelId and prompt are required' }, { status: 400 })
+  if (!modelId) {
+    return NextResponse.json({ error: 'modelId is required' }, { status: 400 })
   }
 
   const model = getModelById(modelId)
   if (!model) {
     return NextResponse.json({ error: `Unknown model: ${modelId}` }, { status: 400 })
+  }
+
+  // Prompt is required only if the model accepts text input. Upscalers
+  // (inputTypes: ['video']) take a video and never use a text prompt.
+  if (model.inputTypes.includes('text') && !prompt) {
+    return NextResponse.json({ error: 'prompt is required for this model' }, { status: 400 })
   }
 
   // Server-side spend gate. Defence against a captured cookie being

@@ -30,6 +30,8 @@ const COST_TABLE: Record<string, { unit: Unit; price: number }> = {
   'minimax-hailuo':      { unit: 'video', price: 0.50 },
   'minimax-hailuo-2.3':  { unit: 'video', price: 0.65 },  // 2.3 is slightly pricier than original
   'luma-ray2':           { unit: 'video', price: 1.50 },
+  // Upscalers — flat-rate estimate covering up to ~10sec at 4x.
+  'topaz-video-upscale': { unit: 'video', price: 1.00 },
 }
 
 export interface CostEstimate {

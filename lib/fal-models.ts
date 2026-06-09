@@ -311,6 +311,26 @@ export const FAL_MODELS: ModelConfig[] = [
     defaultResolution: '720p',
     description: 'Realistic video with loop support'
   },
+
+  // ===== UPSCALERS =====
+  // Take a video INPUT (no prompt needed) and return a higher-resolution
+  // version. Wire your low-res clip into the video-in handle on the
+  // generator node, pick this model, hit Generate. Output matches the
+  // input's duration and aspect ratio — only the resolution changes.
+  {
+    id: 'topaz-video-upscale',
+    name: 'Topaz Video Upscale',
+    falModel: 'fal-ai/topaz/upscale/video',
+    category: 'video',
+    inputTypes: ['video'],          // No text, no image — video only.
+    aspectRatios: [],               // Output inherits from input.
+    durations: [],                  // Output inherits from input.
+    resolutions: ['2x', '4x'],      // Re-used as the upscale factor selector.
+    supportsAudio: false,
+    defaultAspectRatio: '16:9',
+    defaultResolution: '2x',
+    description: 'Upscale a video 2x or 4x with Topaz'
+  },
 ]
 
 // Helper functions
@@ -621,6 +641,15 @@ export function buildModelInput(
       input.duration = 6
     }
     // No aspect_ratio or resolution control - fixed 768p output
+    return input
+  }
+
+  // TOPAZ VIDEO UPSCALE — no prompt. video_url is attached by the submit
+  // route after this returns (from the connected video-in handle). We
+  // reuse the resolution selector as the upscale-factor picker: "2x"
+  // → 2, anything else (incl. default "4x") → 4.
+  if (model.id === 'topaz-video-upscale') {
+    input.upscale_factor = options.resolution === '4x' ? 4 : 2
     return input
   }
 
