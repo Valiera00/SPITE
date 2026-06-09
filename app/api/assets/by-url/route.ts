@@ -1,5 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/db'
+
+// Escape LIKE metacharacters so a user-supplied key can't smuggle wildcards
+// into the suffix match (e.g. a key of "%" would otherwise match — and
+// mutate — every row). Backslash is Postgres's default LIKE escape char.
+function escapeLike(s: string): string {
+  return s.replace(/[\\%_]/g, (c) => '\\' + c)
+}
 // Look up the generation_history asset id for a given r2 url, so the
 // "Add to folder" flow can pre-select an asset on a legacy reference
 // node that doesn't have data.assetId stored. Matches by key suffix to
@@ -17,7 +24,7 @@ export async function GET(request: NextRequest) {
       ? url.split('.r2.dev/')[1]
       : null
     const rows = key
-      ? await sql`SELECT id FROM generation_history WHERE r2_url LIKE ${'%' + key} ORDER BY created_at DESC LIMIT 1`
+      ? await sql`SELECT id FROM generation_history WHERE r2_url LIKE ${'%' + escapeLike(key)} ORDER BY created_at DESC LIMIT 1`
       : await sql`SELECT id FROM generation_history WHERE r2_url = ${url} ORDER BY created_at DESC LIMIT 1`
     if (rows.length === 0) {
       return NextResponse.json({ id: null })
@@ -49,10 +56,10 @@ export async function POST(request: NextRequest) {
     if (key) {
       // Match by URL key suffix
       result = await sql`
-        UPDATE generation_history 
+        UPDATE generation_history
         SET used_in_canvas = ${used_in_canvas ?? false},
             expires_at = ${used_in_canvas ? null : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()}
-        WHERE r2_url LIKE ${'%' + key}
+        WHERE r2_url LIKE ${'%' + escapeLike(key)}
         RETURNING id
       `
     } else {

@@ -40,6 +40,24 @@ export const SESSION_TOKEN_HEX_LENGTH = 64 // 32 bytes -> 64 hex chars
 
 const RATE_LIMIT_MAX_ATTEMPTS = 5
 const RATE_LIMIT_WINDOW_SECONDS = 60
+// Global backstop, independent of IP. The per-IP limit above assumes the
+// client IP can be trusted — true on Vercel (x-real-ip) but NOT on hosts
+// where we fall back to the client-spoofable x-forwarded-for (see
+// getClientIp). Without this, an attacker rotating the XFF header resets
+// the per-IP counter to zero and gets unlimited guesses against the single
+// app password. This caps total failed logins across ALL IPs per window,
+// so even a fully-spoofed flood is bounded. Set high enough that a real
+// single user won't trip it, low enough to make online brute force
+// impractical. Tunable via LOGIN_RATE_LIMIT_GLOBAL_MAX (0 disables).
+const RATE_LIMIT_GLOBAL_MAX_ATTEMPTS = 60
+
+function getGlobalMaxAttempts(): number {
+  const raw = process.env.LOGIN_RATE_LIMIT_GLOBAL_MAX
+  if (raw === undefined || raw === '') return RATE_LIMIT_GLOBAL_MAX_ATTEMPTS
+  const n = Number(raw)
+  if (!Number.isFinite(n) || n < 0) return RATE_LIMIT_GLOBAL_MAX_ATTEMPTS
+  return n
+}
 
 // ---------------------------------------------------------------------------
 // Crypto helpers — Web Crypto so this module works in edge runtime.
@@ -141,11 +159,24 @@ export interface RateLimitResult {
 export async function checkLoginRateLimit(ip: string): Promise<RateLimitResult> {
   const sql = getDb()
   await ensureSchema(sql)
+  // Per-IP and global counts in one round-trip. The global count is the
+  // backstop against x-forwarded-for spoofing defeating the per-IP gate.
+  const globalMax = getGlobalMaxAttempts()
   const rows = (await sql`
-    SELECT count(*)::int AS n FROM auth_attempts
-    WHERE ip = ${ip} AND attempted_at > now() - (${RATE_LIMIT_WINDOW_SECONDS} || ' seconds')::interval
-  `) as { n: number }[]
-  const attempts = rows[0]?.n ?? 0
+    SELECT
+      count(*) FILTER (WHERE ip = ${ip})::int AS ip_n,
+      count(*)::int AS global_n
+    FROM auth_attempts
+    WHERE attempted_at > now() - (${RATE_LIMIT_WINDOW_SECONDS} || ' seconds')::interval
+  `) as { ip_n: number; global_n: number }[]
+  const attempts = rows[0]?.ip_n ?? 0
+  const globalAttempts = rows[0]?.global_n ?? 0
+
+  // Global backstop (0 disables). Trips before/independently of the per-IP
+  // limit so a spoofed-IP flood still gets shut down.
+  if (globalMax > 0 && globalAttempts >= globalMax) {
+    return { allowed: false, remaining: 0, retryAfterSeconds: RATE_LIMIT_WINDOW_SECONDS }
+  }
   if (attempts >= RATE_LIMIT_MAX_ATTEMPTS) {
     return { allowed: false, remaining: 0, retryAfterSeconds: RATE_LIMIT_WINDOW_SECONDS }
   }

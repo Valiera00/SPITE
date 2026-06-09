@@ -35,6 +35,16 @@ export async function GET(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
     }
 
+    // Whether this request authenticated via an in-URL signature (path or
+    // query token) rather than the session cookie. This decides cacheability:
+    // a signed-token URL carries its own auth in the path/query, so the cache
+    // key IS the auth and it's safe to mark public + CORS-open (fal.ai's image
+    // fetcher needs both, and only ever uses signed URLs — never the cookie).
+    // A cookie-authenticated request, by contrast, must NOT be stored in any
+    // shared/CDN cache: the cache key is just the object key, so a cached copy
+    // could be replayed to an unauthenticated caller. Serve those private.
+    const signedAuth = pathTokenOk || queryTokenOk
+
     const command = new GetObjectCommand({
       Bucket: process.env.R2_BUCKET_NAME!,
       Key: key,
@@ -47,22 +57,28 @@ export async function GET(
       return NextResponse.json({ error: 'File not found' }, { status: 404 })
     }
 
-    // fal's image fetcher REQUIRES Access-Control-Allow-Origin: * to
-    // accept the response — without it, fal returns "Failed to download
-    // the file" for any reference. Don't remove this without a path
-    // for fal to opt in via its own origin.
+    // Header strategy depends on how the request authenticated (see
+    // `signedAuth` above):
     //
-    // Cap cache at 1 hour to match the HMAC signature's expiry: an URL
-    // that has expired by our auth check shouldn't continue to be
-    // served from any cache.
-    return new NextResponse(buffer, {
-      headers: {
-        'Content-Type': response.ContentType || 'application/octet-stream',
-        'Cache-Control': 'public, max-age=3600',
-        'Access-Control-Allow-Origin': '*',
-        'X-Content-Type-Options': 'nosniff',
-      },
-    })
+    //  - Signed-token requests (fal.ai): the signature lives in the URL, so
+    //    the URL itself is the capability. Safe to cache publicly for up to
+    //    1 hour (matches the token's expiry), and fal's image fetcher
+    //    REQUIRES `Access-Control-Allow-Origin: *` or it returns "Failed to
+    //    download the file". Don't remove the ACAO on this path.
+    //
+    //  - Cookie requests (the app's own <img> loads): same-origin, so no CORS
+    //    header is needed, and the response must be marked private + no-store
+    //    so no shared/CDN cache can replay private media to an unauthenticated
+    //    caller (the cache key is only the object key, not the cookie).
+    const headers: Record<string, string> = {
+      'Content-Type': response.ContentType || 'application/octet-stream',
+      'X-Content-Type-Options': 'nosniff',
+      'Cache-Control': signedAuth ? 'public, max-age=3600' : 'private, no-store',
+    }
+    if (signedAuth) {
+      headers['Access-Control-Allow-Origin'] = '*'
+    }
+    return new NextResponse(buffer, { headers })
   } catch (error) {
     console.error('[R2 Image Proxy] Error:', error)
     // Generic error to client (no leaking S3 error details, no caching

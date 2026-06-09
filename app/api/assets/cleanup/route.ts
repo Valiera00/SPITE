@@ -20,8 +20,19 @@ async function deleteFromR2(key: string) {
   }
 }
 
-// Cleanup job - should be called by Vercel cron job
+// Cleanup job. Invoked either by Vercel Cron (which issues a GET with an
+// auto-injected `Authorization: Bearer ${CRON_SECRET}` header) or by an
+// external scheduler doing a POST with the same header — so we export both
+// and share one implementation.
+export async function GET(request: NextRequest) {
+  return runCleanup(request)
+}
+
 export async function POST(request: NextRequest) {
+  return runCleanup(request)
+}
+
+async function runCleanup(request: NextRequest) {
   // Refuse to run if CRON_SECRET is missing. Without this guard the
   // `Bearer ${process.env.CRON_SECRET}` template would produce the
   // literal string "Bearer undefined", which any caller could match,

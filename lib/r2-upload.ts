@@ -91,11 +91,38 @@ function isAllowedRehostSource(rawUrl: string): boolean {
 // permanently in our R2 bucket. Returns the private proxy URL to use as the
 // asset's r2_url so the file is truly owned and never expires. Refuses any
 // host not on REHOST_ALLOWED_HOSTS — SSRF defence.
+// Fetch a URL while re-validating the host on EVERY hop. `fetch` follows
+// redirects by default, so validating only the initial URL leaves an SSRF
+// hole: an allowed host (fal.media) that 3xx-redirects to an internal
+// address would be followed blindly. We follow manually and re-check each
+// Location against the allowlist before continuing.
+async function fetchAllowedFollowingRedirects(
+  startUrl: string,
+  maxHops = 5,
+): Promise<Response> {
+  let url = startUrl
+  for (let hop = 0; hop <= maxHops; hop++) {
+    if (!isAllowedRehostSource(url)) {
+      throw new Error('rehostToR2: source host not allowed')
+    }
+    const res = await fetch(url, { redirect: 'manual' })
+    // 3xx with a Location → validate the next hop before following.
+    if (res.status >= 300 && res.status < 400) {
+      const loc = res.headers.get('location')
+      if (!loc) return res // no Location to follow; let caller handle !ok
+      url = new URL(loc, url).toString()
+      continue
+    }
+    return res
+  }
+  throw new Error('rehostToR2: too many redirects')
+}
+
 export async function rehostToR2(sourceUrl: string): Promise<string> {
   if (!isAllowedRehostSource(sourceUrl)) {
     throw new Error('rehostToR2: source host not allowed')
   }
-  const res = await fetch(sourceUrl)
+  const res = await fetchAllowedFollowingRedirects(sourceUrl)
   if (!res.ok) {
     throw new Error(`Failed to fetch source for re-host: ${res.status}`)
   }

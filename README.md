@@ -110,12 +110,13 @@ in the Cloudflare dashboard:
 
 1. Cloudflare → **R2** → click your bucket
 2. **Settings** tab → **CORS Policy** → **Edit CORS policy**
-3. Paste this and save:
+3. Paste this and save — **replace the placeholder with YOUR deployment's
+   exact origin(s)**:
 
 ```json
 [
   {
-    "AllowedOrigins": ["https://*.vercel.app", "http://localhost:3000"],
+    "AllowedOrigins": ["https://your-app.vercel.app", "http://localhost:3000"],
     "AllowedMethods": ["PUT", "GET", "HEAD"],
     "AllowedHeaders": ["*"],
     "ExposeHeaders": ["ETag"],
@@ -124,9 +125,14 @@ in the Cloudflare dashboard:
 ]
 ```
 
-If you deploy to a custom domain, add that too — e.g.
-`"https://your-app.example.com"`. The `https://*.vercel.app` wildcard
-already covers every Vercel preview and production URL Vercel hands you.
+Pin `AllowedOrigins` to the precise origins you actually deploy from (your
+production domain and `http://localhost:3000` for local dev). **Do not use a
+broad wildcard like `https://*.vercel.app`** — that would let a page on *any*
+Vercel-hosted site drive a browser request against your bucket if it ever
+gets hold of a presigned URL. If you use a custom domain, list that instead,
+e.g. `"https://your-app.example.com"`. If you genuinely need preview deploys
+to upload, add each specific preview origin rather than the whole `*.vercel.app`
+space.
 
 ### Run
 
@@ -151,14 +157,20 @@ in.
 4. Trigger a deploy. The first deploy will route to `/setup` if anything
    is missing.
 
-### Optional: cron cleanup
+### Cron cleanup
 
-There's a scheduled cleanup endpoint at `/api/assets/cleanup` that
-deletes old, unprotected generated assets after 30 days. To wire it up
-on Vercel, add a `vercel.json` cron entry pointing at that path, and set
-`CRON_SECRET` to a long random string (the endpoint requires it in the
-`Authorization` header). Safe to skip entirely if you don't need
-automatic cleanup.
+There's a scheduled cleanup endpoint at `/api/assets/cleanup` that deletes
+old, unprotected generated assets after 30 days and sweeps the auth / spend
+bookkeeping tables so they don't grow unbounded. A daily schedule is already
+defined in [`vercel.json`](./vercel.json) (04:00 UTC). To activate it, just
+set `CRON_SECRET` to a long random string in your Vercel env — Vercel
+automatically sends it as `Authorization: Bearer <CRON_SECRET>` on each cron
+run, and the endpoint refuses to do anything without a matching secret.
+
+If `CRON_SECRET` is unset the cron simply no-ops (returns 500 and logs), so
+nothing breaks — but the cleanup won't run. On non-Vercel hosts, point any
+external scheduler (GitHub Actions, etc.) at the same path with that
+`Authorization` header; both `GET` and `POST` work.
 
 ---
 

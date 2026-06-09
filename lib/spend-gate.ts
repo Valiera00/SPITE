@@ -35,6 +35,21 @@ function getLimitUsd(): number {
   return n
 }
 
+// Optional hard ceiling on the estimated cost of a SINGLE submission.
+// Defence against a mispriced/under-estimated model (the per-hour gate is
+// only as accurate as lib/fal-cost.ts; flat-rate entries don't scale with
+// resolution/duration) or one absurd batch sailing through because the hour
+// still has headroom. Disabled by default (0 / unset) so it never blocks a
+// legitimate submission unexpectedly — set SPEND_LIMIT_USD_PER_REQUEST to
+// opt in. Returns 0 when disabled.
+export function getPerRequestLimitUsd(): number {
+  const raw = process.env.SPEND_LIMIT_USD_PER_REQUEST
+  if (raw === undefined || raw === '') return 0
+  const n = Number(raw)
+  if (!Number.isFinite(n) || n <= 0) return 0
+  return n
+}
+
 export interface SpendGateResult {
   allowed: boolean
   spentLastHourUsd: number
@@ -82,19 +97,33 @@ export async function reserveSpend(
     }
   }
 
-  // Atomic: INSERT only if (current_spent + this_cost) <= limit.
-  // The SELECT in the WHERE clause is locked-evaluated at write time,
-  // so two concurrent inserts will see each other.
-  const inserted = (await sql`
-    INSERT INTO spend_ledger (model_id, estimated_usd)
-    SELECT ${modelId}, ${costUsd}
-    WHERE (
-      SELECT COALESCE(SUM(estimated_usd), 0)
-      FROM spend_ledger
-      WHERE created_at > now() - interval '1 hour'
-    ) + ${costUsd} <= ${limitUsd}
-    RETURNING id
-  `) as { id: string }[]
+  // Atomic check-and-insert. A bare INSERT…SELECT WHERE (SELECT SUM…) is
+  // NOT actually atomic across concurrent callers: under READ COMMITTED
+  // (Neon's default, one autocommit statement per call) each caller's SUM
+  // subquery reads a snapshot taken before any sibling INSERT commits, so
+  // two concurrent submits can both see the same pre-spend total and both
+  // pass — overshooting the ceiling.
+  //
+  // Fix: take a transaction-scoped advisory lock first, then do the
+  // conditional insert in the SAME transaction. The lock serializes all
+  // reserveSpend calls; because the INSERT statement re-snapshots after the
+  // lock is acquired, its SUM now sees every previously-committed
+  // reservation. The lock auto-releases on commit/rollback.
+  const SPEND_GATE_LOCK_KEY = 1893064757 // arbitrary constant namespace
+  const txn = (await sql.transaction([
+    sql`SELECT pg_advisory_xact_lock(${SPEND_GATE_LOCK_KEY}::bigint)`,
+    sql`
+      INSERT INTO spend_ledger (model_id, estimated_usd)
+      SELECT ${modelId}, ${costUsd}
+      WHERE (
+        SELECT COALESCE(SUM(estimated_usd), 0)
+        FROM spend_ledger
+        WHERE created_at > now() - interval '1 hour'
+      ) + ${costUsd} <= ${limitUsd}
+      RETURNING id
+    `,
+  ])) as unknown[]
+  const inserted = (txn[1] ?? []) as { id: string }[]
 
   if (inserted.length > 0) {
     // Reserved successfully — also fetch the new current total for the response.

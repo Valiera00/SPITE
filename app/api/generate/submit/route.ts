@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getModelById, buildModelInput } from '@/lib/fal-models'
 import { toFalFetchableUrl } from '@/lib/r2-upload'
 import { estimateGenerationCost } from '@/lib/fal-cost'
-import { reserveSpend, rollbackSpend } from '@/lib/spend-gate'
+import { reserveSpend, rollbackSpend, getPerRequestLimitUsd } from '@/lib/spend-gate'
 import { getOrCreateVoiceId } from '@/lib/fal-voices'
 
 export async function POST(request: NextRequest) {
@@ -90,9 +90,28 @@ export async function POST(request: NextRequest) {
       { status: 422 },
     )
   }
-  // Atomic reserve — combines the previous separate gate-check + ledger-write
-  // into one SQL statement so concurrent submits can't both pass the same
-  // pre-spend total. ledgerId is returned for rollback if fal rejects below.
+  // Optional per-request hard cap (disabled unless SPEND_LIMIT_USD_PER_REQUEST
+  // is set). Independent of the rolling-hour ceiling: stops a single mispriced
+  // or oversized submission from going through just because the hour still has
+  // budget. Checked against the same server-recomputed estimate.
+  const perRequestLimit = getPerRequestLimitUsd()
+  if (perRequestLimit > 0 && costEstimate.total > perRequestLimit) {
+    return NextResponse.json(
+      {
+        error:
+          `This submission's estimated cost ($${costEstimate.total.toFixed(2)}) exceeds the ` +
+          `per-request ceiling of $${perRequestLimit.toFixed(2)} (SPEND_LIMIT_USD_PER_REQUEST). ` +
+          `Reduce the batch size / duration, or raise the limit.`,
+        estimatedUsd: costEstimate.total,
+        perRequestLimitUsd: perRequestLimit,
+      },
+      { status: 429 },
+    )
+  }
+
+  // Atomic reserve — advisory-locked check-and-insert so concurrent submits
+  // serialize and can't both pass the same pre-spend total (see reserveSpend).
+  // ledgerId is returned for rollback if fal rejects below.
   const reservation = await reserveSpend(model.id, costEstimate.total)
   if (!reservation.allowed) {
     return NextResponse.json(
@@ -245,7 +264,17 @@ export async function POST(request: NextRequest) {
     endpoint = model.editModel
   }
 
-  console.log(`[fal.ai] Submitting: model=${endpoint}`, JSON.stringify(input))
+  // Log a REDACTED summary only. The full `input` contains R2 presigned URLs
+  // (time-limited object-read credentials in their query string) and the raw
+  // user prompt — neither belongs in server logs / log drains. Log shape, not
+  // contents.
+  console.log(
+    `[fal.ai] Submitting: model=${endpoint} ` +
+      `promptLen=${typeof finalPrompt === 'string' ? finalPrompt.length : 0} ` +
+      `refs=${refsSigned.length} ` +
+      `numImages=${(input as Record<string, unknown>).num_images ?? 1} ` +
+      `hasFrame=${hasFrame}`,
+  )
 
   try {
     // Submit to fal.ai queue using REST API directly
