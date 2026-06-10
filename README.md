@@ -191,7 +191,6 @@ lib/
   fal-models.ts       Per-model config: endpoint, input shape, cost
   fal-cost.ts         Cost estimation + confirmation threshold
   mention-prompt.ts   Model-aware reference grammar compilation
-docs/                 Brand guide + overview (background reading)
 scripts/              Tooling (secret check, etc.)
 database-setup.sql    Idempotent schema for first-time setup
 middleware.ts         Auth gate + env-check redirect
