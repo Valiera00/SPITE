@@ -18,8 +18,10 @@ node_modules
 # Build cache
 *.tsbuildinfo
 
-# Claude Code local settings (machine-specific)
+# Claude Code local settings (machine-specific — contains local paths,
+# username, and the private deployment URL; must NOT be published)
 .claude/settings.local.json
+.claude/settings.json
 
 # Local pre-edit backups (security review)
 .security-backup-*/
