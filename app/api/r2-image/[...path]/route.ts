@@ -61,10 +61,13 @@ export async function GET(
     // image fetcher requires `Access-Control-Allow-Origin: *`, which we can
     // only guarantee from this function, not from a raw R2 presigned URL.
     if (!signedAuth) {
+      // 1h expiry: long enough that a <video> paused then scrubbed later
+      // won't hit an expired URL mid-playback, short enough to bound the
+      // capability if the redirect URL ever leaks.
       const presignedUrl = await getSignedUrl(
         getR2Client(),
         new GetObjectCommand({ Bucket: process.env.R2_BUCKET_NAME!, Key: key }),
-        { expiresIn: 300 },
+        { expiresIn: 3600 },
       )
       return new NextResponse(null, {
         status: 302,
