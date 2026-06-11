@@ -132,6 +132,34 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
       `
     }
 
+    // Toolbar uploads live in the `assets` table, not generation_history, and
+    // used to leak: project-delete dropped only their DB rows while the R2
+    // objects lingered forever (the cleanup cron never scans `assets`). Delete
+    // each file too — unless another project's canvas still references the same
+    // r2_url (a duplicate shares it via copied canvas_nodes), in which case the
+    // file must stay. Mirrors the generation_history exclusivity check above.
+    const uploadRows = await sql`
+      SELECT id, url FROM assets WHERE projectid = ${projectId}
+    ` as { id: string; url: string | null }[]
+
+    const uploadKeys: string[] = []
+    for (const row of uploadRows) {
+      const url = row.url
+      if (!url) continue
+      const referrer = await sql`
+        SELECT projectid
+        FROM canvas_nodes
+        WHERE projectid <> ${projectId}::text
+          AND (data->>'outputUrl' = ${url} OR data->>'thumbnail' = ${url})
+        LIMIT 1
+      ` as { projectid: string }[]
+      if (referrer.length === 0) {
+        const key = keyFromUrl(url)
+        if (key) uploadKeys.push(key)
+      }
+    }
+    await Promise.all(uploadKeys.map(deleteR2Key))
+
     // Tear down the canvas tables explicitly — they don't have ON DELETE
     // CASCADE on the project FK, and asset_folders/items keyed by
     // project_id should go with the project too.
@@ -146,6 +174,7 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
       success: true,
       assetsDeleted: exclusiveAssetIds.length,
       assetsTransferred: assets.length - exclusiveAssetIds.length,
+      uploadFilesDeleted: uploadKeys.length,
     })
   } catch (error) {
     console.error('Error deleting project:', error)
