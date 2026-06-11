@@ -1,4 +1,5 @@
 import { GetObjectCommand } from '@aws-sdk/client-s3'
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { NextRequest, NextResponse } from 'next/server'
 import { getR2Client, verifyImageToken } from '@/lib/r2-upload'
 import { SESSION_COOKIE_NAME, isSessionValid } from '@/lib/sessions'
@@ -45,6 +46,32 @@ export async function GET(
     // could be replayed to an unauthenticated caller. Serve those private.
     const signedAuth = pathTokenOk || queryTokenOk
 
+    // Cookie-authenticated reads (the app's own <img>/<video> loads) get a
+    // 302 to a short-lived presigned R2 URL instead of having their bytes
+    // streamed back through this function. Streaming every view through the
+    // function bills the full file size as Vercel "Fast Origin Transfer" on
+    // EVERY load — a canvas of 30 media files reopened a few times is
+    // gigabytes, enough to pause a Hobby project. Redirecting hands the
+    // download straight to Cloudflare (R2 egress is free) and only a tiny
+    // redirect crosses Vercel. The presigned URL is itself a time-limited
+    // capability, so the bucket stays private; we mark the redirect no-store
+    // so the URL is never parked in a shared cache.
+    //
+    // The signed-token (fal.ai) path deliberately keeps streaming below: fal's
+    // image fetcher requires `Access-Control-Allow-Origin: *`, which we can
+    // only guarantee from this function, not from a raw R2 presigned URL.
+    if (!signedAuth) {
+      const presignedUrl = await getSignedUrl(
+        getR2Client(),
+        new GetObjectCommand({ Bucket: process.env.R2_BUCKET_NAME!, Key: key }),
+        { expiresIn: 300 },
+      )
+      return new NextResponse(null, {
+        status: 302,
+        headers: { Location: presignedUrl, 'Cache-Control': 'private, no-store' },
+      })
+    }
+
     const command = new GetObjectCommand({
       Bucket: process.env.R2_BUCKET_NAME!,
       Key: key,
@@ -57,26 +84,17 @@ export async function GET(
       return NextResponse.json({ error: 'File not found' }, { status: 404 })
     }
 
-    // Header strategy depends on how the request authenticated (see
-    // `signedAuth` above):
-    //
-    //  - Signed-token requests (fal.ai): the signature lives in the URL, so
-    //    the URL itself is the capability. Safe to cache publicly for up to
-    //    1 hour (matches the token's expiry), and fal's image fetcher
-    //    REQUIRES `Access-Control-Allow-Origin: *` or it returns "Failed to
-    //    download the file". Don't remove the ACAO on this path.
-    //
-    //  - Cookie requests (the app's own <img> loads): same-origin, so no CORS
-    //    header is needed, and the response must be marked private + no-store
-    //    so no shared/CDN cache can replay private media to an unauthenticated
-    //    caller (the cache key is only the object key, not the cookie).
+    // Only signed-token (fal.ai) requests reach this streaming path now —
+    // cookie reads were redirected to a presigned URL above. The signature
+    // lives in the URL, so the URL itself is the capability: safe to cache
+    // publicly for up to 1 hour (matches the token's expiry), and fal's image
+    // fetcher REQUIRES `Access-Control-Allow-Origin: *` or it returns "Failed
+    // to download the file". Don't remove the ACAO on this path.
     const headers: Record<string, string> = {
       'Content-Type': response.ContentType || 'application/octet-stream',
       'X-Content-Type-Options': 'nosniff',
-      'Cache-Control': signedAuth ? 'public, max-age=3600' : 'private, no-store',
-    }
-    if (signedAuth) {
-      headers['Access-Control-Allow-Origin'] = '*'
+      'Cache-Control': 'public, max-age=3600',
+      'Access-Control-Allow-Origin': '*',
     }
     return new NextResponse(buffer, { headers })
   } catch (error) {
