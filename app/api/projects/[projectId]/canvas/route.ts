@@ -1,12 +1,5 @@
-import { getDb } from '@/lib/db'
+import { getDb, CANVAS_SAVE_LOCK_NS } from '@/lib/db'
 import { NextRequest, NextResponse } from 'next/server'
-
-// Namespace for the per-project canvas-save advisory lock (the int4 spells
-// "SPIT"). Combined with hashtext(projectId) as the second key, it gives each
-// project its own lock without colliding with the spend gate's single-bigint
-// advisory lock — Postgres keeps two-int and one-bigint advisory locks in
-// separate spaces.
-const CANVAS_SAVE_LOCK_NS = 0x53504954
 
 // Self-bootstraps the rolling-backup table. Snapshots are tiny insurance
 // against an autosave race or accidental wipe: the last ~50 minutes of

@@ -47,25 +47,31 @@ export async function POST(request: NextRequest) {
       // Get all assets to find their R2 keys
       const assets = await sql`SELECT id, metadata FROM assets`
       
-      // Delete from R2 if there are files
+      // Delete from R2 if there are files. ListObjectsV2 returns at most 1000
+      // keys per call and DeleteObjects accepts at most 1000 per call, so we
+      // page through the whole bucket — the previous single-shot list silently
+      // left everything past the first 1000 objects orphaned.
       if (assets.length > 0 && process.env.R2_BUCKET_NAME) {
         try {
           const s3Client = getR2Client()
-          // List all objects in bucket to delete
-          const listCommand = new ListObjectsV2Command({
-            Bucket: process.env.R2_BUCKET_NAME,
-          })
-          const listResult = await s3Client.send(listCommand)
-          
-          if (listResult.Contents && listResult.Contents.length > 0) {
-            const deleteCommand = new DeleteObjectsCommand({
+          let token: string | undefined
+          do {
+            const listResult = await s3Client.send(new ListObjectsV2Command({
               Bucket: process.env.R2_BUCKET_NAME,
-              Delete: {
-                Objects: listResult.Contents.map(obj => ({ Key: obj.Key })),
-              },
-            })
-            await s3Client.send(deleteCommand)
-          }
+              ContinuationToken: token,
+            }))
+            const contents = listResult.Contents || []
+            if (contents.length > 0) {
+              await s3Client.send(new DeleteObjectsCommand({
+                Bucket: process.env.R2_BUCKET_NAME,
+                Delete: {
+                  Objects: contents.map(obj => ({ Key: obj.Key })),
+                  Quiet: true,
+                },
+              }))
+            }
+            token = listResult.IsTruncated ? listResult.NextContinuationToken : undefined
+          } while (token)
         } catch (r2Error) {
           console.error('[clear-data] R2 delete error:', r2Error)
           // Continue with database deletion even if R2 fails

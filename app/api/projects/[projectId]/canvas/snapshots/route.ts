@@ -1,4 +1,4 @@
-import { getDb } from '@/lib/db'
+import { getDb, CANVAS_SAVE_LOCK_NS } from '@/lib/db'
 import { NextRequest, NextResponse } from 'next/server'
 
 // GET /api/projects/<id>/canvas/snapshots
@@ -117,8 +117,12 @@ export async function POST(
     }
 
     // Replace the canvas with the chosen snapshot. Same atomic pattern
-    // as the main save route.
+    // as the main save route — and it MUST take the same per-project advisory
+    // lock as the autosave, or a restore racing an in-flight autosave would
+    // deadlock on the canvas_nodes/edges rows (both delete-then-reinsert the
+    // same set). Shared key → the two serialize instead of colliding.
     const writeQueries = [
+      sql`SELECT pg_advisory_xact_lock(${CANVAS_SAVE_LOCK_NS}, hashtext(${projectId}))`,
       sql`DELETE FROM canvas_nodes WHERE projectId = ${projectId}::text`,
       sql`DELETE FROM canvas_edges WHERE projectId = ${projectId}::text`,
     ]
