@@ -18,18 +18,27 @@ async function deleteFromR2(key: string) {
   }
 }
 
+// Schema setup runs ONCE per serverless instance, not on every request. The
+// list endpoint used to fire an ALTER TABLE on every GET — DDL takes a table
+// lock, so a single asset-panel load could stall behind any concurrent write
+// to generation_history (e.g. the autosave asset-reconcile). The index makes
+// the per-project, newest-first query fast instead of a full scan + sort.
+let assetsSchemaReady = false
+async function ensureAssetsSchema(sql: ReturnType<typeof getDb>) {
+  if (assetsSchemaReady) return
+  await sql`ALTER TABLE generation_history ADD COLUMN IF NOT EXISTS recovered boolean DEFAULT false`
+  await sql`CREATE INDEX IF NOT EXISTS idx_genhistory_project_created ON generation_history (project_id, created_at DESC)`
+  assetsSchemaReady = true
+}
+
 export async function GET(request: NextRequest) {
   try {
     const sql = getDb()
     const projectId = request.nextUrl.searchParams.get('projectId')
 
-    // Self-heal: if the `recovered` column hasn't been created yet on
-    // this database (it was added lazily by recordAsset, which only runs
-    // when a NEW generation lands), the SELECT below would throw and
-    // the catch would silently return an empty array — making the
-    // entire asset library look empty. Run an idempotent ALTER so the
-    // column always exists before we try to read it.
-    await sql`ALTER TABLE generation_history ADD COLUMN IF NOT EXISTS recovered boolean DEFAULT false`
+    // Ensure the `recovered` column + the project/created_at index exist.
+    // Cached so this runs once per instance instead of on every list request.
+    await ensureAssetsSchema(sql)
 
     // If projectId is provided, get assets for that project.
     // COALESCE on `recovered` so existing rows from before the column
