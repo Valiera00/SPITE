@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { recordAsset, rehostToR2 } from '@/lib/r2-upload'
 import { isValidFalModel, isValidFalRequestId } from '@/lib/fal-validate'
+import { rollbackSpendByRequestId } from '@/lib/spend-gate'
 
 export async function GET(request: NextRequest) {
   const falKey = process.env.FAL_KEY
@@ -64,6 +65,10 @@ export async function GET(request: NextRequest) {
               msg = (typeof j.detail === 'string' ? j.detail : '') || j.error || msg
             }
           } catch {}
+          // Job finished but failed (bad params, moderation reject, etc.) —
+          // refund the reserved spend so a failed attempt doesn't eat the
+          // hourly cap. Idempotent across repeated polls.
+          await rollbackSpendByRequestId(requestId)
           return NextResponse.json({
             status: 'FAILED',
             error: typeof msg === 'string' ? msg : 'Generation failed',
@@ -130,6 +135,9 @@ export async function GET(request: NextRequest) {
     }
 
     if (status === 'FAILED') {
+      // Refund the reservation — the job failed, so it shouldn't count against
+      // the hourly spend cap. Idempotent across repeated polls.
+      await rollbackSpendByRequestId(requestId)
       return NextResponse.json({
         status: 'FAILED',
         error: statusData.error || 'Generation failed',

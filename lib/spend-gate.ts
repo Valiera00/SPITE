@@ -17,6 +17,11 @@ async function ensureSchema(sql: Sql) {
     )
   `
   await sql`CREATE INDEX IF NOT EXISTS idx_spend_ledger_time ON spend_ledger (created_at)`
+  // fal's request id, stamped on after a successful submit so a job that later
+  // FAILS during polling (e.g. content moderation) can have its reservation
+  // rolled back. Added idempotently for installs that predate this column.
+  await sql`ALTER TABLE spend_ledger ADD COLUMN IF NOT EXISTS request_id text`
+  await sql`CREATE INDEX IF NOT EXISTS idx_spend_ledger_request ON spend_ledger (request_id)`
   schemaEnsured = true
 }
 
@@ -169,6 +174,38 @@ export async function rollbackSpend(ledgerId: string | undefined): Promise<void>
     await sql`DELETE FROM spend_ledger WHERE id = ${ledgerId}`
   } catch (err) {
     console.error('[spend-gate] rollbackSpend failed:', err)
+  }
+}
+
+// Stamp fal's request id onto a reservation right after a successful submit, so
+// the job can be matched back to its ledger row if it later fails during
+// polling. Best-effort — a missed stamp just means that one failure can't be
+// auto-refunded (it still ages out of the hour window).
+export async function tagSpendRequestId(
+  ledgerId: string | undefined,
+  requestId: string | undefined,
+): Promise<void> {
+  if (!ledgerId || !requestId) return
+  try {
+    const sql = getDb()
+    await sql`UPDATE spend_ledger SET request_id = ${requestId} WHERE id = ${ledgerId}`
+  } catch (err) {
+    console.error('[spend-gate] tagSpendRequestId failed:', err)
+  }
+}
+
+// Roll back a reservation for a job that ultimately FAILED during polling (e.g.
+// fal's content-moderation reject that surfaces after the job queued). Keyed by
+// fal's request id. Idempotent: a second FAILED poll finds no row and no-ops,
+// and a COMPLETED job never calls this so its reservation stays counted.
+export async function rollbackSpendByRequestId(requestId: string | undefined): Promise<void> {
+  if (!requestId) return
+  try {
+    const sql = getDb()
+    await ensureSchema(sql)
+    await sql`DELETE FROM spend_ledger WHERE request_id = ${requestId}`
+  } catch (err) {
+    console.error('[spend-gate] rollbackSpendByRequestId failed:', err)
   }
 }
 

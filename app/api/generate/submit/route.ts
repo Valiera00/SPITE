@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getModelById, buildModelInput } from '@/lib/fal-models'
 import { toFalFetchableUrl } from '@/lib/r2-upload'
 import { estimateGenerationCost } from '@/lib/fal-cost'
-import { reserveSpend, rollbackSpend, getPerRequestLimitUsd } from '@/lib/spend-gate'
+import { reserveSpend, rollbackSpend, tagSpendRequestId, getPerRequestLimitUsd } from '@/lib/spend-gate'
 import { getOrCreateVoiceId } from '@/lib/fal-voices'
 
 export async function POST(request: NextRequest) {
@@ -301,6 +301,10 @@ export async function POST(request: NextRequest) {
 
     const data = await res.json()
     console.log(`[fal.ai] Submitted, request_id=${data.request_id}`)
+
+    // Link the reservation to fal's request id so a job that FAILS during
+    // polling (e.g. content moderation) can have its spend rolled back.
+    await tagSpendRequestId(reservation.ledgerId, data.request_id)
 
     // fal returns the exact status/result URLs for this job. Derive the queue
     // path fal expects for polling from status_url — this is authoritative and
