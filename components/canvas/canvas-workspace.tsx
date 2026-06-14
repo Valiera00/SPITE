@@ -65,13 +65,41 @@ const EDGE_TYPES: EdgeTypes = {
 // keeps the identity stable.
 const EDGE_STYLE = { stroke: '#aec3d2' } as const
 
-// Persists the viewport (pan + zoom) per-project to localStorage, throttled.
-// Lives in its own leaf so that subscribing to viewport changes re-renders ONLY
-// this component each pan/zoom frame — not the entire canvas workspace.
+// Restores AND persists the viewport (pan + zoom) per-project via localStorage,
+// so a project reopens exactly where you left it. Lives in its own leaf so that
+// subscribing to viewport changes re-renders ONLY this component each pan/zoom
+// frame — not the entire canvas workspace.
+//
+// Restore happens on mount (and on project switch), BEFORE the canvas data
+// finishes loading. This is the important bit: the old code restored only after
+// the async canvas fetch, so on a big canvas (slow load) the throttled save
+// below fired first and wrote the default {0,0,1} over the real saved viewport,
+// and you always landed back at the origin. Restoring up front — and refusing
+// to save until it's done — closes that race.
 function ViewportPersistor({ projectId }: { projectId: string | undefined }) {
+  const { setViewport } = useReactFlow()
   const viewport = useViewport()
+  const readyRef = useRef(false)
+
   useEffect(() => {
+    readyRef.current = false
     if (!projectId) return
+    try {
+      const raw = localStorage.getItem(`frame-viewport-${projectId}`)
+      if (raw) {
+        const vp = JSON.parse(raw)
+        if (typeof vp?.x === 'number' && typeof vp?.y === 'number' && typeof vp?.zoom === 'number') {
+          setViewport(vp)
+        }
+      }
+    } catch {}
+    // Saves are allowed only after the restore has been applied, so the initial
+    // default viewport can never be written back over the saved one.
+    readyRef.current = true
+  }, [projectId, setViewport])
+
+  useEffect(() => {
+    if (!projectId || !readyRef.current) return
     const t = setTimeout(() => {
       try {
         localStorage.setItem(
@@ -82,6 +110,7 @@ function ViewportPersistor({ projectId }: { projectId: string | undefined }) {
     }, 400)
     return () => clearTimeout(t)
   }, [projectId, viewport.x, viewport.y, viewport.zoom])
+
   return null
 }
 
@@ -318,19 +347,8 @@ function CanvasInner({ projectId }: { projectId: string }) {
           }
         }
 
-        // Restore the last viewport (pan + zoom) for this project, so the
-        // canvas opens where the user left it. Stored client-side because
-        // it's a per-user preference, not shared project state.
-        try {
-          const raw = localStorage.getItem(`frame-viewport-${projectId}`)
-          if (raw) {
-            const vp = JSON.parse(raw)
-            if (typeof vp?.x === 'number' && typeof vp?.y === 'number' && typeof vp?.zoom === 'number') {
-              // Defer past the initial fitView so we override it.
-              requestAnimationFrame(() => setViewport(vp))
-            }
-          }
-        } catch {}
+        // Viewport restore is handled up-front by <ViewportPersistor> (on mount,
+        // before this async load completes), so there's nothing to do here.
 
         // Load assets
         const assetsResponse = await fetch(`/api/projects/${projectId}/assets`)
@@ -463,7 +481,7 @@ function CanvasInner({ projectId }: { projectId: string }) {
   
   const [minimapOpen, setMinimapOpen] = useState(true)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; flowPos: { x: number; y: number } } | null>(null)
-  const { fitView, screenToFlowPosition, setCenter, setViewport, getNodes } = useReactFlow()
+  const { fitView, screenToFlowPosition, setCenter, getNodes } = useReactFlow()
   const flowRef = useRef<HTMLDivElement>(null)
 
   const addNode = useCallback((type: string, flowPos?: { x: number; y: number }, initialData?: Record<string, any>) => {
