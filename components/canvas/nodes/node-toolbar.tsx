@@ -24,6 +24,9 @@ import {
   DownloadSimple,
   ArrowsOutSimple,
   SquaresFour,
+  GridFour,
+  Rows,
+  Columns,
 } from '@phosphor-icons/react'
 
 interface NodeActionToolbarProps {
@@ -149,14 +152,19 @@ export function NodeActionToolbar({
     }
     const anchorX = Math.min(...selected.map(n => n.position.x))
     const anchorY = Math.min(...selected.map(n => n.position.y))
-    // Conservative column / row step that covers the widest node type
-    // (image/video nodes are 320-420px wide, ~500px tall when expanded).
-    const colWidth = 380
-    const rowHeight = 520
+    const GAP = 48
+    // Real rendered size per node (React Flow measures these). A fixed grid
+    // step overlapped big/expanded nodes and tall text nodes; instead we size
+    // each COLUMN to its widest node and each ROW to its tallest, so nothing
+    // can collide regardless of node size.
+    const dim = (node: any) => ({
+      w: (node.measured?.width ?? node.width ?? 320) as number,
+      h: (node.measured?.height ?? node.height ?? 240) as number,
+    })
     const n = selected.length
     let columns: number
     switch (layout) {
-      case '5col': columns = 5; break
+      case '5col': columns = Math.min(5, n); break
       case 'row':  columns = n; break
       case 'col':  columns = 1; break
       case 'auto':
@@ -167,22 +175,34 @@ export function NodeActionToolbar({
       if (Math.abs(a.position.y - b.position.y) > 50) return a.position.y - b.position.y
       return a.position.x - b.position.x
     })
+    const rowsCount = Math.ceil(n / columns)
+    const colW = new Array(columns).fill(0)
+    const rowH = new Array(rowsCount).fill(0)
+    sorted.forEach((node, idx) => {
+      const { w, h } = dim(node)
+      const col = idx % columns
+      const row = Math.floor(idx / columns)
+      if (w > colW[col]) colW[col] = w
+      if (h > rowH[row]) rowH[row] = h
+    })
+    // Cumulative left/top offsets per column/row, each including the gap.
+    const colX = new Array(columns).fill(0)
+    for (let c = 1; c < columns; c++) colX[c] = colX[c - 1] + colW[c - 1] + GAP
+    const rowY = new Array(rowsCount).fill(0)
+    for (let r = 1; r < rowsCount; r++) rowY[r] = rowY[r - 1] + rowH[r - 1] + GAP
+
     const posById = new Map<string, { x: number; y: number }>()
     sorted.forEach((node, idx) => {
       const col = idx % columns
       const row = Math.floor(idx / columns)
-      posById.set(node.id, {
-        x: anchorX + col * colWidth,
-        y: anchorY + row * rowHeight,
-      })
+      posById.set(node.id, { x: anchorX + colX[col], y: anchorY + rowY[row] })
     })
     setNodes(ns => ns.map(node => {
       const next = posById.get(node.id)
       if (!next) return node
       return { ...node, position: next }
     }))
-    const rows = Math.ceil(n / columns)
-    toast.success(`Arranged ${n} nodes — ${columns} × ${rows}`)
+    toast.success(`Arranged ${n} nodes — ${columns} × ${rowsCount}`)
   }
 
   const handleQuickConnect = (nodeType: string) => {
@@ -331,18 +351,22 @@ export function NodeActionToolbar({
             <DropdownMenu onClose={() => setSortMenuOpen(false)}>
               <MenuItem
                 label="Auto-fit (square-ish)"
+                icon={SquaresFour}
                 onClick={() => { handleArrangeGrid('auto'); setSortMenuOpen(false) }}
               />
               <MenuItem
                 label="5 columns wide"
+                icon={GridFour}
                 onClick={() => { handleArrangeGrid('5col'); setSortMenuOpen(false) }}
               />
               <MenuItem
                 label="Single row (horizontal)"
+                icon={Columns}
                 onClick={() => { handleArrangeGrid('row'); setSortMenuOpen(false) }}
               />
               <MenuItem
                 label="Single column (vertical)"
+                icon={Rows}
                 onClick={() => { handleArrangeGrid('col'); setSortMenuOpen(false) }}
               />
             </DropdownMenu>
