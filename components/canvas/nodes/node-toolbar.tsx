@@ -106,11 +106,24 @@ export function NodeActionToolbar({
     const nodes = getNodes()
     const node = nodes.find(n => n.id === nodeId)
     if (node) {
+      // The copy references the SAME image (outputUrl / thumbnail / assetId are
+      // copied as-is — no re-upload, no extra storage). But strip shotId and the
+      // active-generation fields, matching the keyboard duplicate: otherwise the
+      // copy hijacks the original's shot tag and latches onto its pending fal
+      // request.
+      const {
+        shotId: _droppedShotId,
+        pendingRequestId: _droppedReq,
+        pendingFalEndpoint: _droppedEndpoint,
+        ...cleanData
+      } = (node.data as Record<string, unknown>) || {}
+      void _droppedShotId; void _droppedReq; void _droppedEndpoint
       const newNode = {
         ...node,
         id: `${node.id}-copy-${Date.now()}`,
         position: { x: node.position.x + 50, y: node.position.y + 50 },
         selected: false,
+        data: cleanData,
       }
       addNodes(newNode)
     }
