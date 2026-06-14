@@ -1164,6 +1164,13 @@ function CanvasInner({ projectId }: { projectId: string }) {
                        activeTool === 'comment' ? 'copy' : 'default'
               }}
               proOptions={{ hideAttribution: true }}
+              // Cull off-screen nodes. React Flow renders EVERY node by default
+              // regardless of zoom/pan, so a full canvas keeps every image/video
+              // node (and its <img>/<video>) mounted even when only a handful are
+              // visible — the cause of the slowdown on a filling canvas. With
+              // this on, only nodes intersecting the viewport are mounted; the
+              // per-node React.memo handles re-renders, this handles mount count.
+              onlyRenderVisibleElements
               edgeTypes={EDGE_TYPES}
               defaultEdgeOptions={{
                 type: 'scissors',
