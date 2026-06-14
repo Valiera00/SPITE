@@ -12,6 +12,7 @@ import {
   FrameCorners,
   Sliders,
   ArrowsOut,
+  ArrowsInSimple,
 } from '@phosphor-icons/react'
 
 export type NodeMenuItem = {
@@ -36,6 +37,7 @@ const ITEMS: NodeMenuItem[] = [
   { id: 'assets',        label: 'Assets',           shortcut: '',  icon: Stack,          category: 'MEDIA',    nodeType: 'reference' },
   { id: 'stock',         label: 'Stock',            shortcut: '',  icon: MagnifyingGlass,category: 'MEDIA',    nodeType: 'reference' },
   { id: 'frame',         label: 'Frame',            shortcut: 'F', icon: FrameCorners,   category: 'MODIFIERS',nodeType: 'prompt'    },
+  { id: 'compress',      label: 'Compress',         shortcut: '',  icon: ArrowsInSimple, category: 'MODIFIERS',nodeType: 'compress'  },
   // UPSCALER: spawns a video generator with the Topaz upscaler model
   // already selected. Same node body, just pre-configured.
   { id: 'video-upscale', label: 'Video Upscaler',   shortcut: 'V', icon: ArrowsOut,      category: 'UPSCALER', nodeType: 'videoGen', defaultModelId: 'topaz-video-upscale' },

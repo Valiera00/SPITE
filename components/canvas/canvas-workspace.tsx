@@ -43,6 +43,7 @@ import { PromptNode } from './nodes/prompt-node'
 import { ReferenceNode } from './nodes/reference-node'
 import { CommentNode } from './nodes/comment-node'
 import { StickerNode, getLastSticker } from './nodes/sticker-node'
+import { CompressNode } from './nodes/compress-node'
 
 const NODE_TYPES: NodeTypes = {
   imageGen: ImageNode,
@@ -51,6 +52,7 @@ const NODE_TYPES: NodeTypes = {
   reference: ReferenceNode,
   comment: CommentNode,
   sticker: StickerNode,
+  compress: CompressNode,
 }
 
 const EDGE_TYPES: EdgeTypes = {
@@ -146,6 +148,7 @@ function makeNode(
     videoGen: `Video Generator #${count}`,
     prompt: `Prompt #${count}`,
     reference: `Reference Asset #${count}`,
+    compress: `Compress #${count}`,
     comment: '',
     sticker: '',
   }
