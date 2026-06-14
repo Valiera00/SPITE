@@ -66,6 +66,23 @@ function ReferenceNodeImpl({ id, data, selected }: NodeProps) {
     } : n))
   }
 
+  // Take a shot over exclusively: assign it here and clear it from whatever
+  // other node in the SAME scene currently holds it (under shotId or the legacy
+  // selectedShotId field).
+  const handleShotReplace = (shotId: string) => {
+    setNodes(ns => {
+      const self = ns.find(n => n.id === id)
+      const sceneId = (self?.data as any)?.sceneId as string | undefined
+      return ns.map(n => {
+        if (n.id === id) return { ...n, data: { ...n.data, shotId, selectedShotId: undefined } }
+        if (sceneId && (n.data as any)?.sceneId !== sceneId) return n
+        const sid = ((n.data as any)?.shotId || (n.data as any)?.selectedShotId) as string | undefined
+        if (sid === shotId) return { ...n, data: { ...n.data, shotId: undefined, selectedShotId: undefined } }
+        return n
+      })
+    })
+  }
+
   // Mirror image/video-gen handleNewShot: tag this node as the next
   // shot number after the highest existing shot in the SAME scene.
   // Scenes are isolated by sceneId so two scenes can both have a
@@ -160,6 +177,7 @@ function ReferenceNodeImpl({ id, data, selected }: NodeProps) {
           shots={shots}
           onSelect={handleShotSelect}
           onNewShot={handleNewShot}
+          onReplace={handleShotReplace}
         />
         <span className="text-[10px] font-mono text-muted-foreground/60 truncate max-w-[200px]">
           {(data.label as string) || 'Reference'}

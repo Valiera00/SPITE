@@ -267,6 +267,22 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
     } : n))
   }
 
+  // Take a shot over exclusively: assign it here and unassign whatever other
+  // node in the SAME scene currently holds it (shotId or legacy selectedShotId).
+  const handleShotReplace = (shotId: string) => {
+    setNodes(ns => {
+      const self = ns.find(n => n.id === id)
+      const sceneId = (self?.data as any)?.sceneId as string | undefined
+      return ns.map(n => {
+        if (n.id === id) return { ...n, data: { ...n.data, shotId, selectedShotId: undefined } }
+        if (sceneId && (n.data as any)?.sceneId !== sceneId) return n
+        const sid = ((n.data as any)?.shotId || (n.data as any)?.selectedShotId) as string | undefined
+        if (sid === shotId) return { ...n, data: { ...n.data, shotId: undefined, selectedShotId: undefined } }
+        return n
+      })
+    })
+  }
+
   const handleNewShot = () => {
     // Always create the NEXT number after the highest existing shot in the
     // scene — so shots monotonically increase (shot 99 → New Shot creates
@@ -949,6 +965,7 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
           shots={shots}
           onSelect={handleShotSelect}
           onNewShot={handleNewShot}
+          onReplace={handleShotReplace}
         />
         {isRenaming ? (
           <input

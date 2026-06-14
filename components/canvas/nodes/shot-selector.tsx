@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { CaretDown, Check, Plus, FilmStrip, Image as ImageIcon, X } from '@phosphor-icons/react'
+import { CaretDown, Check, Plus, FilmStrip, Image as ImageIcon, X, ArrowsClockwise } from '@phosphor-icons/react'
 
 export interface ShotOption {
   id: string
@@ -16,9 +16,13 @@ interface ShotSelectorProps {
   // Pass an empty string to unassign the node from its current shot.
   onSelect: (shotId: string) => void
   onNewShot: () => void
+  // Take a shot over EXCLUSIVELY: assign it to this node and unassign whatever
+  // other node currently holds it. (Plain onSelect just adds this node as an
+  // additional take.)
+  onReplace?: (shotId: string) => void
 }
 
-export function ShotSelector({ selectedShotId, shots, onSelect, onNewShot }: ShotSelectorProps) {
+export function ShotSelector({ selectedShotId, shots, onSelect, onNewShot, onReplace }: ShotSelectorProps) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
@@ -61,32 +65,51 @@ export function ShotSelector({ selectedShotId, shots, onSelect, onNewShot }: Sho
           </div>
 
           <div className="max-h-48 overflow-y-auto">
-            {shots.map((shot) => (
-              <button
-                key={shot.id}
-                onClick={() => { onSelect(shot.id); setOpen(false) }}
-                className="w-full flex items-center gap-2 px-2 py-1.5 hover:bg-white/5 transition-colors"
-              >
-                {/* Thumbnail */}
-                <div className="w-8 h-5 rounded overflow-hidden bg-black/40 shrink-0 flex items-center justify-center">
-                  {shot.thumbnail ? (
-                    <img src={shot.thumbnail} alt="" className="w-full h-full object-cover" />
-                  ) : shot.hasVideo ? (
-                    <FilmStrip size={10} className="text-muted-foreground/40" />
-                  ) : (
-                    <ImageIcon size={10} className="text-muted-foreground/40" />
+            {shots.map((shot) => {
+              const isCurrent = selectedShotId === shot.id
+              return (
+                <div
+                  key={shot.id}
+                  className="group/shot w-full flex items-center hover:bg-white/5 transition-colors"
+                >
+                  <button
+                    onClick={() => { onSelect(shot.id); setOpen(false) }}
+                    className="flex-1 min-w-0 flex items-center gap-2 px-2 py-1.5"
+                  >
+                    {/* Thumbnail */}
+                    <div className="w-8 h-5 rounded overflow-hidden bg-black/40 shrink-0 flex items-center justify-center">
+                      {shot.thumbnail ? (
+                        <img src={shot.thumbnail} alt="" className="w-full h-full object-cover" />
+                      ) : shot.hasVideo ? (
+                        <FilmStrip size={10} className="text-muted-foreground/40" />
+                      ) : (
+                        <ImageIcon size={10} className="text-muted-foreground/40" />
+                      )}
+                    </div>
+                    {/* Label */}
+                    <span className="text-[11px] font-mono text-foreground/80 flex-1 text-left truncate">
+                      {shot.label}
+                    </span>
+                    {/* Check if selected */}
+                    {isCurrent && (
+                      <Check size={12} className="text-accent shrink-0" />
+                    )}
+                  </button>
+                  {/* Replace: take this shot over exclusively (unassigns the
+                      node currently holding it). Hidden for the node's own shot. */}
+                  {onReplace && !isCurrent && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); onReplace(shot.id); setOpen(false) }}
+                      title="Reassign this shot to this node, unassigning the current one"
+                      className="opacity-0 group-hover/shot:opacity-100 shrink-0 flex items-center gap-1 mr-1.5 px-1.5 py-1 rounded text-[9px] font-mono text-accent hover:bg-accent/15 transition-all"
+                    >
+                      <ArrowsClockwise size={10} weight="bold" />
+                      Replace
+                    </button>
                   )}
                 </div>
-                {/* Label */}
-                <span className="text-[11px] font-mono text-foreground/80 flex-1 text-left">
-                  {shot.label}
-                </span>
-                {/* Check if selected */}
-                {selectedShotId === shot.id && (
-                  <Check size={12} className="text-accent shrink-0" />
-                )}
-              </button>
-            ))}
+              )
+            })}
           </div>
 
           <div className="border-t border-white/5 mt-1 pt-1">
