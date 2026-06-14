@@ -156,30 +156,30 @@ export function ScissorsEdge({
   data,
 }: EdgeProps) {
   const [hovered, setHovered] = useState(false)
-  const { setEdges, getEdges } = useReactFlow()
+  const { setEdges } = useReactFlow()
+
+  const d = data as
+    | { active?: boolean; animMode?: 'auto' | 'on' | 'off'; activeCount?: number; edgeCount?: number }
+    | undefined
 
   // "active" = a node this cord connects to is selected (flagged in
   // edge.data.active by the canvas), or the edge itself is selected.
-  const active = !!(data as { active?: boolean } | undefined)?.active || !!selected
+  const active = !!d?.active || !!selected
   const live = hovered || active
 
   // User preference from Settings → Performance: 'off' (static), 'on' (always
   // animate), or 'auto' (default — animate everything on small canvases, only
   // what you touch on big ones).
-  const mode =
-    (data as { animMode?: 'auto' | 'on' | 'off' } | undefined)?.animMode ?? 'auto'
+  const mode = d?.animMode ?? 'auto'
 
   // Animation gating. 'off' → never animate. Otherwise: small canvas (or 'on')
   // → idle cords drift; big canvas in 'auto' → only hover/active move; the
   // active count is capped either way so a huge multi-select can't animate
-  // hundreds of cords at once.
-  const allEdges = getEdges()
-  const idleAnimAllowed = mode === 'on' ? true : allEdges.length <= ANIM_BUDGET
-  const activeCount = active
-    ? allEdges.filter(
-        (e) => (e.data as { active?: boolean } | undefined)?.active || e.selected,
-      ).length
-    : 0
+  // hundreds of cords at once. The canvas computes edgeCount/activeCount once
+  // and passes them in data, so we don't re-scan every edge here per render.
+  const edgeCount = d?.edgeCount ?? 0
+  const idleAnimAllowed = mode === 'on' ? true : edgeCount <= ANIM_BUDGET
+  const activeCount = active ? (d?.activeCount ?? 0) : 0
   const animate =
     mode === 'off'
       ? false

@@ -1,4 +1,4 @@
-import { useCallback, useRef, useEffect, useState } from 'react'
+import { useCallback, useRef, useEffect, useState, useMemo } from 'react'
 import type { Node, Edge } from '@xyflow/react'
 
 // Minimal shape of what we persist per scene. Shots are derived from
@@ -21,10 +21,13 @@ export function useCanvasAutoSave(
   // Always send the bare-bones scene shape, dropping any shots[] that
   // might be on the in-memory Scene object (scenesWithShots adds them).
   // Keeps the diff stable across renders that only change derived shots.
-  const persistedScenes: PersistedScene[] = scenes.map(s => ({
-    id: s.id,
-    name: s.name,
-  }))
+  // Memoized so its identity is stable across renders — otherwise saveCanvas
+  // (which lists it as a dep) got a new identity every render and re-ran all
+  // the autosave effects.
+  const persistedScenes: PersistedScene[] = useMemo(
+    () => scenes.map(s => ({ id: s.id, name: s.name })),
+    [scenes],
+  )
 
   const saveCanvas = useCallback(async (force = false) => {
     if (!projectId || isSavingRef.current) return
@@ -81,13 +84,16 @@ export function useCanvasAutoSave(
     }
   }, [projectId, nodes, edges, persistedScenes, activeSceneId])
 
-  // Mark as unsaved when nodes/edges/scenes/activeSceneId change
+  // Mark as unsaved when nodes/edges/scenes/activeSceneId change. This used to
+  // JSON.stringify the entire canvas on every change to compare against the
+  // last save — which meant a full-canvas serialize on every drag tick, the
+  // main source of drag jank on a large board. The status is just a UI hint, so
+  // we optimistically flag "unsaved" on any change; the debounced saveCanvas
+  // still does the real change-check before POSTing and flips it back to saved.
   useEffect(() => {
     if (!projectId || nodes.length === 0) return
-
-    const currentState = JSON.stringify({ nodes, edges, scenes: persistedScenes, activeSceneId })
-    if (currentState !== lastSavedRef.current && lastSavedRef.current !== '') {
-      setSaveStatus('unsaved')
+    if (lastSavedRef.current !== '') {
+      setSaveStatus(prev => (prev === 'saving' ? prev : 'unsaved'))
     }
   }, [projectId, nodes, edges, persistedScenes, activeSceneId])
 

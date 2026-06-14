@@ -57,6 +57,32 @@ const EDGE_TYPES: EdgeTypes = {
   scissors: ScissorsEdge,
 }
 
+// Stable style reference for every cord. Inlining `{ stroke: ... }` in the
+// edge map gave each edge a new style object on every recompute, which defeats
+// React Flow's edge memoization and re-renders all edges. One shared object
+// keeps the identity stable.
+const EDGE_STYLE = { stroke: '#aec3d2' } as const
+
+// Persists the viewport (pan + zoom) per-project to localStorage, throttled.
+// Lives in its own leaf so that subscribing to viewport changes re-renders ONLY
+// this component each pan/zoom frame — not the entire canvas workspace.
+function ViewportPersistor({ projectId }: { projectId: string | undefined }) {
+  const viewport = useViewport()
+  useEffect(() => {
+    if (!projectId) return
+    const t = setTimeout(() => {
+      try {
+        localStorage.setItem(
+          `frame-viewport-${projectId}`,
+          JSON.stringify({ x: viewport.x, y: viewport.y, zoom: viewport.zoom }),
+        )
+      } catch {}
+    }, 400)
+    return () => clearTimeout(t)
+  }, [projectId, viewport.x, viewport.y, viewport.zoom])
+  return null
+}
+
 let nodeCount = 1
 function makeId() { return `node-${Date.now()}-${Math.random().toString(36).slice(2, 7)}` }
 
@@ -435,23 +461,6 @@ function CanvasInner({ projectId }: { projectId: string }) {
   const [minimapOpen, setMinimapOpen] = useState(true)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; flowPos: { x: number; y: number } } | null>(null)
   const { fitView, screenToFlowPosition, setCenter, setViewport, getNodes } = useReactFlow()
-  const viewport = useViewport()
-
-  // Persist the viewport (pan + zoom) per-project to localStorage so the
-  // canvas opens where the user left it. Throttled to avoid thrashing
-  // localStorage during a continuous pan/zoom.
-  useEffect(() => {
-    if (!projectId) return
-    const t = setTimeout(() => {
-      try {
-        localStorage.setItem(
-          `frame-viewport-${projectId}`,
-          JSON.stringify({ x: viewport.x, y: viewport.y, zoom: viewport.zoom }),
-        )
-      } catch {}
-    }, 400)
-    return () => clearTimeout(t)
-  }, [projectId, viewport.x, viewport.y, viewport.zoom])
   const flowRef = useRef<HTMLDivElement>(null)
 
   const addNode = useCallback((type: string, flowPos?: { x: number; y: number }, initialData?: Record<string, any>) => {
@@ -1043,23 +1052,36 @@ function CanvasInner({ projectId }: { projectId: string }) {
   }, [edges, sceneNodes])
   const styledSceneEdges = useMemo(() => {
     const selectedNodeIds = new Set(sceneNodes.filter(n => n.selected).map(n => n.id))
-    return sceneEdges.map(edge => {
-      const isActive = selectedNodeIds.has(edge.source) || selectedNodeIds.has(edge.target)
-      return {
-        ...edge,
-        // Force the braided-cord edge component. Saved/loaded edges and edges
-        // from onConnect don't carry a type, so without this they'd fall back
-        // to React Flow's built-in line (which goes dashed when animated).
-        type: 'scissors',
-        // The cord runs its own hover/active animation; don't use React Flow's
-        // `animated` (that's what produced the dashed look). Pass the active
-        // state + animation preference through data so the cord can decide
-        // whether (and how) to animate.
-        animated: false,
-        data: { ...(edge.data || {}), active: isActive, animMode: connectorAnim },
-        style: { stroke: '#aec3d2' },
-      }
-    })
+    // Decide active-ness once, here, and pass the totals down. Previously every
+    // cord called getEdges() and re-filtered all edges on each render to work
+    // out the active count and whether idle animation was allowed — O(edges)
+    // per edge = O(edges²) on every selection change. Computing it once and
+    // handing each cord the numbers it needs removes that quadratic scan.
+    const activeFlags = sceneEdges.map(
+      e => selectedNodeIds.has(e.source) || selectedNodeIds.has(e.target),
+    )
+    const activeCount = activeFlags.reduce((n, a) => (a ? n + 1 : n), 0)
+    const edgeCount = sceneEdges.length
+    return sceneEdges.map((edge, i) => ({
+      ...edge,
+      // Force the braided-cord edge component. Saved/loaded edges and edges
+      // from onConnect don't carry a type, so without this they'd fall back
+      // to React Flow's built-in line (which goes dashed when animated).
+      type: 'scissors',
+      // The cord runs its own hover/active animation; don't use React Flow's
+      // `animated` (that's what produced the dashed look). Pass the active
+      // state + animation preference + canvas-wide counts through data so the
+      // cord can decide whether (and how) to animate without scanning edges.
+      animated: false,
+      data: {
+        ...(edge.data || {}),
+        active: activeFlags[i],
+        animMode: connectorAnim,
+        activeCount,
+        edgeCount,
+      },
+      style: EDGE_STYLE,
+    }))
   }, [sceneNodes, sceneEdges, connectorAnim])
 
   const handleRecenter = useCallback(() => {
@@ -1247,7 +1269,8 @@ function CanvasInner({ projectId }: { projectId: string }) {
           </button>
         )}
 
-        <BottomBar page={scenes.findIndex(s => s.id === activeSceneId) + 1} zoom={viewport.zoom} onRecenter={handleRecenter} />
+        <ViewportPersistor projectId={projectId} />
+        <BottomBar page={scenes.findIndex(s => s.id === activeSceneId) + 1} onRecenter={handleRecenter} />
       </div>
 
       {/* Context menu backdrop + menu */}
