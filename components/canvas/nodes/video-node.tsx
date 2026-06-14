@@ -695,6 +695,22 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
     const wiredGroups = connectedReferenceUrls.map((url) => ({ urls: [url] }))
     const referenceGroups = [...wiredGroups, ...compiled.refGroups]
 
+    // Models whose references go to a SEPARATE endpoint (Seedance 2.0's
+    // reference-to-video) cannot also take a first/end frame — fal's
+    // image-to-video and reference-to-video endpoints are mutually exclusive,
+    // neither accepts the other's inputs. The server would silently route to
+    // the reference endpoint and DROP the wired frame, which reads as "my first
+    // frame got treated as a reference." Catch it here and make the user choose
+    // instead of burning a generation on the wrong inputs.
+    if (currentModel.referenceModel && (connectedImageUrl || connectedEndImageUrl) && referenceGroups.length > 0) {
+      setError(
+        `${currentModel.name} can't use a first/end frame and reference images at the same time — they're separate modes. ` +
+        `Remove the @mention / wired references to keep your exact first frame, or remove the first frame to use the references.`,
+      )
+      setStatus('idle')
+      return
+    }
+
     try {
       // Topaz upscaler never takes a prompt — its API uses a `model`
       // parameter (Proteus vs Starlight HQ) to pick the variant. Force
