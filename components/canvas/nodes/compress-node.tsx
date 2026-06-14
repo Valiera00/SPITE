@@ -210,6 +210,18 @@ function CompressNodeImpl({ id, data, selected }: NodeProps) {
       {/* Handles: image in (left), compressed image out (right) */}
       <Handle type="target" id="image-in" position={Position.Left} style={{ top: '50%', left: -12, width: 24, height: 24, transform: 'translateY(-50%)', opacity: 0, zIndex: 5 }} />
       <Handle type="source" id="image-out" position={Position.Right} style={{ top: '50%', right: -12, width: 24, height: 24, transform: 'translateY(-50%)', opacity: 0, zIndex: 5 }} />
+      {/* Visible input port (left) — drag an image node's output into here. */}
+      <div
+        className="absolute flex items-center justify-center"
+        style={{
+          width: 24, height: 24, borderRadius: '50%', background: '#111316',
+          border: `1.5px solid ${connectedUrl ? 'rgba(96,165,250,0.85)' : 'rgba(107,143,168,0.55)'}`,
+          top: '50%', left: -12, transform: 'translateY(-50%)', zIndex: 10, pointerEvents: 'none',
+        }}
+      >
+        <ImageIcon size={11} weight="bold" style={{ color: connectedUrl ? 'rgba(96,165,250,0.95)' : 'rgba(107,143,168,0.75)' }} />
+      </div>
+      {/* Visible output port (right) — wires the compressed image into a generator. */}
       <div
         className="absolute flex items-center justify-center"
         style={{
