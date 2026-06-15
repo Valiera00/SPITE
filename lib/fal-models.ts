@@ -123,10 +123,12 @@ export const FAL_MODELS: ModelConfig[] = [
     category: 'image',
     inputTypes: ['text', 'image'],
     aspectRatios: ['16:9', '4:3', '1:1', '3:4', '9:16'],
-    resolutions: ['low', 'medium', 'high', 'auto'],
+    // Real output resolution tiers (mapped to image_size {w,h} in buildModelInput,
+    // up to fal's 3840px / ~8.3MP ceiling). Quality is sent separately as 'high'.
+    resolutions: ['1K', '2K', '4K'],
     defaultAspectRatio: '4:3',
-    defaultResolution: 'high',
-    description: 'OpenAI\'s top image model — extreme detail, fine typography'
+    defaultResolution: '2K',
+    description: 'OpenAI\'s top image model — extreme detail, fine typography. Up to 4K.'
   },
 
   {
@@ -950,12 +952,31 @@ export function buildModelInput(
     return input
   }
 
-  // GPT IMAGE 2 / FLUX.2 [pro] / IDEOGRAM v4 — three new image models
-  // all use a shared `image_size` field that accepts {width, height}.
-  // Aspect-ratio dropdown values map to fixed pixel sizes; we always
-  // send the object form because it's accepted by all three.
+  // GPT IMAGE 2 — image_size accepts a custom {width,height} up to 3840px /
+  // ~8.3MP, so the resolution dropdown maps to REAL output sizes (1K/2K/4K)
+  // per aspect ratio. `quality` is a SEPARATE fidelity param (sent 'high').
+  // Every size below is a multiple of 16, ≤3840px edge, and within fal's
+  // 0.66–8.29 MP pixel window.
+  if (model.id === 'gpt-image-2') {
+    input.prompt = prompt
+    const ratio = options.aspectRatio || model.defaultAspectRatio
+    const tier = options.resolution || model.defaultResolution || '2K'
+    const GPT_SIZES: Record<string, { width: number; height: number }> = {
+      '16:9-1K': { width: 1280, height: 720 },  '16:9-2K': { width: 2048, height: 1152 }, '16:9-4K': { width: 3840, height: 2160 },
+      '4:3-1K':  { width: 1024, height: 768 },   '4:3-2K':  { width: 2048, height: 1536 }, '4:3-4K':  { width: 3200, height: 2400 },
+      '1:1-1K':  { width: 1024, height: 1024 },  '1:1-2K':  { width: 2048, height: 2048 }, '1:1-4K':  { width: 2880, height: 2880 },
+      '3:4-1K':  { width: 768,  height: 1024 },  '3:4-2K':  { width: 1536, height: 2048 }, '3:4-4K':  { width: 2400, height: 3200 },
+      '9:16-1K': { width: 720,  height: 1280 },  '9:16-2K': { width: 1152, height: 2048 }, '9:16-4K': { width: 2160, height: 3840 },
+    }
+    input.image_size = GPT_SIZES[`${ratio}-${tier}`] || GPT_SIZES['16:9-2K']
+    input.quality = 'high'
+    if (options.seed !== undefined) input.seed = options.seed
+    return input
+  }
+
+  // FLUX.2 [pro] / IDEOGRAM v4 — share an `image_size` field that accepts
+  // {width, height}. Aspect-ratio dropdown values map to fixed pixel sizes.
   if (
-    model.id === 'gpt-image-2' ||
     model.id === 'flux-2-pro' ||
     model.id === 'ideogram-v4'
   ) {
@@ -974,11 +995,6 @@ export function buildModelInput(
     input.image_size = sizeMap[ratio] || { width: 1024, height: 1024 }
 
     // Per-model extras:
-    if (model.id === 'gpt-image-2') {
-      // resolution selector doubles as the quality picker.
-      input.quality = options.resolution || model.defaultResolution || 'high'
-      if (options.seed !== undefined) input.seed = options.seed
-    }
     if (model.id === 'ideogram-v4') {
       // resolution selector doubles as the rendering_speed picker.
       input.rendering_speed = options.resolution || model.defaultResolution || 'BALANCED'
