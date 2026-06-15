@@ -43,11 +43,35 @@ export default function SettingsPage() {
   // Canvas connector-animation preference (persisted in localStorage).
   const [connectorAnim, setConnectorAnimState] = useState<ConnectorAnimation>('auto')
 
+  // R2 storage usage for the storage bar.
+  const [storage, setStorage] = useState<{ usedBytes: number; objectCount: number; freeTierBytes: number } | null>(null)
+  const [storageState, setStorageState] = useState<'loading' | 'ready' | 'error'>('loading')
+
   // Check API key + load preferences on mount
   useEffect(() => {
     checkApiKey()
     setConnectorAnimState(getConnectorAnimation())
+    let cancelled = false
+    ;(async () => {
+      try {
+        const res = await fetch('/api/settings/storage')
+        if (!res.ok) throw new Error('storage fetch failed')
+        const data = await res.json()
+        if (!cancelled) { setStorage(data); setStorageState('ready') }
+      } catch {
+        if (!cancelled) setStorageState('error')
+      }
+    })()
+    return () => { cancelled = true }
   }, [])
+
+  // Bytes → human-readable (B / KB / MB / GB).
+  const fmtBytes = (bytes: number) => {
+    const u = ['B', 'KB', 'MB', 'GB', 'TB']
+    let i = 0, n = bytes
+    while (n >= 1024 && i < u.length - 1) { n /= 1024; i++ }
+    return `${n.toFixed(i === 0 ? 0 : 1)} ${u[i]}`
+  }
 
   const changeConnectorAnim = (v: ConnectorAnimation) => {
     setConnectorAnimState(v)
@@ -326,6 +350,41 @@ export default function SettingsPage() {
             >
               {changingPassword ? 'Changing...' : 'Change Password'}
             </button>
+          </div>
+        </section>
+
+        {/* Storage — how much of the R2 free tier is used. */}
+        <section className="space-y-4">
+          <h2 className="text-sm font-mono uppercase tracking-wider text-muted-foreground">Storage (Cloudflare R2)</h2>
+          <div className="glass rounded-xl p-6 space-y-3">
+            {storageState === 'loading' && (
+              <p className="text-xs text-muted-foreground">Calculating usage…</p>
+            )}
+            {storageState === 'error' && (
+              <p className="text-xs text-destructive">Couldn&apos;t read storage usage.</p>
+            )}
+            {storageState === 'ready' && storage && (() => {
+              const pct = storage.freeTierBytes > 0 ? (storage.usedBytes / storage.freeTierBytes) * 100 : 0
+              const over = pct > 100
+              const barColor = over ? 'bg-red-500' : pct > 70 ? 'bg-amber-500' : 'bg-accent'
+              return (
+                <>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-foreground">{fmtBytes(storage.usedBytes)} used</span>
+                    <span className={over ? 'text-red-400' : 'text-muted-foreground'}>
+                      {Math.round(pct)}% of 10 GB free tier
+                    </span>
+                  </div>
+                  <div className="h-2 w-full rounded-full bg-background/60 overflow-hidden">
+                    <div className={`h-full ${barColor} transition-all`} style={{ width: `${Math.min(100, pct)}%` }} />
+                  </div>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    {storage.objectCount.toLocaleString()} files stored. R2&apos;s free tier is 10 GB; beyond that
+                    Cloudflare bills about $0.015/GB per month. Serving images (egress) is always free.
+                  </p>
+                </>
+              )
+            })()}
           </div>
         </section>
 
