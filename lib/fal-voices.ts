@@ -84,26 +84,37 @@ async function createFalVoice(
   }
   const submitData = await submitRes.json()
   const requestId = submitData.request_id as string | undefined
+  // Use the status/response URLs fal returns rather than reconstructing them —
+  // a reconstructed path that's even slightly off would 404 on every poll and
+  // silently burn the whole timeout. Fall back to the reconstructed form only
+  // if fal omits them.
+  const statusUrl = (submitData.status_url as string | undefined)
+    || `https://queue.fal.run/fal-ai/kling-video/create-voice/requests/${requestId}/status`
+  const responseUrl = (submitData.response_url as string | undefined)
+    || `https://queue.fal.run/fal-ai/kling-video/create-voice/requests/${requestId}`
   if (!requestId) {
     throw new Error('create-voice did not return a request_id')
   }
 
-  // Poll every 1 s for up to ~90 s. Plenty for create-voice typical
-  // latency; fail-fast if the model is stuck so the user sees an
-  // error in the jobs panel instead of a spinner forever.
-  for (let i = 0; i < 90; i++) {
-    await new Promise(r => setTimeout(r, 1000))
-    const statusRes = await fetch(
-      `https://queue.fal.run/fal-ai/kling-video/create-voice/requests/${requestId}/status`,
-      { headers: { Authorization: `Key ${falKey}` } },
-    )
-    if (!statusRes.ok) continue
+  // Poll up to ~3 min (create-voice can queue behind other jobs). Fail LOUDLY
+  // on a 4xx status response instead of silently looping, and report the last
+  // seen state on timeout so a genuine "still queued" is distinguishable from
+  // a broken poll.
+  let lastStatus = 'unknown'
+  for (let i = 0; i < 120; i++) {
+    await new Promise(r => setTimeout(r, 1500))
+    const statusRes = await fetch(statusUrl, { headers: { Authorization: `Key ${falKey}` } })
+    if (!statusRes.ok) {
+      if (statusRes.status >= 400 && statusRes.status < 500) {
+        const t = await statusRes.text().catch(() => '')
+        throw new Error(`create-voice status ${statusRes.status}: ${t.slice(0, 200)}`)
+      }
+      continue // transient 5xx — keep polling
+    }
     const status = (await statusRes.json()) as { status?: string }
+    lastStatus = status.status || lastStatus
     if (status.status === 'COMPLETED') {
-      const resultRes = await fetch(
-        `https://queue.fal.run/fal-ai/kling-video/create-voice/requests/${requestId}`,
-        { headers: { Authorization: `Key ${falKey}` } },
-      )
+      const resultRes = await fetch(responseUrl, { headers: { Authorization: `Key ${falKey}` } })
       if (!resultRes.ok) {
         throw new Error(`create-voice result fetch failed: ${resultRes.status}`)
       }
@@ -114,10 +125,10 @@ async function createFalVoice(
       return result.voice_id
     }
     if (status.status === 'FAILED') {
-      throw new Error(`create-voice failed on fal: ${JSON.stringify(status)}`)
+      throw new Error(`create-voice failed on fal: ${JSON.stringify(status).slice(0, 200)}`)
     }
   }
-  throw new Error('create-voice polling timed out after 90 s')
+  throw new Error(`create-voice polling timed out (last status: ${lastStatus})`)
 }
 
 // Public entry point. Returns the voice_id for the given audio URL,
