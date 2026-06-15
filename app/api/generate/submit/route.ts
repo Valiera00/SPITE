@@ -247,7 +247,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           error:
-            'Voice creation from the wired audio failed. Try again, or paste a voice_id manually in the Voice IDs field.',
+            'Voice creation failed. Kling needs a clean, single-voice clip 5–30 seconds long — check the wired audio (too short/long or noisy clips are rejected), or paste a voice_id manually in the Voice IDs field.',
         },
         { status: 500 },
       )
