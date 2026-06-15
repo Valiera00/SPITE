@@ -242,12 +242,16 @@ export async function POST(request: NextRequest) {
       }
     } catch (err) {
       console.error('[generate/submit] voice creation failed:', err)
-      // Rollback the spend reservation and surface a usable error.
+      // Rollback the spend reservation and surface fal's ACTUAL reason so the
+      // user (and we) can see why create-voice rejected the clip — but strip
+      // any URLs first so a presigned R2 link / account id can't leak.
       await rollbackSpend(reservation.ledgerId)
+      const raw = err instanceof Error ? err.message : String(err)
+      const reason = raw.replace(/https?:\/\/[^\s"')]+/g, '[url]').slice(0, 400)
       return NextResponse.json(
         {
           error:
-            'Voice creation failed. Kling needs a clean, single-voice clip 5–30 seconds long — check the wired audio (too short/long or noisy clips are rejected), or paste a voice_id manually in the Voice IDs field.',
+            `Voice creation failed — ${reason}. Kling wants a clean, single-voice clip ~5–30s. Or paste a voice_id manually in the Voice IDs field.`,
         },
         { status: 500 },
       )
