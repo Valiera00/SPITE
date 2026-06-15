@@ -58,6 +58,7 @@ export function AssetThumb({
         src={url}
         muted
         preload="metadata"
+        draggable={false}
         className="w-full h-full object-cover"
       />
     )
@@ -93,6 +94,11 @@ export function AssetThumb({
       alt=""
       loading="lazy"
       decoding="async"
+      // Not independently draggable — let the draggable tile own the drag so
+      // the 'asset' payload reaches the canvas. Since the r2-image proxy now
+      // 302s to cross-origin R2, a native image drag here gets blocked by the
+      // browser and the tile drag silently failed.
+      draggable={false}
       className="w-full h-full object-cover"
     />
   )
