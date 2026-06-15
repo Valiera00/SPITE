@@ -632,7 +632,7 @@ function ImageNodeImpl({ id, data, selected }: NodeProps) {
       compiledPrompt = prompt.trim()
     }
 
-    if (!compiledPrompt && !currentModel.optionalPrompt) {
+    if (!compiledPrompt && !currentModel?.optionalPrompt) {
       setError('Please enter a prompt')
       return
     }
