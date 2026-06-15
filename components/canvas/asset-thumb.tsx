@@ -59,7 +59,10 @@ export function AssetThumb({
         muted
         preload="metadata"
         draggable={false}
-        className="w-full h-full object-cover"
+        // pointer-events-none so a drag gesture passes through to the draggable
+        // tile instead of dying on the media element (Chrome won't bubble a
+        // drag from a draggable="false" child up to the draggable parent).
+        className="w-full h-full object-cover pointer-events-none"
       />
     )
   }
@@ -94,12 +97,13 @@ export function AssetThumb({
       alt=""
       loading="lazy"
       decoding="async"
-      // Not independently draggable — let the draggable tile own the drag so
-      // the 'asset' payload reaches the canvas. Since the r2-image proxy now
-      // 302s to cross-origin R2, a native image drag here gets blocked by the
-      // browser and the tile drag silently failed.
+      // Not independently draggable, and (in grid tiles) pointer-events-none so
+      // the drag gesture passes through to the draggable tile. The r2-image
+      // proxy 302s to cross-origin R2, so a native image drag here is blocked
+      // by the browser and a draggable="false" child won't bubble the drag up —
+      // letting the gesture fall through to the tile is what makes drag work.
       draggable={false}
-      className="w-full h-full object-cover"
+      className={`w-full h-full object-cover${variant === 'grid' ? ' pointer-events-none' : ''}`}
     />
   )
 }
