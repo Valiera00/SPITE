@@ -41,6 +41,7 @@ const ITEMS: NodeMenuItem[] = [
   // UPSCALER: spawns a video generator with the Topaz upscaler model
   // already selected. Same node body, just pre-configured.
   { id: 'video-upscale', label: 'Video Upscaler',   shortcut: 'V', icon: ArrowsOut,      category: 'UPSCALER', nodeType: 'videoGen', defaultModelId: 'topaz-video-upscale' },
+  { id: 'image-upscale', label: 'Image Upscaler',   shortcut: '',  icon: ArrowsOut,      category: 'UPSCALER', nodeType: 'imageGen', defaultModelId: 'topaz-image-upscale' },
 ]
 
 const CATEGORIES = ['BASICS', 'MEDIA', 'MODIFIERS', 'UPSCALER']

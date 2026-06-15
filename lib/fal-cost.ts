@@ -51,6 +51,11 @@ const COST_TABLE: Record<string, { unit: Unit; price: number }> = {
   'pixverse-v6':         { unit: 'video', price: 0.30 },  // unknown; estimate
   // Upscalers — flat-rate estimate covering up to ~10sec at 4x.
   'topaz-video-upscale': { unit: 'video', price: 1.00 },
+  // Image upscalers — per-image estimates (real cost is per-megapixel on fal,
+  // so these are conservative gate ceilings, not exact billing).
+  'topaz-image-upscale':   { unit: 'image', price: 0.08 },
+  'clarity-image-upscale': { unit: 'image', price: 0.05 },
+  'esrgan-image-upscale':  { unit: 'image', price: 0.02 },
 }
 
 export interface CostEstimate {

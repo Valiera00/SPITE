@@ -632,7 +632,7 @@ function ImageNodeImpl({ id, data, selected }: NodeProps) {
       compiledPrompt = prompt.trim()
     }
 
-    if (!compiledPrompt) {
+    if (!compiledPrompt && !currentModel.optionalPrompt) {
       setError('Please enter a prompt')
       return
     }
@@ -1102,7 +1102,7 @@ function ImageNodeImpl({ id, data, selected }: NodeProps) {
           ) : (
             <button
               onClick={requestGenerate}
-              disabled={isGenerating || (!prompt.trim() && !hasConnectedPrompts)}
+              disabled={isGenerating || (!prompt.trim() && !hasConnectedPrompts && !currentModel?.optionalPrompt)}
               className="w-6 h-6 rounded-full bg-accent/20 hover:bg-accent text-accent hover:text-accent-foreground flex items-center justify-center transition-colors accent-glow disabled:opacity-50 disabled:cursor-not-allowed"
               title={generateTooltip}
             >

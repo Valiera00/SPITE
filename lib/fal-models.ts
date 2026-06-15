@@ -512,6 +512,56 @@ export const FAL_MODELS: ModelConfig[] = [
     defaultResolution: '2x',
     description: 'Upscale 2x or 4x. Standard = Proteus model (fast). Creative = Starlight HQ (diffusion-based, better restoration).'
   },
+
+  // ----- IMAGE UPSCALERS -----
+  // Used inside the Image Generator node: wire an image into image-in, pick the
+  // upscaler, set 2x/4x, hit Generate. No prompt needed (optionalPrompt) — the
+  // submit routes to editModel (same endpoint here) with the wired image_url.
+  {
+    id: 'topaz-image-upscale',
+    name: 'Topaz Image Upscale',
+    falModel: 'fal-ai/topaz/upscale/image',
+    editModel: 'fal-ai/topaz/upscale/image',
+    imageParam: 'image_url',
+    category: 'image',
+    inputTypes: ['image'],
+    aspectRatios: [],
+    resolutions: ['2x', '4x'],
+    optionalPrompt: true,
+    defaultAspectRatio: '1:1',
+    defaultResolution: '2x',
+    description: 'Topaz photo upscaler (Standard V2 model). Clean, accurate enlargement — the workhorse for stills.'
+  },
+  {
+    id: 'clarity-image-upscale',
+    name: 'Clarity Upscale',
+    falModel: 'fal-ai/clarity-upscaler',
+    editModel: 'fal-ai/clarity-upscaler',
+    imageParam: 'image_url',
+    category: 'image',
+    inputTypes: ['image', 'text'],
+    aspectRatios: [],
+    resolutions: ['2x', '4x'],
+    optionalPrompt: true,
+    defaultAspectRatio: '1:1',
+    defaultResolution: '2x',
+    description: 'Detail-restoring creative upscaler. Optional prompt nudges what detail it invents — great for soft / low-quality source.'
+  },
+  {
+    id: 'esrgan-image-upscale',
+    name: 'ESRGAN Upscale',
+    falModel: 'fal-ai/esrgan',
+    editModel: 'fal-ai/esrgan',
+    imageParam: 'image_url',
+    category: 'image',
+    inputTypes: ['image'],
+    aspectRatios: [],
+    resolutions: ['2x', '4x'],
+    optionalPrompt: true,
+    defaultAspectRatio: '1:1',
+    defaultResolution: '2x',
+    description: 'Fast, cheap classic upscaler (Real-ESRGAN). Best on already-clean source where you just need more pixels.'
+  },
 ]
 
 // Helper functions
@@ -647,6 +697,26 @@ export function buildModelInput(
     } else {
       input[model.referenceParam] = folderRefsFlat
     }
+  }
+
+  // IMAGE UPSCALERS — the wired image is already on input.image_url (set by the
+  // central image-attach above). Each just adds its factor/model params; no
+  // prompt is sent except Clarity, which takes an optional guidance prompt.
+  if (model.id === 'topaz-image-upscale') {
+    input.upscale_factor = options.resolution === '4x' ? 4 : 2
+    input.model = 'Standard V2'
+    input.output_format = 'jpeg'
+    return input
+  }
+  if (model.id === 'clarity-image-upscale') {
+    input.upscale_factor = options.resolution === '4x' ? 4 : 2
+    if (prompt && prompt.trim()) input.prompt = prompt
+    return input
+  }
+  if (model.id === 'esrgan-image-upscale') {
+    input.scale = options.resolution === '4x' ? 4 : 2
+    input.model = 'RealESRGAN_x4plus'
+    return input
   }
 
   // FLUX models - image_size must be a {width,height} object (NOT a "WxH"
