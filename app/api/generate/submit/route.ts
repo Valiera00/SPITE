@@ -277,7 +277,12 @@ export async function POST(request: NextRequest) {
       `promptLen=${typeof finalPrompt === 'string' ? finalPrompt.length : 0} ` +
       `refs=${refsSigned.length} ` +
       `numImages=${(input as Record<string, unknown>).num_images ?? 1} ` +
-      `hasFrame=${hasFrame}`,
+      `hasFrame=${hasFrame} ` +
+      // Voice-cloning diagnostics: did an audio clip reach the server, and how
+      // many voice_ids ended up in the final request to fal.
+      `hasAudio=${!!settings?.audioUrl} ` +
+      `voices=${Array.isArray((input as Record<string, unknown>).voice_ids) ? (input as { voice_ids: string[] }).voice_ids.length : 0} ` +
+      `promptHasVoiceToken=${typeof finalPrompt === 'string' && finalPrompt.includes('<<<voice')}`,
   )
 
   try {
