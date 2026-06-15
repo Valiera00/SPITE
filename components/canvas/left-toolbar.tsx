@@ -1045,8 +1045,10 @@ export function LeftToolbar({
                           const full = generatedAssets.find(g => g.id === a.id)
                           const isSel = selectedAssetIds.has(a.id)
                           return (
-                            <button
+                            <div
                               key={a.id}
+                              role="button"
+                              tabIndex={0}
                               onClick={() => {
                                 if (selectMode) toggleAssetSelected(a.id)
                                 else if (full) setSelectedGenAsset(full)
@@ -1096,7 +1098,7 @@ export function LeftToolbar({
                                   <Check size={14} weight="bold" />
                                 </div>
                               )}
-                            </button>
+                            </div>
                           )
                         })}
                       </div>
