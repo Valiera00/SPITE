@@ -134,6 +134,10 @@ const CONNECTION_RULES: Record<string, string[]> = {
   'prompt-out': ['prompt-in'],
   'image-out': ['image-in', 'end-frame-in', 'reference-in'],
   'video-out': ['video-in'],
+  // Audio reference → Kling 2.6 voice input. Without this the audio-out
+  // handle had no allowed target, so the edge was rejected and the whole
+  // voice-cloning flow was unreachable.
+  'audio-out': ['audio-in'],
 }
 
 // Human-readable names for handles
@@ -146,6 +150,8 @@ const HANDLE_NAMES: Record<string, string> = {
   'reference-in': 'Reference image',
   'video-out': 'Video output',
   'video-in': 'Video input',
+  'audio-out': 'Audio output',
+  'audio-in': 'Voice reference audio',
 }
 
 // Validate connection rules
