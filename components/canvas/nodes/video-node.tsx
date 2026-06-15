@@ -1027,17 +1027,6 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
         </>
       )}
 
-      {/* Audio voice (amber) — Kling 2.6 only. Wire an audio reference
-          here and SPITE auto-creates a voice_id via fal's create-voice
-          endpoint, caches it, and uses it without the user having to
-          paste anything. */}
-      {currentModel?.id === 'kling-2.6' && (
-        <>
-          <Handle type="target" id="audio-in" title="Voice reference audio" position={Position.Left} style={{ top: 370, left: -12, opacity: 0, width: 24, height: 24, zIndex: 5 }} />
-          <HandleIcon icon={SpeakerHigh} color="rgba(251,191,36,0.9)" position="left" top={370} visible />
-        </>
-      )}
-
       {/* Video input (green) - only if model supports video-to-video */}
       {currentModel?.inputTypes.includes('video') && (
         <>
