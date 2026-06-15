@@ -118,7 +118,7 @@ export const FAL_MODELS: ModelConfig[] = [
     id: 'gpt-image-2',
     name: 'GPT Image 2',
     falModel: 'openai/gpt-image-2',
-    editModel: 'fal-ai/gpt-image-2/image-to-image',
+    editModel: 'openai/gpt-image-2/edit',
     imageParam: 'image_urls',
     category: 'image',
     inputTypes: ['text', 'image'],
