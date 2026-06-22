@@ -261,6 +261,24 @@ export const FAL_MODELS: ModelConfig[] = [
   },
 
   {
+    // Motion transfer: the character in the wired IMAGE performs the actions in
+    // the wired reference VIDEO. Distinct endpoint from i2v — takes both an
+    // image (subject) and a video (motion). No aspect/duration params; output
+    // length follows the reference video.
+    id: 'kling-2.6-motion-control',
+    name: 'Kling 2.6 Motion Control',
+    falModel: 'fal-ai/kling-video/v2.6/standard/motion-control',
+    editModel: 'fal-ai/kling-video/v2.6/standard/motion-control',
+    category: 'video',
+    inputTypes: ['text', 'image', 'video'],
+    aspectRatios: [],
+    durations: [],
+    optionalPrompt: true,
+    defaultAspectRatio: '16:9',
+    description: 'Motion transfer — your subject image performs the actions from a reference video. Wire an image (who) + a video (the motion).'
+  },
+
+  {
     id: 'kling-3.0-standard',
     name: 'Kling 3.0',
     falModel: 'fal-ai/kling-video/v3/standard/text-to-video',
@@ -877,6 +895,18 @@ export function buildModelInput(
       ).slice(0, 2)
       if (ids.length > 0) input.voice_ids = ids
     }
+    return input
+  }
+
+  // KLING 2.6 MOTION CONTROL — subject image + reference motion video.
+  // image_url (subject) is set by the central image-attach above; video_url
+  // (motion) is attached by the submit route from the connected video. Here we
+  // add the required character_orientation and the optional prompt. 'image'
+  // keeps the subject's framing and caps the output at ~10s.
+  if (model.id === 'kling-2.6-motion-control') {
+    if (prompt && prompt.trim()) input.prompt = prompt
+    input.character_orientation = 'image'
+    input.keep_original_sound = false
     return input
   }
 
