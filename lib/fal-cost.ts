@@ -32,9 +32,9 @@ const COST_TABLE: Record<string, { unit: Unit; price: number }> = {
   // $0.168/s with audio + voice control. Splitting at $0.10/s
   // blended for the typical with-audio path.
   'kling-2.6':           { unit: 'sec',   price: 0.10 },
-  // Motion-control (Kling 2.6 standard) — no duration param exposed; flat
-  // per-video estimate for the spend gate.
-  'kling-2.6-motion-control': { unit: 'video', price: 0.50 },
+  // Motion-control (Kling 2.6 Pro) — no duration param exposed; flat per-video
+  // estimate for the spend gate.
+  'kling-2.6-motion-control-pro': { unit: 'video', price: 0.80 },
   'kling-3.0-standard':  { unit: 'sec',   price: 0.14 },
   'kling-3.0-pro':       { unit: 'sec',   price: 0.30 },
   'kling-3.0-4k':        { unit: 'sec',   price: 0.50 },

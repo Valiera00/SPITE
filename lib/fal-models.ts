@@ -265,10 +265,10 @@ export const FAL_MODELS: ModelConfig[] = [
     // the wired reference VIDEO. Distinct endpoint from i2v — takes both an
     // image (subject) and a video (motion). No aspect/duration params; output
     // length follows the reference video.
-    id: 'kling-2.6-motion-control',
+    id: 'kling-2.6-motion-control-pro',
     name: 'Kling 2.6 Motion Control',
-    falModel: 'fal-ai/kling-video/v2.6/standard/motion-control',
-    editModel: 'fal-ai/kling-video/v2.6/standard/motion-control',
+    falModel: 'fal-ai/kling-video/v2.6/pro/motion-control',
+    editModel: 'fal-ai/kling-video/v2.6/pro/motion-control',
     category: 'video',
     inputTypes: ['text', 'image', 'video'],
     aspectRatios: [],
@@ -903,7 +903,7 @@ export function buildModelInput(
   // (motion) is attached by the submit route from the connected video. Here we
   // add the required character_orientation and the optional prompt. 'image'
   // keeps the subject's framing and caps the output at ~10s.
-  if (model.id === 'kling-2.6-motion-control') {
+  if (model.id === 'kling-2.6-motion-control-pro') {
     if (prompt && prompt.trim()) input.prompt = prompt
     input.character_orientation = 'image'
     input.keep_original_sound = false
