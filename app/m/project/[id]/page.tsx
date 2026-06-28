@@ -195,8 +195,10 @@ export default function MobileThread() {
         <span className="text-[9px] font-mono text-muted-foreground/40">{(process.env.NEXT_PUBLIC_COMMIT_SHA || 'dev').slice(0, 7)}</span>
       </div>
 
-      {/* Feed */}
-      <div className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-4">
+      {/* Feed. min-h-0 is essential: without it this flex-1 child won't shrink
+          below its content size, so it expands instead of scrolling once images
+          load — pushing each card's footer (reuse/copy/save) below the fold. */}
+      <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 flex flex-col gap-4">
         {loading ? (
           <p className="text-sm font-mono text-muted-foreground">Loading…</p>
         ) : assets.length === 0 && !busy ? (
