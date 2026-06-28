@@ -181,12 +181,12 @@ export default function MobileThread() {
   }
 
   return (
-    <div className="fixed inset-0 flex flex-col bg-[#080A0C] text-[#F0EDE6]" style={{ touchAction: 'manipulation' }}>
+    <div className="flex flex-col min-h-[100dvh] bg-[#080A0C] text-[#F0EDE6]">
       <input ref={fileRef} type="file" accept="image/*" multiple className="hidden"
         onChange={(e) => { const fs = e.target.files; if (fs) Array.from(fs).forEach((f) => onPickRef(f)); e.target.value = '' }} />
 
       {/* Header */}
-      <div className="shrink-0 flex items-center gap-2 px-3 py-3 border-b border-white/10" style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}>
+      <div className="sticky top-0 z-20 flex items-center gap-2 px-3 py-3 border-b border-white/10 bg-[#080A0C]/90 backdrop-blur" style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}>
         <Link href="/m" className="text-muted-foreground p-1 -ml-1"><CaretLeft size={18} /></Link>
         <span className="text-sm font-mono truncate flex-1">{projectName || 'Project'}</span>
         {balance !== null && (
@@ -195,10 +195,10 @@ export default function MobileThread() {
         <span className="text-[9px] font-mono text-muted-foreground/40">{(process.env.NEXT_PUBLIC_COMMIT_SHA || 'dev').slice(0, 7)}</span>
       </div>
 
-      {/* Feed. min-h-0 is essential: without it this flex-1 child won't shrink
-          below its content size, so it expands instead of scrolling once images
-          load — pushing each card's footer (reuse/copy/save) below the fold. */}
-      <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 flex flex-col gap-4">
+      {/* Feed — natural document flow. The page (body) scrolls; header and
+          compose are sticky. This avoids the iOS nested-overflow scroll that
+          left footers stuck below an unreachable fold. */}
+      <div className="flex-1 px-4 py-4 flex flex-col gap-4">
         {loading ? (
           <p className="text-sm font-mono text-muted-foreground">Loading…</p>
         ) : assets.length === 0 && !busy ? (
@@ -240,7 +240,7 @@ export default function MobileThread() {
       </div>
 
       {/* Compose */}
-      <div className="shrink-0 border-t border-white/10 bg-[#0D0F12] px-3 pt-3 flex flex-col gap-2.5" style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}>
+      <div className="sticky bottom-0 z-20 border-t border-white/10 bg-[#0D0F12] px-3 pt-3 flex flex-col gap-2.5" style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}>
         {error && <p className="text-[11px] font-mono text-red-400">{error}</p>}
 
         {refs.length > 0 && (
