@@ -192,6 +192,7 @@ export default function MobileThread() {
         {balance !== null && (
           <span className="text-[10px] font-mono text-muted-foreground px-2 py-1 rounded-full border border-white/10">fal {formatUSD(balance)}</span>
         )}
+        <span className="text-[9px] font-mono text-muted-foreground/40">{(process.env.NEXT_PUBLIC_COMMIT_SHA || 'dev').slice(0, 7)}</span>
       </div>
 
       {/* Feed */}
