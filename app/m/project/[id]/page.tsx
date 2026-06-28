@@ -267,7 +267,17 @@ export default function MobileThread() {
           <div className="flex gap-2 overflow-x-auto">
             {refs.map((r) => (
               <div key={r.id} className="relative shrink-0">
-                <img src={r.previewUrl} alt="" className="w-12 h-12 rounded-lg object-cover border border-white/10" />
+                <img
+                  src={r.previewUrl}
+                  alt=""
+                  className="w-12 h-12 rounded-lg object-cover border border-white/10"
+                  onError={() => {
+                    // A restored reference whose image won't load has been
+                    // reclaimed by retention — drop it and let the user know.
+                    setRefs((prev) => prev.filter((x) => x.id !== r.id))
+                    setError('Some references expired and could not be restored.')
+                  }}
+                />
                 {r.uploading && <div className="absolute inset-0 bg-black/55 rounded-lg flex items-center justify-center"><CircleNotch size={14} className="animate-spin text-white" /></div>}
                 <button onClick={() => removeRef(r.id)} className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-black border border-white/25 flex items-center justify-center"><X size={9} weight="bold" /></button>
               </div>

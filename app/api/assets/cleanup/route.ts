@@ -5,6 +5,7 @@ import { DeleteObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3'
 import { timingSafeEqual } from 'crypto'
 import { purgeExpiredSessions } from '@/lib/sessions'
 import { purgeOldSpendLedger } from '@/lib/spend-gate'
+import { getReferenceRetentionDays } from '@/lib/retention'
 
 async function deleteFromR2(key: string) {
   try {
@@ -29,8 +30,8 @@ async function deleteFromR2(key: string) {
 // nothing, so a self-hosted install never silently deletes a user's data.
 // Set REFERENCE_RETENTION_DAYS=7 on a deployment that wants weekly reclaim.
 async function sweepOldReferences(): Promise<number> {
-  const days = Number(process.env.REFERENCE_RETENTION_DAYS)
-  if (!Number.isFinite(days) || days <= 0) return 0
+  const days = getReferenceRetentionDays()
+  if (days <= 0) return 0
   const cutoff = Date.now() - days * 24 * 60 * 60 * 1000
   const s3 = getR2Client()
   const bucket = process.env.R2_BUCKET_NAME!

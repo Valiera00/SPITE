@@ -47,6 +47,9 @@ export default function SettingsPage() {
   const [storage, setStorage] = useState<{ usedBytes: number; objectCount: number; freeTierBytes: number } | null>(null)
   const [storageState, setStorageState] = useState<'loading' | 'ready' | 'error'>('loading')
 
+  // Effective data-retention windows (configured via env, surfaced here).
+  const [retention, setRetention] = useState<{ assetRetentionDays: number; referenceRetentionDays: number } | null>(null)
+
   // Check API key + load preferences on mount
   useEffect(() => {
     checkApiKey()
@@ -61,6 +64,14 @@ export default function SettingsPage() {
       } catch {
         if (!cancelled) setStorageState('error')
       }
+    })()
+    ;(async () => {
+      try {
+        const res = await fetch('/api/settings/retention')
+        if (!res.ok) return
+        const data = await res.json()
+        if (!cancelled) setRetention(data)
+      } catch { /* non-critical */ }
     })()
     return () => { cancelled = true }
   }, [])
@@ -385,6 +396,72 @@ export default function SettingsPage() {
                 </>
               )
             })()}
+          </div>
+        </section>
+
+        {/* Data Retention — what the nightly cleanup cron deletes, and when.
+            Values come from env vars and are surfaced here so it's unambiguous
+            what will and won't be removed. */}
+        <section className="space-y-4">
+          <h2 className="text-sm font-mono uppercase tracking-wider text-muted-foreground">Data Retention</h2>
+          <div className="glass rounded-xl p-6 space-y-5">
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              By default <span className="text-foreground/80">nothing is ever auto-deleted</span> —
+              both windows below are fully opt-in. A cleanup job runs once a day (04:00 UTC)
+              and only acts on a category once you&apos;ve set a number of days for it. It only
+              ever touches the two categories below; <span className="text-foreground/80">anything
+              you place on a canvas is permanent</span> regardless.
+            </p>
+
+            {/* Unused results */}
+            <div className="space-y-1.5 pt-1">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm text-foreground">Unused results</p>
+                <span className="shrink-0 text-xs font-mono px-2 py-0.5 rounded-md bg-background/60 border border-border/50 text-foreground/80">
+                  {retention
+                    ? retention.assetRetentionDays > 0
+                      ? `Delete after ${retention.assetRetentionDays} days`
+                      : 'Never delete'
+                    : '…'}
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Generated images/videos that you never added to a canvas (left only in the
+                library) are deleted once they pass this age, freeing storage. The moment a
+                result is dropped onto a canvas it becomes permanent and this no longer applies.
+                Controlled by <span className="text-foreground font-mono">ASSET_RETENTION_DAYS</span>{' '}
+                (default 0 = keep forever; set e.g. 30 to prune after a month — any number works).
+              </p>
+            </div>
+
+            {/* Reference inputs */}
+            <div className="space-y-1.5 pt-3 border-t border-border/50">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm text-foreground">Reference inputs</p>
+                <span className="shrink-0 text-xs font-mono px-2 py-0.5 rounded-md bg-background/60 border border-border/50 text-foreground/80">
+                  {retention
+                    ? retention.referenceRetentionDays > 0
+                      ? `Reclaim after ${retention.referenceRetentionDays} days`
+                      : 'Never delete'
+                    : '…'}
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Reference images you attach to a prompt are inputs, not outputs. After this
+                many days they&apos;re reclaimed from storage; the generated results they
+                produced are <span className="text-foreground/80">never</span> affected. Once a
+                reference is gone, &ldquo;Reuse&rdquo; can no longer re-attach it. Controlled by{' '}
+                <span className="text-foreground font-mono">REFERENCE_RETENTION_DAYS</span>{' '}
+                (default 0 = never; set e.g. 7 for weekly reclaim — any number works).
+              </p>
+            </div>
+
+            <p className="text-[11px] text-muted-foreground/80 leading-relaxed pt-3 border-t border-border/50">
+              These are set as environment variables in your host (e.g. Vercel →
+              Settings → Environment Variables) and take effect on the next deploy —
+              the same as your API key and app password. Changing the number only
+              affects which items the <em>next</em> nightly run considers expired.
+            </p>
           </div>
         </section>
 

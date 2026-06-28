@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/db'
+import { assetExpiresAt } from '@/lib/retention'
 
 // Escape LIKE metacharacters so a user-supplied key can't smuggle wildcards
 // into the suffix match (e.g. a key of "%" would otherwise match — and
@@ -52,22 +53,25 @@ export async function POST(request: NextRequest) {
       ? url.split('/api/r2-image/')[1] 
       : url.split('.r2.dev/')[1]
 
+    // When detaching from canvas, restart the retention clock (null when
+    // ASSET_RETENTION_DAYS is 0 → never expires). On canvas → permanent.
+    const expiresAt = used_in_canvas ? null : (assetExpiresAt()?.toISOString() ?? null)
     let result
     if (key) {
       // Match by URL key suffix
       result = await sql`
         UPDATE generation_history
         SET used_in_canvas = ${used_in_canvas ?? false},
-            expires_at = ${used_in_canvas ? null : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()}
+            expires_at = ${expiresAt}
         WHERE r2_url LIKE ${'%' + escapeLike(key)}
         RETURNING id
       `
     } else {
       // Exact match fallback
       result = await sql`
-        UPDATE generation_history 
+        UPDATE generation_history
         SET used_in_canvas = ${used_in_canvas ?? false},
-            expires_at = ${used_in_canvas ? null : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()}
+            expires_at = ${expiresAt}
         WHERE r2_url = ${url}
         RETURNING id
       `

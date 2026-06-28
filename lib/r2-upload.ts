@@ -1,6 +1,7 @@
 import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { getDb } from './db'
+import { assetExpiresAt } from './retention'
 import crypto from 'crypto'
 
 // Lazy R2 S3 client — exported so other routes don't reinvent the
@@ -235,7 +236,7 @@ export async function recordAsset(
   const sql = getDb()
   await ensureRecoveredColumn(sql)
   const id = `asset-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`
-  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) // 30 days
+  const expiresAt = assetExpiresAt() // null when ASSET_RETENTION_DAYS is 0 (never expires)
   const recovered = options.recovered === true
 
   await sql`
