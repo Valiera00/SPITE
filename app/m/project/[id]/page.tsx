@@ -220,7 +220,8 @@ export default function MobileThread() {
             ) : (
               <img src={a.r2_url} alt="" className="w-full block" loading="lazy" decoding="async" />
             )}
-            <div className="px-3.5 py-3 flex flex-col gap-2.5 border-t border-white/[0.06]">
+            <div className="px-3.5 py-3 flex flex-col gap-2.5 border-t border-white/10 bg-[#15181d]">
+              <div className="text-[10px] font-mono text-amber-400">▼ actions (debug {a.type}/{a.prompt ? 'p' : 'no-p'})</div>
               {a.prompt && <p className="text-[13px] leading-snug text-foreground/90">{a.prompt}</p>}
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 text-[10px] font-mono text-muted-foreground">
