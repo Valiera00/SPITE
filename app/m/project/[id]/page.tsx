@@ -182,7 +182,9 @@ export default function MobileThread() {
       if (!window.confirm(`This will cost about ${formatUSD(cost.total)}. Generate?`)) return
     }
     const myPrompt = prompt.trim()
-    const refUrls = refs.map((r) => r.proxyUrl).filter((u): u is string => !!u)
+    // De-dupe so the same reference can't be sent (or stored) twice, even if it
+    // ended up attached more than once.
+    const refUrls = [...new Set(refs.map((r) => r.proxyUrl).filter((u): u is string => !!u))]
     const n = Math.max(1, Math.min(MAX_COUNT, count))
     setError(''); setPrompt(''); setRefs([]); setPending(n)
     for (let i = 0; i < n; i++) runOne(i, myPrompt, refUrls, modelId, aspect)
