@@ -229,9 +229,9 @@ export default function MobileThread() {
                   <span>{timeAgo(a.created_at)}</span>
                 </div>
                 <div className="flex items-center gap-1.5">
-                  <button onClick={() => reusePrompt(a)} title="Reuse prompt" className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center text-muted-foreground active:scale-95"><ArrowUUpLeft size={14} /></button>
-                  <button onClick={() => copyAll(a)} title="Copy settings" className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center text-muted-foreground active:scale-95"><CopySimple size={14} /></button>
-                  <button onClick={() => saveAsset(a.r2_url, a.type)} title="Save" className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center text-muted-foreground active:scale-95"><DownloadSimple size={15} /></button>
+                  <button onClick={() => reusePrompt(a)} className="flex items-center gap-1 px-2.5 h-7 rounded-full bg-white/10 text-[10px] font-mono text-foreground/80 active:scale-95"><ArrowUUpLeft size={12} /> Reuse</button>
+                  <button onClick={() => copyAll(a)} className="flex items-center gap-1 px-2.5 h-7 rounded-full bg-white/10 text-[10px] font-mono text-foreground/80 active:scale-95"><CopySimple size={12} /> Copy</button>
+                  <button onClick={() => saveAsset(a.r2_url, a.type)} className="flex items-center gap-1 px-2.5 h-7 rounded-full bg-accent/20 text-[10px] font-mono text-accent active:scale-95"><DownloadSimple size={12} /> Save</button>
                 </div>
               </div>
             </div>
