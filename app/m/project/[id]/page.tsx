@@ -214,14 +214,13 @@ export default function MobileThread() {
         {assets.map((a) => (
           <div key={a.id} className="rounded-2xl overflow-hidden bg-[#0D0F12] border border-white/10">
             {a.type === 'video' ? (
-              <video src={a.r2_url} controls playsInline preload="metadata" className="w-full block" />
+              <video src={a.r2_url} controls playsInline preload="metadata" className="w-full block max-h-[60vh] object-contain bg-black" />
             ) : a.type === 'audio' ? (
               <audio src={a.r2_url} controls className="w-full p-3" />
             ) : (
-              <img src={a.r2_url} alt="" className="w-full block" loading="lazy" decoding="async" />
+              <img src={a.r2_url} alt="" className="w-full block max-h-[60vh] object-contain" loading="lazy" decoding="async" />
             )}
-            <div className="px-3.5 py-3 flex flex-col gap-2.5 border-t border-white/10 bg-[#15181d]">
-              <div className="text-[10px] font-mono text-amber-400">▼ actions (debug {a.type}/{a.prompt ? 'p' : 'no-p'})</div>
+            <div className="px-3.5 py-3 flex flex-col gap-2.5 border-t border-white/[0.06]">
               {a.prompt && <p className="text-[13px] leading-snug text-foreground/90">{a.prompt}</p>}
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 text-[10px] font-mono text-muted-foreground">
