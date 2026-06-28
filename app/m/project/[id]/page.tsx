@@ -165,7 +165,19 @@ export default function MobileThread() {
 
   return (
     <div className="fixed inset-0 flex flex-col bg-[#080A0C] text-[#F0EDE6]">
-      <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={(e) => onPickRef(e.target.files?.[0])} />
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/*"
+        multiple
+        className="hidden"
+        onChange={(e) => {
+          const files = e.target.files
+          if (files) Array.from(files).forEach((f) => onPickRef(f))
+          // reset so re-picking the same file(s) fires onChange again
+          e.target.value = ''
+        }}
+      />
 
       {/* Header */}
       <div
