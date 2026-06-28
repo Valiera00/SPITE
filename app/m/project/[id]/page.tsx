@@ -70,6 +70,16 @@ export default function MobileThread() {
   const [error, setError] = useState('')
   const [balance, setBalance] = useState<number | null>(null)
 
+  // Chat-style thread: oldest at top, newest at the bottom. Sentinel at the end
+  // of the feed that we scroll to so you land on the latest result on entry and
+  // stay pinned as new ones append.
+  const endRef = useRef<HTMLDivElement>(null)
+  const nearBottom = () =>
+    window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 280
+  const pinToNewest = (force = false) => {
+    if (force || nearBottom()) endRef.current?.scrollIntoView({ block: 'end' })
+  }
+
   const loadBalance = () =>
     fetch('/api/fal/balance').then((r) => r.json())
       .then((d) => setBalance(d?.available && typeof d.balance === 'number' ? d.balance : null))
@@ -82,6 +92,14 @@ export default function MobileThread() {
       .then((d) => setAssets(Array.isArray(d) ? d : [])).catch(() => {}).finally(() => setLoading(false))
     loadBalance()
   }, [projectId])
+
+  // Land on / stay pinned to the newest item on entry and whenever a generation
+  // starts (pending) or completes (assets.length). rAF so layout settles first.
+  useEffect(() => {
+    if (loading) return
+    const id = requestAnimationFrame(() => pinToNewest(true))
+    return () => cancelAnimationFrame(id)
+  }, [loading, assets.length, pending])
 
   const model = useMemo(() => getModelById(modelId), [modelId])
   useEffect(() => { setAspect(model?.defaultAspectRatio || '') }, [model])
@@ -225,20 +243,16 @@ export default function MobileThread() {
           <p className="text-sm font-mono text-muted-foreground/60 text-center pt-12">Nothing yet. Describe something below to generate.</p>
         ) : null}
 
-        {Array.from({ length: pending }).map((_, i) => (
-          <div key={`p-${i}`} className="rounded-2xl border border-white/10 bg-[#0D0F12] aspect-square flex items-center justify-center">
-            <CircleNotch size={22} className="animate-spin text-accent" />
-          </div>
-        ))}
-
-        {assets.map((a) => (
+        {/* Oldest first → newest at the bottom. `assets` is stored newest-first
+            (prepended), so render a reversed copy for chronological order. */}
+        {assets.slice().reverse().map((a) => (
           <div key={a.id} className="rounded-2xl overflow-hidden bg-[#0D0F12] border border-white/10">
             {a.type === 'video' ? (
-              <video src={a.r2_url} controls playsInline preload="metadata" className="w-full block max-h-[60vh] object-contain bg-black" />
+              <video src={a.r2_url} controls playsInline preload="metadata" onLoadedMetadata={() => pinToNewest(false)} className="w-full block max-h-[60vh] object-contain bg-black" />
             ) : a.type === 'audio' ? (
               <audio src={a.r2_url} controls className="w-full p-3" />
             ) : (
-              <img src={a.r2_url} alt="" className="w-full block max-h-[60vh] object-contain" loading="lazy" decoding="async" />
+              <img src={a.r2_url} alt="" onLoad={() => pinToNewest(false)} className="w-full block max-h-[60vh] object-contain" loading="lazy" decoding="async" />
             )}
             <div className="px-3.5 py-3 flex flex-col gap-2.5 border-t border-white/[0.06]">
               {a.prompt && <p className="text-[13px] leading-snug text-foreground/90">{a.prompt}</p>}
@@ -257,6 +271,15 @@ export default function MobileThread() {
             </div>
           </div>
         ))}
+
+        {/* In-flight generations spin at the bottom, where their result lands. */}
+        {Array.from({ length: pending }).map((_, i) => (
+          <div key={`p-${i}`} className="rounded-2xl border border-white/10 bg-[#0D0F12] aspect-square flex items-center justify-center">
+            <CircleNotch size={22} className="animate-spin text-accent" />
+          </div>
+        ))}
+
+        <div ref={endRef} />
       </div>
 
       {/* Compose */}
