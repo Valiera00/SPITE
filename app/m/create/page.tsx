@@ -24,6 +24,31 @@ export default function MobileCreate() {
   const [status, setStatus] = useState<'idle' | 'submitting' | 'polling' | 'done' | 'error'>('idle')
   const [resultUrl, setResultUrl] = useState<string | null>(null)
   const [error, setError] = useState('')
+  const [creatingProject, setCreatingProject] = useState(false)
+
+  async function handleNewProject() {
+    const name = window.prompt('New project name')?.trim()
+    if (!name) return
+    setCreatingProject(true)
+    try {
+      const res = await fetch('/api/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      })
+      const proj = await res.json().catch(() => ({}))
+      if (res.ok && proj?.id) {
+        setProjects((prev) => [{ id: proj.id, name: proj.name }, ...prev])
+        setProjectId(proj.id)
+      } else {
+        setError(proj.error || 'Could not create project')
+      }
+    } catch {
+      setError('Could not create project')
+    } finally {
+      setCreatingProject(false)
+    }
+  }
 
   useEffect(() => {
     fetch('/api/projects')
@@ -108,15 +133,28 @@ export default function MobileCreate() {
     <div className="p-4 flex flex-col gap-4">
       <h1 className="text-lg font-mono tracking-wide">Create</h1>
 
-      <label className="flex flex-col gap-1.5">
+      <div className="flex flex-col gap-1.5">
         <span className="text-[10px] font-mono text-muted-foreground uppercase tracking-wider">Project</span>
-        <select value={projectId} onChange={(e) => setProjectId(e.target.value)} className={SELECT_CLASS}>
-          {projects.length === 0 && <option value="">No projects</option>}
-          {projects.map((p) => (
-            <option key={p.id} value={p.id}>{p.name}</option>
-          ))}
-        </select>
-      </label>
+        <div className="flex gap-2">
+          <select
+            value={projectId}
+            onChange={(e) => setProjectId(e.target.value)}
+            className={`${SELECT_CLASS} flex-1 min-w-0`}
+          >
+            {projects.length === 0 && <option value="">No projects</option>}
+            {projects.map((p) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+          <button
+            onClick={handleNewProject}
+            disabled={creatingProject}
+            className="shrink-0 px-3 rounded-lg border border-white/10 bg-[#0D0F12] text-accent text-sm font-mono disabled:opacity-50 active:scale-[0.97] transition-transform"
+          >
+            {creatingProject ? '…' : '+ New'}
+          </button>
+        </div>
+      </div>
 
       <label className="flex flex-col gap-1.5">
         <span className="text-[10px] font-mono text-muted-foreground uppercase tracking-wider">Model</span>
