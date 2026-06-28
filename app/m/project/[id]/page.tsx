@@ -18,9 +18,16 @@ type Asset = {
   prompt: string | null
   created_at: string
   aspect?: string
+  refs?: string[]
 }
 
 type Ref = { id: string; previewUrl: string; proxyUrl: string | null; uploading: boolean }
+
+// Rebuild compose-bar ref chips from stored URLs (used by Reuse / Copy). The
+// proxy URL doubles as the preview source since it's already on R2.
+function refsFromUrls(urls?: string[]): Ref[] {
+  return (urls || []).map((url, i) => ({ id: `ref-restore-${Date.now()}-${i}`, previewUrl: url, proxyUrl: url, uploading: false }))
+}
 
 const CREATE_MODELS = FAL_MODELS.filter((m) => m.category === 'image' && !m.optionalPrompt)
 const MAX_COUNT = 6
@@ -129,7 +136,7 @@ export default function MobileThread() {
         if (sd.status === 'COMPLETED') {
           const url = sd.output?.url
           if (url) setAssets((prev) => [
-            { id: `new-${Date.now()}-${i}`, type: sd.output?.videos ? 'video' : 'image', model: m?.name || null, r2_url: url, prompt: myPrompt, created_at: new Date().toISOString(), aspect: asp },
+            { id: `new-${Date.now()}-${i}`, type: sd.output?.videos ? 'video' : 'image', model: m?.name || null, r2_url: url, prompt: myPrompt, created_at: new Date().toISOString(), aspect: asp, refs: refUrls },
             ...prev,
           ])
           decPending(); loadBalance(); return
@@ -172,12 +179,16 @@ export default function MobileThread() {
     }
   }
 
-  function reusePrompt(a: Asset) { setPrompt(a.prompt || '') }
+  function reusePrompt(a: Asset) {
+    setPrompt(a.prompt || '')
+    setRefs(refsFromUrls(a.refs)) // bring back the reference images that were used
+  }
   function copyAll(a: Asset) {
     setPrompt(a.prompt || '')
     const id = findModelId(a.model)
     if (id) setModelId(id)
-    if (a.aspect) setAspect(a.aspect) // model + aspect + prompt; count deliberately left as-is
+    if (a.aspect) setAspect(a.aspect)
+    setRefs(refsFromUrls(a.refs)) // model + aspect + prompt + references; count deliberately left as-is
   }
 
   return (
