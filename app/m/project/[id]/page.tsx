@@ -65,6 +65,7 @@ export default function MobileThread() {
   const [prompt, setPrompt] = useState('')
   const [aspect, setAspect] = useState('')
   const [count, setCount] = useState(1)
+  const [resolution, setResolution] = useState('')
   const [refs, setRefs] = useState<Ref[]>([])
   const [pending, setPending] = useState(0)
   const [error, setError] = useState('')
@@ -102,7 +103,17 @@ export default function MobileThread() {
   }, [loading, assets.length, pending])
 
   const model = useMemo(() => getModelById(modelId), [modelId])
-  useEffect(() => { setAspect(model?.defaultAspectRatio || '') }, [model])
+  // Default a model's resolution to 2K when it offers it (never go lower by
+  // default); otherwise fall back to the model's own default or its highest tier.
+  useEffect(() => {
+    setAspect(model?.defaultAspectRatio || '')
+    const rs = model?.resolutions || []
+    setResolution(
+      rs.includes('2K') ? '2K'
+        : (model?.defaultResolution && rs.includes(model.defaultResolution)) ? model.defaultResolution
+        : rs[rs.length - 1] || '',
+    )
+  }, [model])
   const cost = useMemo(() => estimateGenerationCost(model, { count }), [model, count])
   const busy = pending > 0
   const uploadingRef = refs.some((r) => r.uploading)
@@ -131,7 +142,7 @@ export default function MobileThread() {
   const removeRef = (id: string) => setRefs((prev) => prev.filter((r) => r.id !== id))
 
   // One full submit→poll→append. Runs independently so count>1 fans out.
-  async function runOne(i: number, myPrompt: string, refUrls: string[], mId: string, asp: string) {
+  async function runOne(i: number, myPrompt: string, refUrls: string[], mId: string, asp: string, res: string) {
     try {
       if (i > 0) await new Promise((r) => setTimeout(r, i * 250))
       const m = getModelById(mId)
@@ -141,7 +152,7 @@ export default function MobileThread() {
           modelId: mId, prompt: myPrompt,
           referenceImageUrl: refUrls[0],
           referenceGroups: refUrls.length > 1 ? refUrls.slice(1).map((u) => ({ urls: [u] })) : undefined,
-          settings: { aspectRatio: asp || m?.defaultAspectRatio, resolution: m?.defaultResolution, numImages: 1 },
+          settings: { aspectRatio: asp || m?.defaultAspectRatio, resolution: res || m?.defaultResolution, numImages: 1 },
         }),
       })
       const submitData = await submitRes.json().catch(() => ({}))
@@ -187,7 +198,7 @@ export default function MobileThread() {
     const refUrls = [...new Set(refs.map((r) => r.proxyUrl).filter((u): u is string => !!u))]
     const n = Math.max(1, Math.min(MAX_COUNT, count))
     setError(''); setPrompt(''); setRefs([]); setPending(n)
-    for (let i = 0; i < n; i++) runOne(i, myPrompt, refUrls, modelId, aspect)
+    for (let i = 0; i < n; i++) runOne(i, myPrompt, refUrls, modelId, aspect, resolution)
   }
 
   // Real save: Web Share (iOS → Save to Photos) with a blob-download fallback.
@@ -325,6 +336,12 @@ export default function MobileThread() {
             <select value={aspect} onChange={(e) => setAspect(e.target.value)}
               className="shrink-0 bg-[#080A0C] border border-white/10 rounded-full px-2.5 h-9 text-xs font-mono text-foreground focus:outline-none">
               {model.aspectRatios.map((a) => <option key={a} value={a}>{a}</option>)}
+            </select>
+          )}
+          {model && (model.resolutions?.length ?? 0) > 1 && (
+            <select value={resolution} onChange={(e) => setResolution(e.target.value)} aria-label="Resolution"
+              className="shrink-0 bg-[#080A0C] border border-white/10 rounded-full px-2.5 h-9 text-xs font-mono text-foreground focus:outline-none">
+              {model.resolutions!.map((r) => <option key={r} value={r}>{r}</option>)}
             </select>
           )}
         </div>
