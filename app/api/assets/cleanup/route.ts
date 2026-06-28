@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getR2Client } from '@/lib/r2-upload'
 import { getDb } from '@/lib/db'
-import { DeleteObjectCommand } from '@aws-sdk/client-s3'
+import { DeleteObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3'
 import { timingSafeEqual } from 'crypto'
 import { purgeExpiredSessions } from '@/lib/sessions'
 import { purgeOldSpendLedger } from '@/lib/spend-gate'
@@ -18,6 +18,37 @@ async function deleteFromR2(key: string) {
   } catch (error) {
     console.error('[cleanup] R2 delete error:', error)
   }
+}
+
+// Reclaim reference images (the refs/ prefix) older than the configured
+// retention window. Reference images are throwaway inputs, not deliverables —
+// once they've aged out, "Reuse" can no longer re-attach them, which is the
+// intended trade-off for not paying to store inputs forever.
+//
+// OPT-IN BY DESIGN: with REFERENCE_RETENTION_DAYS unset or <= 0 this does
+// nothing, so a self-hosted install never silently deletes a user's data.
+// Set REFERENCE_RETENTION_DAYS=7 on a deployment that wants weekly reclaim.
+async function sweepOldReferences(): Promise<number> {
+  const days = Number(process.env.REFERENCE_RETENTION_DAYS)
+  if (!Number.isFinite(days) || days <= 0) return 0
+  const cutoff = Date.now() - days * 24 * 60 * 60 * 1000
+  const s3 = getR2Client()
+  const bucket = process.env.R2_BUCKET_NAME!
+  let token: string | undefined
+  let deleted = 0
+  do {
+    const res = await s3.send(new ListObjectsV2Command({
+      Bucket: bucket, Prefix: 'refs/', ContinuationToken: token,
+    }))
+    for (const obj of res.Contents || []) {
+      if (obj.Key && obj.LastModified && obj.LastModified.getTime() < cutoff) {
+        await deleteFromR2(obj.Key)
+        deleted++
+      }
+    }
+    token = res.IsTruncated ? res.NextContinuationToken : undefined
+  } while (token)
+  return deleted
 }
 
 // Cleanup job. Invoked either by Vercel Cron (which issues a GET with an
@@ -97,12 +128,22 @@ async function runCleanup(request: NextRequest) {
       console.error('[cleanup] auth/spend sweep failed:', err)
     }
 
+    // Opt-in reference reclaim (no-op unless REFERENCE_RETENTION_DAYS is set).
+    let referencesDeleted = 0
+    try {
+      referencesDeleted = await sweepOldReferences()
+      if (referencesDeleted) console.log(`[cleanup] Reclaimed ${referencesDeleted} aged reference images`)
+    } catch (err) {
+      console.error('[cleanup] reference sweep failed:', err)
+    }
+
     return NextResponse.json({
       success: true,
       deleted: result.length,
       sessionsDeleted,
       attemptsDeleted,
       spendLedgerDeleted,
+      referencesDeleted,
     })
   } catch (error) {
     console.error('[cleanup] Error:', error)

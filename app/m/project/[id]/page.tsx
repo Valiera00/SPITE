@@ -98,7 +98,7 @@ export default function MobileThread() {
       try {
         const presignRes = await fetch('/api/r2-presign', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ filename: file.name, contentType: file.type }),
+          body: JSON.stringify({ filename: file.name, contentType: file.type, prefix: 'refs' }),
         })
         const { presignedUrl, proxyUrl } = await presignRes.json()
         const putRes = await fetch(presignedUrl, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file })
@@ -135,10 +135,19 @@ export default function MobileThread() {
         const sd = await (await fetch(`/api/generate/status?${q.toString()}`)).json().catch(() => ({}))
         if (sd.status === 'COMPLETED') {
           const url = sd.output?.url
-          if (url) setAssets((prev) => [
-            { id: `new-${Date.now()}-${i}`, type: sd.output?.videos ? 'video' : 'image', model: m?.name || null, r2_url: url, prompt: myPrompt, created_at: new Date().toISOString(), aspect: asp, refs: refUrls },
-            ...prev,
-          ])
+          if (url) {
+            setAssets((prev) => [
+              { id: `new-${Date.now()}-${i}`, type: sd.output?.videos ? 'video' : 'image', model: m?.name || null, r2_url: url, prompt: myPrompt, created_at: new Date().toISOString(), aspect: asp, refs: refUrls },
+              ...prev,
+            ])
+            // Persist the references against this result so Reuse can restore
+            // them after a reload too (best-effort; in-memory state covers the
+            // current session regardless).
+            if (refUrls.length) fetch('/api/assets', {
+              method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ url, refs: refUrls, projectId }),
+            }).catch(() => {})
+          }
           decPending(); loadBalance(); return
         }
         if (sd.status === 'FAILED') { setError(sd.error || 'Generation failed'); decPending(); return }

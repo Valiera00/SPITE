@@ -27,6 +27,9 @@ let assetsSchemaReady = false
 async function ensureAssetsSchema(sql: ReturnType<typeof getDb>) {
   if (assetsSchemaReady) return
   await sql`ALTER TABLE generation_history ADD COLUMN IF NOT EXISTS recovered boolean DEFAULT false`
+  // refs: the reference-image proxy URLs used to produce this result, so the
+  // mobile "Reuse" button can re-attach them even after a refresh. JSON array.
+  await sql`ALTER TABLE generation_history ADD COLUMN IF NOT EXISTS refs jsonb`
   await sql`CREATE INDEX IF NOT EXISTS idx_genhistory_project_created ON generation_history (project_id, created_at DESC)`
   assetsSchemaReady = true
 }
@@ -48,6 +51,7 @@ export async function GET(request: NextRequest) {
         SELECT id, type, model, prompt, r2_url, used_in_canvas,
                COALESCE(is_upload, false) as is_upload,
                COALESCE(recovered, false) as recovered,
+               refs,
                created_at
         FROM generation_history
         WHERE project_id = ${projectId}
@@ -63,6 +67,7 @@ export async function GET(request: NextRequest) {
       SELECT id, type, model, prompt, r2_url, used_in_canvas,
              COALESCE(is_upload, false) as is_upload,
              COALESCE(recovered, false) as recovered,
+             refs,
              created_at
       FROM generation_history
       WHERE (used_in_canvas = true OR expires_at > CURRENT_TIMESTAMP OR expires_at IS NULL)
@@ -117,6 +122,30 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('[assets] Upload record error:', error)
     return NextResponse.json({ error: 'Failed to record upload' }, { status: 500 })
+  }
+}
+
+// Attach the reference images used to produce a result, keyed by its output
+// URL. Called right after a generation completes so "Reuse" can restore the
+// same references later — including after a page reload, unlike in-memory state.
+export async function PATCH(request: NextRequest) {
+  try {
+    const sql = getDb()
+    const { url, refs, projectId } = await request.json()
+    if (!url || !Array.isArray(refs)) {
+      return NextResponse.json({ error: 'url and refs[] are required' }, { status: 400 })
+    }
+    await ensureAssetsSchema(sql)
+    const clean = refs.filter((u) => typeof u === 'string').slice(0, 12)
+    if (projectId) {
+      await sql`UPDATE generation_history SET refs = ${JSON.stringify(clean)}::jsonb WHERE r2_url = ${url} AND project_id = ${projectId}`
+    } else {
+      await sql`UPDATE generation_history SET refs = ${JSON.stringify(clean)}::jsonb WHERE r2_url = ${url}`
+    }
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    console.error('[assets] Set refs error:', error)
+    return NextResponse.json({ error: 'Failed to set refs' }, { status: 500 })
   }
 }
 

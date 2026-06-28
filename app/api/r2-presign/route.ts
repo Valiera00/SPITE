@@ -32,13 +32,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'R2 not configured' }, { status: 500 })
     }
 
-    const { filename, contentType } = await req.json()
+    const { filename, contentType, prefix } = await req.json()
     if (!filename || typeof filename !== 'string') {
       return NextResponse.json({ error: 'filename required' }, { status: 400 })
     }
 
+    // `refs/` is a transient prefix: reference images attached to a generation
+    // (inputs, not outputs). Deployments can opt into reclaiming old refs via
+    // REFERENCE_RETENTION_DAYS (see the cleanup cron); everything else lives
+    // under the permanent uploads/ prefix.
+    const safePrefix = prefix === 'refs' ? 'refs' : 'uploads'
     const safeName = filename.replace(/[^\w.\-]+/g, '_')
-    const key = `uploads/${Date.now()}-${safeName}`
+    const key = `${safePrefix}/${Date.now()}-${safeName}`
     const client = getR2Client()
 
     const command = new PutObjectCommand({
