@@ -101,11 +101,23 @@ export function ProjectsDashboard() {
 
         {/* Main content */}
         <main className="max-w-6xl mx-auto px-6 md:px-10 py-10">
-          {/* Section label */}
-          <div className="flex items-baseline justify-between mb-6">
-            <p className="text-[11px] font-mono tracking-[0.18em] uppercase text-muted-foreground/70">
-              {search ? `${filtered.length} result${filtered.length !== 1 ? 's' : ''} for "${search}"` : `${canvasProjects.length} project${canvasProjects.length !== 1 ? 's' : ''}`}
-            </p>
+          {/* Section label — "Canvas" mode (the node graph), paired with the
+              "Flow" section below. While searching, show the result count. */}
+          <div className="flex items-baseline gap-3 mb-6">
+            {search ? (
+              <p className="text-[11px] font-mono tracking-[0.18em] uppercase text-muted-foreground/70">
+                {filtered.length} result{filtered.length !== 1 ? 's' : ''} for &quot;{search}&quot;
+              </p>
+            ) : (
+              <>
+                <p className="text-[11px] font-mono tracking-[0.18em] uppercase text-muted-foreground/70">
+                  Canvas
+                </p>
+                <span className="text-[10px] font-mono text-muted-foreground/40">
+                  {canvasProjects.length} · node canvas{canvasProjects.length !== 1 ? 'es' : ''}
+                </span>
+              </>
+            )}
           </div>
 
           {/* Grid — canvas projects */}
