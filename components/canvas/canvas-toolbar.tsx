@@ -1,10 +1,11 @@
 'use client'
 
 import Link from 'next/link'
-import { ArrowLeft, MagnifyingGlassPlus, MagnifyingGlassMinus, CornersOut, Lock, CheckCircle, Circle, GearSix, ListChecks } from '@phosphor-icons/react'
+import { ArrowLeft, MagnifyingGlassPlus, MagnifyingGlassMinus, CornersOut, Lock, CheckCircle, Circle, GearSix, ListChecks, Question } from '@phosphor-icons/react'
 import { useReactFlow } from '@xyflow/react'
 import { useState } from 'react'
 import { useAuth } from '@/components/auth-provider'
+import { startTour } from '@/lib/onboarding'
 import { FalBalanceBadge } from './fal-balance-badge'
 
 interface CanvasToolbarProps {
@@ -125,6 +126,15 @@ export function CanvasToolbar({ projectName, onProjectNameChange, saveStatus, pr
         )}
 
         <FalBalanceBadge />
+
+        <button
+          onClick={() => startTour('canvas')}
+          className="flex items-center justify-center w-7 h-7 rounded-lg glass-hover transition-colors text-muted-foreground hover:text-foreground"
+          title="Take the tour"
+          aria-label="Take the tour"
+        >
+          <Question size={13} weight="thin" />
+        </button>
 
         <Link
           href="/settings"

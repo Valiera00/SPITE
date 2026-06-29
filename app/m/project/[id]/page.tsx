@@ -5,12 +5,13 @@ import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import {
   CaretLeft, CircleNotch, ArrowUp, ImageSquare, X, DownloadSimple,
-  ArrowUUpLeft, CopySimple, Plus, Minus, Sparkle,
+  ArrowUUpLeft, CopySimple, Plus, Minus, Sparkle, Question,
 } from '@phosphor-icons/react'
 import { FAL_MODELS, getModelById } from '@/lib/fal-models'
 import { estimateGenerationCost, formatUSD, COST_CONFIRM_THRESHOLD_USD } from '@/lib/fal-cost'
 import { useIsMobile } from '@/components/ui/use-mobile'
 import { OnboardingTour } from '@/components/onboarding/use-onboarding-tour'
+import { startTour } from '@/lib/onboarding'
 
 type Asset = {
   id: string
@@ -267,6 +268,8 @@ export default function FlowThread() {
           <div className="w-full max-w-[1700px] mx-auto flex items-center gap-2 px-3 pb-3 pt-0.5 lg:px-7">
             <Link href={isMobile ? '/m' : '/'} className="text-muted-foreground p-1 -ml-1 hover:text-foreground transition-colors"><CaretLeft size={18} /></Link>
             <span className="text-sm font-mono truncate flex-1">{projectName || 'Project'}</span>
+            <button onClick={() => startTour('flow')} aria-label="Take the tour" title="Take the tour"
+              className="flex items-center justify-center w-8 h-8 rounded-lg text-muted-foreground hover:text-foreground hover:bg-white/10 transition-colors"><Question size={16} /></button>
             {balance !== null && (
               <span className="text-[10px] font-mono text-muted-foreground px-2 py-1 rounded-full border border-white/10">fal {formatUSD(balance)}</span>
             )}
