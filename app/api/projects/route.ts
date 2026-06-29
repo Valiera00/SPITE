@@ -6,10 +6,12 @@ import { v4 as uuidv4 } from 'uuid'
 const DEFAULT_USER_ID = '00000000-0000-0000-0000-000000000001'
 
 // `origin` distinguishes how a project is meant to be worked in: 'canvas' (the
-// desktop node graph, the default) vs 'mobile' (the simple generation thread
-// created from the /m companion). The desktop dashboard groups them separately
-// and opens mobile projects in the thread UI instead of the canvas. Cached so
-// the idempotent ALTER runs once per serverless instance, not per request.
+// node graph, the default) vs 'flow' (the simple, linear prompt→result
+// generation thread — the Flow mode, usable on phone and desktop). The
+// dashboard groups them separately and opens Flow projects in the thread UI
+// instead of the canvas. Anything that isn't 'canvas' is treated as Flow, so
+// legacy 'mobile' rows keep working. Cached so the idempotent ALTER runs once
+// per serverless instance, not per request.
 let projectsOriginReady = false
 async function ensureProjectsOrigin(sql: ReturnType<typeof getDb>) {
   if (projectsOriginReady) return
@@ -23,7 +25,7 @@ export async function POST(request: NextRequest) {
     await ensureProjectsOrigin(sql)
     const { name, description, origin } = await request.json()
     const projectId = uuidv4()
-    const safeOrigin = origin === 'mobile' ? 'mobile' : 'canvas'
+    const safeOrigin = origin === 'flow' || origin === 'mobile' ? 'flow' : 'canvas'
 
     const result = await sql`
       INSERT INTO projects (id, userid, name, description, origin, createdat, updatedat)

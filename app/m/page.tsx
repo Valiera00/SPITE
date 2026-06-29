@@ -47,7 +47,7 @@ export default function MobileProjects() {
       const res = await fetch('/api/projects', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, origin: 'mobile' }),
+        body: JSON.stringify({ name, origin: 'flow' }),
       })
       const proj = await res.json().catch(() => ({}))
       if (res.ok && proj?.id) router.push(`/m/project/${proj.id}`)

@@ -21,7 +21,7 @@ interface ProjectCardProps {
   thumbnail?: string
   lastModified: string
   genre?: string
-  /** Where the card navigates. Defaults to the canvas; mobile projects pass the thread route. */
+  /** Where the card navigates. Defaults to the canvas; Flow projects pass the thread route. */
   href?: string
   onMutate?: () => void
 }

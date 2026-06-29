@@ -4,9 +4,10 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { FolderSimple, FilmSlate } from '@phosphor-icons/react'
 
-// Mobile companion shell. Project-first, thread-based (Krea-style): the
-// Projects list is the home, and tapping into a project opens an immersive
-// generation thread with its own compose bar (so the tab bar is hidden there).
+// Flow-mode shell (served under /m; phone bookmarks keep working). Project-first,
+// thread-based (Krea-style): the Projects list is the home, and tapping into a
+// project opens an immersive generation thread with its own compose bar (so the
+// tab bar is hidden there).
 const TABS = [
   { href: '/m', label: 'Projects', icon: FilmSlate },
   { href: '/m/library', label: 'Library', icon: FolderSimple },

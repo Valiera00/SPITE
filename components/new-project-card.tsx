@@ -6,27 +6,35 @@ import { Plus, CircleNotch } from '@phosphor-icons/react'
 
 interface NewProjectCardProps {
   onCreated?: () => void
+  /** 'canvas' (default) opens the node graph; 'flow' opens the generation thread. */
+  origin?: 'canvas' | 'flow'
+  label?: string
+  sublabel?: string
 }
 
-export function NewProjectCard({ onCreated }: NewProjectCardProps) {
+export function NewProjectCard({ onCreated, origin = 'canvas', label, sublabel }: NewProjectCardProps) {
   const router = useRouter()
   const [creating, setCreating] = useState(false)
+
+  const isFlow = origin === 'flow'
+  const title = label ?? (isFlow ? 'New Flow' : 'New Project')
+  const subtitle = sublabel ?? (isFlow ? 'Start a Flow' : 'Start from canvas')
 
   const handleCreate = async () => {
     if (creating) return
     setCreating(true)
-    
+
     try {
       const res = await fetch('/api/projects', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: 'Untitled Project' })
+        body: JSON.stringify({ name: 'Untitled Project', origin })
       })
-      
+
       if (res.ok) {
         const project = await res.json()
         onCreated?.()
-        router.push(`/project/${project.id}`)
+        router.push(isFlow ? `/m/project/${project.id}` : `/project/${project.id}`)
       }
     } catch (error) {
       console.error('Failed to create project:', error)
@@ -55,10 +63,10 @@ export function NewProjectCard({ onCreated }: NewProjectCardProps) {
             className="text-sm text-foreground/80 group-hover:text-accent transition-colors duration-200"
             style={{ fontFamily: 'var(--font-montserrat)' }}
           >
-            {creating ? 'Creating...' : 'New Project'}
+            {creating ? 'Creating...' : title}
           </span>
           <span className="text-[10px] font-mono text-muted-foreground tracking-wide">
-            Start from canvas
+            {subtitle}
           </span>
         </div>
       </div>

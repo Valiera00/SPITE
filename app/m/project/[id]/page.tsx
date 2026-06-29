@@ -9,6 +9,7 @@ import {
 } from '@phosphor-icons/react'
 import { FAL_MODELS, getModelById } from '@/lib/fal-models'
 import { estimateGenerationCost, formatUSD, COST_CONFIRM_THRESHOLD_USD } from '@/lib/fal-cost'
+import { useIsMobile } from '@/components/ui/use-mobile'
 
 type Asset = {
   id: string
@@ -22,6 +23,11 @@ type Asset = {
 }
 
 type Ref = { id: string; previewUrl: string; proxyUrl: string | null; uploading: boolean }
+
+// Flow mode — the simple, linear prompt→result generation thread (the
+// counterpart to Canvas). One responsive component: a phone-optimized single
+// column, and a wider multi-column desktop layout. Served under /m so existing
+// bookmarks keep working.
 
 // Rebuild compose-bar ref chips from stored URLs (used by Reuse / Copy). The
 // proxy URL doubles as the preview source since it's already on R2.
@@ -53,10 +59,11 @@ function timeAgo(iso: string): string {
   return `${Math.floor(s / 86400)}d ago`
 }
 
-export default function MobileThread() {
+export default function FlowThread() {
   const params = useParams()
   const projectId = (params?.id as string) || ''
   const fileRef = useRef<HTMLInputElement>(null)
+  const isMobile = useIsMobile()
 
   const [projectName, setProjectName] = useState('')
   const [assets, setAssets] = useState<Asset[]>([])
@@ -183,7 +190,7 @@ export default function MobileThread() {
       }
       setError('Timed out waiting for a result.'); decPending()
     } catch (err) {
-      console.error('[mobile/thread] error:', err); setError('Something went wrong.'); decPending()
+      console.error('[flow/thread] error:', err); setError('Something went wrong.'); decPending()
     }
   }
 
@@ -215,7 +222,7 @@ export default function MobileThread() {
       a.href = obj; a.download = file.name; document.body.appendChild(a); a.click(); a.remove()
       setTimeout(() => URL.revokeObjectURL(obj), 1000)
     } catch (err) {
-      console.error('[mobile/save] error:', err); setError('Could not save — long-press the image to save instead.')
+      console.error('[flow/save] error:', err); setError('Could not save — long-press the image to save instead.')
     }
   }
 
@@ -232,28 +239,35 @@ export default function MobileThread() {
   }
 
   return (
-    <div className="flex flex-col min-h-[100dvh] bg-[#080A0C] text-[#F0EDE6] w-full max-w-2xl mx-auto">
-      <input ref={fileRef} type="file" accept="image/*" multiple className="hidden"
-        onChange={(e) => { const fs = e.target.files; if (fs) Array.from(fs).forEach((f) => onPickRef(f)); e.target.value = '' }} />
+    <div className="text-[#F0EDE6]">
+      {/* Desktop only: SPITE brand atmosphere behind a centered column. On phone
+          the column is flat #080A0C for performance. */}
+      <div className="spite-ozone-bg hidden lg:block fixed inset-0 z-0 pointer-events-none" aria-hidden="true" />
+      <div className="spite-grain hidden lg:block" aria-hidden="true" />
 
-      {/* Header */}
-      <div className="sticky top-0 z-20 flex items-center gap-2 px-3 py-3 border-b border-white/10 bg-[#080A0C]/90 backdrop-blur" style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}>
-        <Link href="/m" className="text-muted-foreground p-1 -ml-1"><CaretLeft size={18} /></Link>
-        <span className="text-sm font-mono truncate flex-1">{projectName || 'Project'}</span>
-        {balance !== null && (
-          <span className="text-[10px] font-mono text-muted-foreground px-2 py-1 rounded-full border border-white/10">fal {formatUSD(balance)}</span>
-        )}
-        <span className="text-[9px] font-mono text-muted-foreground/40">{(process.env.NEXT_PUBLIC_COMMIT_SHA || 'dev').slice(0, 7)}</span>
-      </div>
+      <div className="relative z-10 flex flex-col min-h-[100dvh] w-full max-w-2xl lg:max-w-5xl mx-auto bg-[#080A0C] lg:bg-transparent">
+        <input ref={fileRef} type="file" accept="image/*" multiple className="hidden"
+          onChange={(e) => { const fs = e.target.files; if (fs) Array.from(fs).forEach((f) => onPickRef(f)); e.target.value = '' }} />
+
+        {/* Header — backdrop-blur bar on phone, glass on desktop. Back returns to
+            the dashboard on desktop, to the Flow projects list on phone. */}
+        <div className="sticky top-0 z-20 flex items-center gap-2 px-3 py-3 lg:px-5 border-b border-white/10 bg-[#080A0C]/90 backdrop-blur lg:bg-transparent lg:glass" style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}>
+          <Link href={isMobile ? '/m' : '/'} className="text-muted-foreground p-1 -ml-1 hover:text-foreground transition-colors"><CaretLeft size={18} /></Link>
+          <span className="text-sm font-mono truncate flex-1">{projectName || 'Project'}</span>
+          {balance !== null && (
+            <span className="text-[10px] font-mono text-muted-foreground px-2 py-1 rounded-full border border-white/10">fal {formatUSD(balance)}</span>
+          )}
+          <span className="text-[9px] font-mono text-muted-foreground/40">{(process.env.NEXT_PUBLIC_COMMIT_SHA || 'dev').slice(0, 7)}</span>
+        </div>
 
       {/* Feed — natural document flow. The page (body) scrolls; header and
           compose are sticky. This avoids the iOS nested-overflow scroll that
           left footers stuck below an unreachable fold. */}
-      <div className="flex-1 px-4 py-4 flex flex-col gap-4">
+      <div className="flex-1 px-4 py-4 lg:px-6 lg:py-6 flex flex-col gap-4 lg:grid lg:grid-cols-2 xl:grid-cols-3 lg:gap-5 lg:content-start">
         {loading ? (
-          <p className="text-sm font-mono text-muted-foreground">Loading…</p>
+          <p className="text-sm font-mono text-muted-foreground lg:col-span-full">Loading…</p>
         ) : assets.length === 0 && !busy ? (
-          <p className="text-sm font-mono text-muted-foreground/60 text-center pt-12">Nothing yet. Describe something below to generate.</p>
+          <p className="text-sm font-mono text-muted-foreground/60 text-center pt-12 lg:col-span-full">Nothing yet. Describe something below to generate.</p>
         ) : null}
 
         {/* Oldest first → newest at the bottom. `assets` is stored newest-first
@@ -261,11 +275,11 @@ export default function MobileThread() {
         {assets.slice().reverse().map((a) => (
           <div key={a.id} className="rounded-2xl overflow-hidden bg-[#0D0F12] border border-white/10">
             {a.type === 'video' ? (
-              <video src={a.r2_url} controls playsInline preload="metadata" onLoadedMetadata={() => pinToNewest(false)} className="w-full block max-h-[60vh] object-contain bg-black" />
+              <video src={a.r2_url} controls playsInline preload="metadata" onLoadedMetadata={() => pinToNewest(false)} className="w-full block max-h-[60vh] lg:max-h-[44vh] object-contain bg-black" />
             ) : a.type === 'audio' ? (
               <audio src={a.r2_url} controls className="w-full p-3" />
             ) : (
-              <img src={a.r2_url} alt="" onLoad={() => pinToNewest(false)} className="w-full block max-h-[60vh] object-contain" loading="lazy" decoding="async" />
+              <img src={a.r2_url} alt="" onLoad={() => pinToNewest(false)} className="w-full block max-h-[60vh] lg:max-h-[44vh] object-contain" loading="lazy" decoding="async" />
             )}
             <div className="px-3.5 py-3 flex flex-col gap-2.5 border-t border-white/[0.06]">
               {a.prompt && <p className="text-[13px] leading-snug text-foreground/90">{a.prompt}</p>}
@@ -292,11 +306,12 @@ export default function MobileThread() {
           </div>
         ))}
 
-        <div ref={endRef} />
+        <div ref={endRef} className="lg:col-span-full" />
       </div>
 
       {/* Compose */}
-      <div className="sticky bottom-0 z-20 border-t border-white/10 bg-[#0D0F12] px-3 pt-3 flex flex-col gap-2.5" style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}>
+      <div className="sticky bottom-0 z-20 border-t border-white/10 bg-[#0D0F12] lg:bg-transparent lg:glass px-3 pt-3 lg:px-5 lg:pt-4" style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}>
+        <div className="flex flex-col gap-2.5 lg:max-w-3xl lg:mx-auto lg:w-full">
         {error && <p className="text-[11px] font-mono text-red-400">{error}</p>}
 
         {refs.length > 0 && (
@@ -322,7 +337,7 @@ export default function MobileThread() {
         )}
 
         <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="Describe the image you want to create" rows={2}
-          className="bg-[#080A0C] border border-white/10 rounded-xl px-3.5 py-2.5 text-sm text-foreground focus:border-accent/50 focus:outline-none resize-none" />
+          className="bg-[#080A0C] border border-white/10 rounded-xl px-3.5 py-2.5 lg:py-3 lg:text-[15px] lg:min-h-[84px] text-sm text-foreground focus:border-accent/50 focus:outline-none resize-none" />
 
         {/* Settings row */}
         <div className="flex items-center gap-2">
@@ -361,6 +376,8 @@ export default function MobileThread() {
             {busy ? <CircleNotch size={16} className="animate-spin" /> : <ArrowUp size={18} weight="bold" />}
           </button>
         </div>
+        </div>
+      </div>
       </div>
     </div>
   )

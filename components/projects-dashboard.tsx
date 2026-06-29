@@ -37,10 +37,11 @@ export function ProjectsDashboard() {
     )
   }, [search, projects])
 
-  // Mobile-companion projects open the simple generation thread, not the canvas,
-  // so they get their own section instead of sitting among the canvas projects.
-  const canvasProjects = useMemo(() => filtered.filter((p) => p.origin !== 'mobile'), [filtered])
-  const mobileProjects = useMemo(() => filtered.filter((p) => p.origin === 'mobile'), [filtered])
+  // Flow projects open the simple generation thread, not the canvas, so they get
+  // their own section instead of sitting among the canvas projects. Anything that
+  // isn't 'canvas' counts as Flow (so legacy 'mobile' rows still group correctly).
+  const canvasProjects = useMemo(() => filtered.filter((p) => (p.origin ?? 'canvas') === 'canvas'), [filtered])
+  const flowProjects = useMemo(() => filtered.filter((p) => (p.origin ?? 'canvas') !== 'canvas'), [filtered])
 
   // Format relative time
   const formatRelativeTime = (dateStr: string) => {
@@ -148,20 +149,22 @@ export function ProjectsDashboard() {
             )}
           </div>
 
-          {/* Mobile projects — created from the /m companion. These open the
-              simple generation thread instead of the canvas. */}
-          {mobileProjects.length > 0 && (
+          {/* Flow — the simple, linear prompt→result generation mode. These open
+              the generation thread instead of the canvas. Shown whenever there are
+              Flow projects, or always (with just the New card) when not searching. */}
+          {(flowProjects.length > 0 || !search) && (
             <section className="mt-12">
               <div className="flex items-baseline gap-3 mb-6">
                 <p className="text-[11px] font-mono tracking-[0.18em] uppercase text-muted-foreground/70">
-                  Mobile projects
+                  Flow
                 </p>
                 <span className="text-[10px] font-mono text-muted-foreground/40">
-                  {mobileProjects.length} · generation threads
+                  {flowProjects.length} · generation thread{flowProjects.length !== 1 ? 's' : ''}
                 </span>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                {mobileProjects.map((project) => (
+                {!search && <NewProjectCard origin="flow" onCreated={handleProjectCreated} />}
+                {flowProjects.map((project) => (
                   <ProjectCard
                     key={project.id}
                     id={project.id}
