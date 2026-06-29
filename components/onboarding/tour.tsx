@@ -7,8 +7,8 @@ import type { TourStep } from './steps'
 
 export type TourCloseReason = 'done' | 'skip' | 'optout'
 
-const PAD = 6 // breathing room around the spotlighted element
-const POPOVER_W = 340
+const PAD = 8 // breathing room around the spotlighted element
+const POPOVER_W = 440
 
 // Choose where the popover sits relative to the highlighted rect (or center it
 // when there's no target). Anchors by `bottom`/`right` for the above/left cases
@@ -38,6 +38,14 @@ export function Tour({ steps, onClose }: { steps: TourStep[]; onClose: (reason: 
 
   useEffect(() => { setMounted(true) }, [])
 
+  // Per-step side effects (e.g. open the assets panel). onEnter on arrival,
+  // onLeave on departure / close.
+  useEffect(() => {
+    const s = steps[idx]
+    s?.onEnter?.()
+    return () => s?.onLeave?.()
+  }, [idx, steps])
+
   const measure = useCallback(() => {
     const el = step?.target ? document.querySelector<HTMLElement>(step.target) : null
     setRect(el && el.offsetParent !== null ? el.getBoundingClientRect() : null)
@@ -53,8 +61,10 @@ export function Tour({ steps, onClose }: { steps: TourStep[]; onClose: (reason: 
     }
     measure()
     if (settleTimer.current) window.clearTimeout(settleTimer.current)
-    settleTimer.current = window.setTimeout(measure, 320)
-    return () => { if (settleTimer.current) window.clearTimeout(settleTimer.current) }
+    // A couple of re-measures so panels opened by onEnter settle before we lock on.
+    const t2 = window.setTimeout(measure, 240)
+    settleTimer.current = window.setTimeout(measure, 560)
+    return () => { window.clearTimeout(t2); if (settleTimer.current) window.clearTimeout(settleTimer.current) }
   }, [idx, step, measure])
 
   // Stay aligned through scroll / resize.
@@ -108,20 +118,23 @@ export function Tour({ steps, onClose }: { steps: TourStep[]; onClose: (reason: 
       {ring && <div style={ring} />}
 
       <div
-        className="absolute pointer-events-auto glass rounded-2xl border border-white/10 shadow-[0_16px_50px_rgba(0,0,0,0.6)] p-4 flex flex-col gap-3 text-[#F0EDE6]"
+        className="absolute pointer-events-auto glass rounded-2xl border border-white/10 shadow-[0_16px_50px_rgba(0,0,0,0.6)] p-5 flex flex-col gap-3.5 text-[#F0EDE6]"
         style={{ ...popoverStyle(rect), maxHeight: 'calc(100vh - 24px)', overflowY: 'auto' }}
       >
         <button onClick={() => onClose('skip')} aria-label="Close tour"
-          className="absolute top-2.5 right-2.5 w-6 h-6 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/10 transition"><X size={13} /></button>
+          className="absolute top-3 right-3 w-7 h-7 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/10 transition"><X size={14} /></button>
 
-        {step.image && (
+        {step.video ? (
+          <video src={step.video} autoPlay muted loop playsInline onError={(e) => { (e.currentTarget as HTMLVideoElement).style.display = 'none' }}
+            className="w-full rounded-xl border border-white/10 object-cover max-h-72 bg-black/30" />
+        ) : step.image ? (
           <img src={step.image} alt="" onError={(e) => { e.currentTarget.style.display = 'none' }}
-            className="w-full rounded-xl border border-white/10 object-cover max-h-44 bg-black/30" />
-        )}
+            className="w-full rounded-xl border border-white/10 object-cover max-h-72 bg-black/30" />
+        ) : null}
 
-        <div className="flex flex-col gap-1.5 pr-5">
-          <h3 className="text-[15px] font-medium tracking-tight" style={{ fontFamily: 'var(--font-montserrat)' }}>{step.title}</h3>
-          <p className="text-[12.5px] leading-relaxed text-foreground/75">{step.body}</p>
+        <div className="flex flex-col gap-2 pr-6">
+          <h3 className="text-[17px] font-semibold tracking-tight" style={{ fontFamily: 'var(--font-montserrat)' }}>{step.title}</h3>
+          <p className="text-[13.5px] leading-relaxed text-foreground/80">{step.body}</p>
         </div>
 
         {/* Progress dots */}

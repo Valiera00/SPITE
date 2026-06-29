@@ -8,6 +8,8 @@ import {
   setConnectorAnimation,
   type ConnectorAnimation,
 } from '@/lib/connector-animation'
+import { OnboardingTour } from '@/components/onboarding/use-onboarding-tour'
+import { startTour } from '@/lib/onboarding'
 
 export default function SettingsPage() {
   // API Key state
@@ -268,12 +270,19 @@ export default function SettingsPage() {
             <ArrowLeft size={16} weight="thin" />
           </Link>
           <h1 className="text-lg font-serif tracking-tight">Settings</h1>
+          <button
+            onClick={() => startTour('settings')}
+            className="ml-auto text-xs font-mono text-muted-foreground hover:text-foreground transition-colors"
+            title="Take the settings tour"
+          >
+            Tour
+          </button>
         </div>
       </div>
 
       <div className="max-w-3xl mx-auto px-6 py-8 space-y-10">
         {/* fal.ai API Key Section */}
-        <section className="space-y-4">
+        <section data-tour="settings-apikey" className="space-y-4">
           <h2 className="text-sm font-mono uppercase tracking-wider text-muted-foreground">fal.ai API Key</h2>
           <div className="glass rounded-xl p-6 space-y-4">
             <div className="flex items-center justify-between">
@@ -365,7 +374,7 @@ export default function SettingsPage() {
         </section>
 
         {/* Storage — how much of the R2 free tier is used. */}
-        <section className="space-y-4">
+        <section data-tour="settings-storage" className="space-y-4">
           <h2 className="text-sm font-mono uppercase tracking-wider text-muted-foreground">Storage (Cloudflare R2)</h2>
           <div className="glass rounded-xl p-6 space-y-3">
             {storageState === 'loading' && (
@@ -402,7 +411,7 @@ export default function SettingsPage() {
         {/* Data Retention — what the nightly cleanup cron deletes, and when.
             Values come from env vars and are surfaced here so it's unambiguous
             what will and won't be removed. */}
-        <section className="space-y-4">
+        <section data-tour="settings-retention" className="space-y-4">
           <h2 className="text-sm font-mono uppercase tracking-wider text-muted-foreground">Data Retention</h2>
           <div className="glass rounded-xl p-6 space-y-5">
             <p className="text-xs text-muted-foreground leading-relaxed">
@@ -662,6 +671,7 @@ export default function SettingsPage() {
         </section>
       </div>
 
+      <OnboardingTour surface="settings" />
     </div>
   )
 }

@@ -2,15 +2,26 @@ import type { TourSurface } from '@/lib/onboarding'
 
 // One step in a tour. `target` is a `[data-tour="..."]` selector to spotlight;
 // omit it (or let it resolve to nothing) and the popover renders centered — used
-// for welcome/concept steps and for empty-state fallbacks. `image` points at a
-// swappable file under /public/onboarding/ (your screenshots/renders); it hides
-// itself gracefully if the file is missing.
+// for welcome/concept steps and for empty-state fallbacks. `image`/`video` point
+// at swappable files under /public/onboarding/ (your screenshots/renders); they
+// hide themselves gracefully if missing. `onEnter`/`onLeave` run side effects
+// (e.g. opening the assets panel) as the step is shown / left.
 export interface TourStep {
   target?: string
   title: string
   body: string
   image?: string
+  video?: string
   placement?: 'auto' | 'top' | 'bottom' | 'left' | 'right'
+  onEnter?: () => void
+  onLeave?: () => void
+}
+
+// Drive the canvas assets panel from the tour (left-toolbar listens for this).
+const assets = (mode: 'side' | 'expanded' | 'close') => () => {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('spite:tour-assets', { detail: mode }))
+  }
 }
 
 export const TOURS: Record<TourSurface, TourStep[]> = {
@@ -44,31 +55,41 @@ export const TOURS: Record<TourSurface, TourStep[]> = {
   ],
   canvas: [
     {
-      title: 'This is the Canvas',
-      body: 'An infinite plane where each node is a piece of your shot. Drag, connect, and generate. Here’s the lay of the land.',
-      image: '/onboarding/canvas-welcome.png',
+      title: 'Welcome to the Canvas',
+      body: 'An infinite plane where every node is a piece of your shot — drag, connect and generate. Here’s how it flows.',
+      video: '/onboarding/canvas-working.mp4',
+      image: '/onboarding/canvas-welcome.png', // fallback if the video is absent
     },
     {
       target: '[data-tour="left-toolbar"]',
       title: 'Your tools',
-      body: 'Select, add nodes, cut connections, drop stickers and comments — plus your asset library (Characters, Props, Locations).',
+      body: 'Select, add nodes, cut connections, drop stickers and comments — all from this strip.',
     },
     {
       target: '[data-tour="tool-add"]',
-      title: 'Add a node',
-      body: 'Add prompts, image/video generators, uploads and more — or just right-click anywhere on the canvas to open the same menu.',
+      title: 'Add a node anywhere',
+      body: 'Use this to add a node — or just right-click anywhere on the empty canvas to open the same menu (prompts, image/video generators, uploads and more) right where your cursor is.',
       image: '/onboarding/canvas-add-menu.png',
     },
     {
-      title: 'Prompt → generate → result',
-      body: 'Connect a prompt (and any references) into a generator, hit Generate, and the result lands right on the node. Tag images to a Character/Prop folder and @mention them in any prompt.',
-      image: '/onboarding/canvas-nodes.png',
+      target: '[data-tour="assets-button"]',
+      title: 'Your asset library',
+      body: 'Characters, Props, Locations and uploads live here. Tag an image to a folder, then @mention it in any prompt to keep a character consistent.',
+      onEnter: assets('side'),
+      onLeave: assets('close'),
+    },
+    {
+      target: '[data-tour="assets-expanded"]',
+      title: 'Browse it full-screen',
+      body: 'Open the library expanded to search, organise into folders, and drag assets straight onto the canvas.',
+      onEnter: assets('expanded'),
+      onLeave: assets('close'),
     },
     {
       target: '[data-tour="scene-timeline"]',
-      title: 'Scenes & shots',
-      body: 'Organise your work into scenes and shots along the top strip — then Export a storyboard zip, one folder per scene, named by shot order.',
-      image: '/onboarding/canvas-export.png',
+      title: 'Scenes, shots & pages',
+      body: 'Assign a node to a shot from the badge on the node itself — assigned shots always glow yellow so you can spot them at a glance. The strip up here switches between scenes, and you can keep as many pages / scenes / canvases as you need. Export drops a storyboard zip, one folder per scene.',
+      image: '/onboarding/canvas-shot.png',
     },
     {
       target: '[data-tour="jobs-toggle"]',
@@ -107,6 +128,28 @@ export const TOURS: Record<TourSurface, TourStep[]> = {
       title: 'Reuse, copy, save',
       body: 'On any result: Reuse brings its prompt + references back into the composer, Copy also restores model + aspect, and Save downloads it.',
       image: '/onboarding/flow-result.png',
+    },
+  ],
+  settings: [
+    {
+      title: 'Settings',
+      body: 'A quick look at what you can tune here.',
+      image: '/onboarding/settings-overview.png',
+    },
+    {
+      target: '[data-tour="settings-apikey"]',
+      title: 'Your fal.ai key',
+      body: 'SPITE runs on your own fal.ai key — set it in your host’s environment variables. This shows the live connection status.',
+    },
+    {
+      target: '[data-tour="settings-retention"]',
+      title: 'Data retention',
+      body: 'Nothing is auto-deleted by default. Optionally have old unused results and reference inputs cleaned up after a set number of days.',
+    },
+    {
+      target: '[data-tour="settings-storage"]',
+      title: 'Storage',
+      body: 'See how much of your Cloudflare R2 free tier you’re using at a glance.',
     },
   ],
 }

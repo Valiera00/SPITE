@@ -6,12 +6,13 @@
 // the user has opted out. The `?tour=<surface>` query param always launches a
 // tour regardless of these flags (used for replay + clean promo capture).
 
-export type TourSurface = 'dashboard' | 'canvas' | 'flow'
+export type TourSurface = 'dashboard' | 'canvas' | 'flow' | 'settings'
 
 const SEEN_KEY: Record<TourSurface, string> = {
   dashboard: 'spite_tour_dashboard',
   canvas: 'spite_tour_canvas',
   flow: 'spite_tour_flow',
+  settings: 'spite_tour_settings',
 }
 const OPTOUT_KEY = 'spite_tour_optout'
 
@@ -46,7 +47,7 @@ export function resetTours(): void {
 export function forcedTourFromUrl(): TourSurface | null {
   if (typeof window === 'undefined') return null
   const v = new URLSearchParams(window.location.search).get('tour')
-  return v === 'dashboard' || v === 'canvas' || v === 'flow' ? v : null
+  return v === 'dashboard' || v === 'canvas' || v === 'flow' || v === 'settings' ? v : null
 }
 
 // Replay: a "?" / help affordance dispatches this so the mounted OnboardingTour

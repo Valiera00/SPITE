@@ -191,6 +191,19 @@ export function LeftToolbar({
     setHistoryOpen(showHistory)
   }, [showHistory])
 
+  // The onboarding tour drives the assets panel so it can show both the side
+  // and full-screen states without the user clicking.
+  useEffect(() => {
+    const onTourAssets = (e: Event) => {
+      const mode = (e as CustomEvent).detail
+      if (mode === 'side') { setHistoryOpen(true); setHistoryExpanded(false); onShowHistoryChange?.(true) }
+      else if (mode === 'expanded') { setHistoryOpen(true); setHistoryExpanded(true); onShowHistoryChange?.(true) }
+      else if (mode === 'close') { setHistoryOpen(false); setHistoryExpanded(false); onShowHistoryChange?.(false) }
+    }
+    window.addEventListener('spite:tour-assets', onTourAssets)
+    return () => window.removeEventListener('spite:tour-assets', onTourAssets)
+  }, [onShowHistoryChange])
+
   const fetcher = async (url: string) => {
     const r = await fetch(url)
     if (!r.ok) {
@@ -582,7 +595,7 @@ export function LeftToolbar({
         />
         
         {/* Modal */}
-        <div className="fixed inset-8 z-50 bg-card rounded-2xl border border-border/30 flex overflow-hidden shadow-2xl">
+        <div data-tour="assets-expanded" className="fixed inset-8 z-50 bg-card rounded-2xl border border-border/30 flex overflow-hidden shadow-2xl">
           {/* Left Sidebar */}
           <div className="w-56 border-r border-border/30 flex flex-col bg-card">
             <div className="px-4 py-3 border-b border-border/30">
@@ -1934,6 +1947,7 @@ export function LeftToolbar({
         <div className="h-px bg-border my-1" />
 
         <button
+          data-tour="assets-button"
           onClick={handleToggleHistory}
           className="flex items-center justify-center w-7 h-7 rounded-lg transition-colors text-muted-foreground hover:text-foreground hover:bg-white/5"
             title="Assets"
