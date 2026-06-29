@@ -5,7 +5,7 @@ import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import {
   CaretLeft, CircleNotch, ArrowUp, ImageSquare, X, DownloadSimple,
-  ArrowUUpLeft, CopySimple, Plus, Minus,
+  ArrowUUpLeft, CopySimple, Plus, Minus, Rows, GridFour,
 } from '@phosphor-icons/react'
 import { FAL_MODELS, getModelById } from '@/lib/fal-models'
 import { estimateGenerationCost, formatUSD, COST_CONFIRM_THRESHOLD_USD } from '@/lib/fal-cost'
@@ -59,6 +59,16 @@ function timeAgo(iso: string): string {
   return `${Math.floor(s / 86400)}d ago`
 }
 
+// Reserve the media box from the requested aspect (e.g. "16:9", "3:4") so a card
+// doesn't grow/jump when the lazy image finishes loading. Single-column view only;
+// grid view uses uniform fixed-height tiles instead.
+function aspectStyle(a?: string): React.CSSProperties | undefined {
+  if (!a) return undefined
+  const m = a.match(/^\s*(\d+)\s*[:x/]\s*(\d+)\s*$/)
+  if (!m) return undefined
+  return { aspectRatio: `${m[1]} / ${m[2]}` }
+}
+
 export default function FlowThread() {
   const params = useParams()
   const projectId = (params?.id as string) || ''
@@ -77,6 +87,16 @@ export default function FlowThread() {
   const [pending, setPending] = useState(0)
   const [error, setError] = useState('')
   const [balance, setBalance] = useState<number | null>(null)
+
+  // Desktop result layout: 'single' column (default — comfortable reading) or a
+  // space-filling 'grid'. Persisted; irrelevant on phone (always single column).
+  const [view, setView] = useState<'single' | 'grid'>('single')
+  useEffect(() => {
+    const v = localStorage.getItem('flow-view')
+    if (v === 'single' || v === 'grid') setView(v)
+  }, [])
+  const changeView = (v: 'single' | 'grid') => { setView(v); localStorage.setItem('flow-view', v) }
+  const gridView = !isMobile && view === 'grid'
 
   // Chat-style thread: oldest at top, newest at the bottom. Sentinel at the end
   // of the feed that we scroll to so you land on the latest result on entry and
@@ -245,7 +265,7 @@ export default function FlowThread() {
       <div className="spite-ozone-bg hidden lg:block fixed inset-0 z-0 pointer-events-none" aria-hidden="true" />
       <div className="spite-grain hidden lg:block" aria-hidden="true" />
 
-      <div className="relative z-10 flex flex-col min-h-[100dvh] w-full max-w-2xl lg:max-w-5xl mx-auto bg-[#080A0C] lg:bg-transparent">
+      <div className={`relative z-10 flex flex-col min-h-[100dvh] w-full max-w-2xl mx-auto bg-[#080A0C] lg:bg-transparent ${view === 'grid' ? 'lg:max-w-7xl' : 'lg:max-w-3xl'}`}>
         <input ref={fileRef} type="file" accept="image/*" multiple className="hidden"
           onChange={(e) => { const fs = e.target.files; if (fs) Array.from(fs).forEach((f) => onPickRef(f)); e.target.value = '' }} />
 
@@ -254,6 +274,13 @@ export default function FlowThread() {
         <div className="sticky top-0 z-20 flex items-center gap-2 px-3 py-3 lg:px-5 border-b border-white/10 bg-[#080A0C]/90 backdrop-blur lg:bg-transparent lg:glass" style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}>
           <Link href={isMobile ? '/m' : '/'} className="text-muted-foreground p-1 -ml-1 hover:text-foreground transition-colors"><CaretLeft size={18} /></Link>
           <span className="text-sm font-mono truncate flex-1">{projectName || 'Project'}</span>
+          {/* Desktop view toggle: single column vs space-filling grid. */}
+          <div className="hidden lg:flex items-center gap-0.5 mr-1 rounded-full border border-white/10 p-0.5">
+            <button onClick={() => changeView('single')} aria-label="Single column view" title="Single column"
+              className={`w-7 h-7 rounded-full flex items-center justify-center transition-colors ${view === 'single' ? 'bg-white/15 text-foreground' : 'text-muted-foreground hover:text-foreground'}`}><Rows size={14} /></button>
+            <button onClick={() => changeView('grid')} aria-label="Grid view" title="Grid"
+              className={`w-7 h-7 rounded-full flex items-center justify-center transition-colors ${view === 'grid' ? 'bg-white/15 text-foreground' : 'text-muted-foreground hover:text-foreground'}`}><GridFour size={14} /></button>
+          </div>
           {balance !== null && (
             <span className="text-[10px] font-mono text-muted-foreground px-2 py-1 rounded-full border border-white/10">fal {formatUSD(balance)}</span>
           )}
@@ -263,7 +290,7 @@ export default function FlowThread() {
       {/* Feed — natural document flow. The page (body) scrolls; header and
           compose are sticky. This avoids the iOS nested-overflow scroll that
           left footers stuck below an unreachable fold. */}
-      <div className="flex-1 px-4 py-4 lg:px-6 lg:py-6 flex flex-col gap-4 lg:grid lg:grid-cols-2 xl:grid-cols-3 lg:gap-5 lg:content-start">
+      <div className={`flex-1 px-4 py-4 lg:px-6 lg:py-6 pb-36 lg:pb-52 flex flex-col gap-4 ${gridView ? 'lg:grid lg:grid-cols-2 xl:grid-cols-3 lg:gap-5 lg:content-start' : ''}`}>
         {loading ? (
           <p className="text-sm font-mono text-muted-foreground lg:col-span-full">Loading…</p>
         ) : assets.length === 0 && !busy ? (
@@ -275,11 +302,11 @@ export default function FlowThread() {
         {assets.slice().reverse().map((a) => (
           <div key={a.id} className="rounded-2xl overflow-hidden bg-[#0D0F12] border border-white/10">
             {a.type === 'video' ? (
-              <video src={a.r2_url} controls playsInline preload="metadata" onLoadedMetadata={() => pinToNewest(false)} className="w-full block max-h-[60vh] lg:max-h-[44vh] object-contain bg-black" />
+              <video src={a.r2_url} controls playsInline preload="metadata" onLoadedMetadata={() => pinToNewest(false)} style={gridView ? undefined : aspectStyle(a.aspect)} className={`w-full block object-contain bg-black ${gridView ? 'h-[44vh]' : 'max-h-[70vh]'}`} />
             ) : a.type === 'audio' ? (
               <audio src={a.r2_url} controls className="w-full p-3" />
             ) : (
-              <img src={a.r2_url} alt="" onLoad={() => pinToNewest(false)} className="w-full block max-h-[60vh] lg:max-h-[44vh] object-contain" loading="lazy" decoding="async" />
+              <img src={a.r2_url} alt="" onLoad={() => pinToNewest(false)} style={gridView ? undefined : aspectStyle(a.aspect)} className={`w-full block object-contain ${gridView ? 'h-[44vh] bg-black' : 'max-h-[70vh]'}`} loading="lazy" decoding="async" />
             )}
             <div className="px-3.5 py-3 flex flex-col gap-2.5 border-t border-white/[0.06]">
               {a.prompt && <p className="text-[13px] leading-snug text-foreground/90">{a.prompt}</p>}
@@ -301,16 +328,16 @@ export default function FlowThread() {
 
         {/* In-flight generations spin at the bottom, where their result lands. */}
         {Array.from({ length: pending }).map((_, i) => (
-          <div key={`p-${i}`} className="rounded-2xl border border-white/10 bg-[#0D0F12] aspect-square flex items-center justify-center">
+          <div key={`p-${i}`} className={`rounded-2xl border border-white/10 bg-[#0D0F12] flex items-center justify-center ${gridView ? 'h-[44vh]' : 'aspect-square'}`}>
             <CircleNotch size={22} className="animate-spin text-accent" />
           </div>
         ))}
 
-        <div ref={endRef} className="lg:col-span-full" />
+        <div ref={endRef} className="lg:col-span-full lg:scroll-mb-52" />
       </div>
 
       {/* Compose */}
-      <div className="sticky bottom-0 z-20 border-t border-white/10 bg-[#0D0F12] lg:bg-transparent lg:glass px-3 pt-3 lg:px-5 lg:pt-4" style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}>
+      <div className="sticky bottom-0 z-20 border-t border-white/10 bg-[#0D0F12] lg:bg-[#0D0F12]/95 lg:backdrop-blur-xl px-3 pt-3 lg:px-5 lg:pt-4" style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}>
         <div className="flex flex-col gap-2.5 lg:max-w-3xl lg:mx-auto lg:w-full">
         {error && <p className="text-[11px] font-mono text-red-400">{error}</p>}
 
