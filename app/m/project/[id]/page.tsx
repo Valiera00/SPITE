@@ -69,31 +69,6 @@ function aspectStyle(a?: string): React.CSSProperties | undefined {
   return { aspectRatio: `${m[1]} / ${m[2]}` }
 }
 
-// A distilled version of the canvas's braided "cord" connector — same cool
-// palette (#aec3d2 base, #e7f1fb core), soft glow and lit plugs, gently drifting.
-// Sits between a prompt card and its result so Flow echoes the Canvas connectors.
-const CORD_A = 'M4 14 C 16 7, 28 21, 40 14'
-const CORD_B = 'M4 14 C 16 21, 28 7, 40 14'
-function FlowCord({ className = '' }: { className?: string }) {
-  return (
-    <svg className={className} width="44" height="28" viewBox="0 0 44 28" fill="none" aria-hidden="true">
-      <path d={CORD_A} stroke="#aec3d2" strokeWidth="6" strokeLinecap="round" opacity="0.16" style={{ filter: 'blur(3px)' }}>
-        <animate attributeName="d" dur="6s" repeatCount="indefinite" values={`${CORD_A};${CORD_B};${CORD_A}`} />
-      </path>
-      <path d={CORD_A} stroke="#e7f1fb" strokeWidth="1.4" strokeLinecap="round" opacity="0.9" style={{ filter: 'drop-shadow(0 0 2.5px rgba(190,210,228,0.7))' }}>
-        <animate attributeName="d" dur="6s" repeatCount="indefinite" values={`${CORD_A};${CORD_B};${CORD_A}`} />
-      </path>
-      {[4, 40].map((cx, i) => (
-        <g key={cx}>
-          <circle cx={cx} cy="14" r="3" fill="#aec3d2" opacity="0.25" />
-          <circle cx={cx} cy="14" r="1.5" fill="#e7f1fb" opacity="0.85">
-            <animate attributeName="opacity" values="0.5;0.9;0.5" dur="3.2s" begin={`${i * 1.4}s`} repeatCount="indefinite" />
-          </circle>
-        </g>
-      ))}
-    </svg>
-  )
-}
 
 export default function FlowThread() {
   const params = useParams()
@@ -281,25 +256,27 @@ export default function FlowThread() {
       <div className="spite-ozone-bg hidden lg:block fixed inset-0 z-0 pointer-events-none" aria-hidden="true" />
       <div className="spite-grain hidden lg:block" aria-hidden="true" />
 
-      <div className="relative z-10 flex flex-col min-h-[100dvh] w-full max-w-2xl lg:max-w-5xl mx-auto bg-[#080A0C] lg:bg-transparent">
+      <div className="relative z-10 flex flex-col min-h-[100dvh] w-full bg-[#080A0C] lg:bg-transparent">
         <input ref={fileRef} type="file" accept="image/*" multiple className="hidden"
           onChange={(e) => { const fs = e.target.files; if (fs) Array.from(fs).forEach((f) => onPickRef(f)); e.target.value = '' }} />
 
-        {/* Header — backdrop-blur bar on phone, glass on desktop. Back returns to
-            the dashboard on desktop, to the Flow projects list on phone. */}
-        <div className="sticky top-0 z-20 flex items-center gap-2 px-3 py-3 lg:px-5 border-b border-white/10 bg-[#080A0C]/90 backdrop-blur lg:bg-transparent lg:glass" style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}>
-          <Link href={isMobile ? '/m' : '/'} className="text-muted-foreground p-1 -ml-1 hover:text-foreground transition-colors"><CaretLeft size={18} /></Link>
-          <span className="text-sm font-mono truncate flex-1">{projectName || 'Project'}</span>
-          {balance !== null && (
-            <span className="text-[10px] font-mono text-muted-foreground px-2 py-1 rounded-full border border-white/10">fal {formatUSD(balance)}</span>
-          )}
-          <span className="text-[9px] font-mono text-muted-foreground/40">{(process.env.NEXT_PUBLIC_COMMIT_SHA || 'dev').slice(0, 7)}</span>
+        {/* Header — full-width bar; backdrop-blur on phone, glass on desktop.
+            Back returns to the dashboard on desktop, to the Flow list on phone. */}
+        <div className="sticky top-0 z-20 w-full border-b border-white/10 bg-[#080A0C]/90 backdrop-blur lg:bg-[#0A0C10]/70 lg:glass" style={{ paddingTop: 'max(0.625rem, env(safe-area-inset-top))' }}>
+          <div className="w-full max-w-[1700px] mx-auto flex items-center gap-2 px-3 pb-3 pt-0.5 lg:px-7">
+            <Link href={isMobile ? '/m' : '/'} className="text-muted-foreground p-1 -ml-1 hover:text-foreground transition-colors"><CaretLeft size={18} /></Link>
+            <span className="text-sm font-mono truncate flex-1">{projectName || 'Project'}</span>
+            {balance !== null && (
+              <span className="text-[10px] font-mono text-muted-foreground px-2 py-1 rounded-full border border-white/10">fal {formatUSD(balance)}</span>
+            )}
+            <span className="text-[9px] font-mono text-muted-foreground/40">{(process.env.NEXT_PUBLIC_COMMIT_SHA || 'dev').slice(0, 7)}</span>
+          </div>
         </div>
 
       {/* Feed. Krea-style on desktop: each generation is a row with a compact
-          prompt card on the left and the image to the right. On phone it stacks
-          (image, then the prompt card below). Newest at the bottom. */}
-      <div className="flex-1 px-4 py-4 lg:px-8 lg:py-8 pb-36 lg:pb-52 flex flex-col gap-5 lg:gap-7">
+          prompt card on the left and a large image on the right. On phone it
+          stacks (image, then the prompt card below). Newest at the bottom. */}
+      <div className="flex-1 w-full max-w-[1700px] mx-auto px-4 py-4 lg:px-7 lg:py-8 pb-36 lg:pb-56 flex flex-col gap-5 lg:gap-8">
         {loading ? (
           <p className="text-sm font-mono text-muted-foreground">Loading…</p>
         ) : assets.length === 0 && !busy ? (
@@ -309,45 +286,42 @@ export default function FlowThread() {
         {/* Oldest first → newest at the bottom. `assets` is stored newest-first
             (prepended), so render a reversed copy for chronological order. */}
         {assets.slice().reverse().map((a) => (
-          <div key={a.id} className="flex flex-col lg:flex-row lg:items-start gap-3 lg:gap-2">
+          <div key={a.id} className="flex flex-col lg:flex-row lg:items-start gap-3 lg:gap-6">
             {/* Prompt card — left on desktop, below the image on phone. */}
-            <div className="order-2 lg:order-1 w-full lg:w-[230px] lg:shrink-0 rounded-2xl bg-white/[0.035] border border-white/[0.06] px-3.5 py-3 flex flex-col gap-2.5">
+            <div className="order-2 lg:order-1 w-full lg:w-[260px] lg:shrink-0 rounded-2xl bg-white/[0.035] border border-white/[0.06] px-3.5 py-3 flex flex-col gap-3">
               {a.prompt && <p className="text-[12.5px] leading-relaxed text-foreground/70">{a.prompt}</p>}
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center">
-                  {(a.refs || []).slice(0, 3).map((u, i) => (
+              {(a.refs?.length ?? 0) > 0 && (
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {a.refs!.slice(0, 4).map((u, i) => (
                     <img key={i} src={u} alt="" onError={(e) => { e.currentTarget.style.display = 'none' }}
-                      className="w-6 h-6 rounded-full object-cover border border-white/15 -ml-1.5 first:ml-0 bg-black/40" />
+                      className="w-11 h-11 rounded-lg object-cover border border-white/15 bg-black/40" />
                   ))}
-                  {(a.refs?.length ?? 0) > 3 && <span className="ml-1 text-[9px] font-mono text-muted-foreground/60">+{a.refs!.length - 3}</span>}
+                  {a.refs!.length > 4 && <span className="text-[10px] font-mono text-muted-foreground/60">+{a.refs!.length - 4}</span>}
                 </div>
+              )}
+              <div className="flex items-center justify-between gap-2">
                 {a.model && (
-                  <span className="flex items-center gap-1 shrink-0 text-[10px] font-mono text-muted-foreground/80 px-1.5 py-0.5 rounded bg-white/5">
-                    <Sparkle size={9} weight="fill" className="text-accent/70" />{cleanModel(a.model)}
+                  <span className="flex items-center gap-1 min-w-0 text-[10px] font-mono text-muted-foreground/80 px-1.5 py-0.5 rounded bg-white/5">
+                    <Sparkle size={9} weight="fill" className="text-accent/70 shrink-0" /><span className="truncate">{cleanModel(a.model)}</span>
                   </span>
                 )}
+                <span className="shrink-0 text-[9px] font-mono text-muted-foreground/40">{timeAgo(a.created_at)}</span>
               </div>
-              <div className="flex items-center gap-1.5 pt-0.5">
+              <div className="flex items-center gap-1.5">
                 <button onClick={() => reusePrompt(a)} title="Reuse prompt + references" className="flex items-center gap-1 px-2 h-6 rounded-full bg-white/5 hover:bg-white/10 text-[10px] font-mono text-foreground/70 active:scale-95 transition"><ArrowUUpLeft size={11} /> Reuse</button>
                 <button onClick={() => copyAll(a)} title="Copy settings" className="flex items-center justify-center w-6 h-6 rounded-full bg-white/5 hover:bg-white/10 text-foreground/70 active:scale-95 transition"><CopySimple size={11} /></button>
                 <button onClick={() => saveAsset(a.r2_url, a.type)} title="Save" className="flex items-center justify-center w-6 h-6 rounded-full bg-accent/15 hover:bg-accent/25 text-accent active:scale-95 transition"><DownloadSimple size={11} /></button>
-                <span className="ml-auto text-[9px] font-mono text-muted-foreground/40">{timeAgo(a.created_at)}</span>
               </div>
             </div>
-            {/* Glowing cord linking prompt → result (desktop only), echoing the
-                Canvas connectors. Top-aligned to sit near the card's first line. */}
-            <div className="hidden lg:flex lg:order-2 shrink-0 self-stretch items-start">
-              <FlowCord className="mt-6" />
-            </div>
-            {/* Media — right on desktop, top on phone. Fixed height on desktop
-                (natural width) for a consistent rhythm; full width on phone. */}
-            <div className="order-1 lg:order-3 min-w-0">
+            {/* Media — right on desktop, top on phone. Sized to be as large as
+                fits (capped by viewport height / available width), any aspect. */}
+            <div className="order-1 lg:order-2 lg:flex-1 lg:min-w-0">
               {a.type === 'video' ? (
-                <video src={a.r2_url} controls playsInline preload="metadata" onLoadedMetadata={() => pinToNewest(false)} style={isMobile ? aspectStyle(a.aspect) : undefined} className="w-full lg:w-auto block object-contain bg-black rounded-2xl max-h-[70vh] lg:max-h-none lg:h-[360px]" />
+                <video src={a.r2_url} controls playsInline preload="metadata" onLoadedMetadata={() => pinToNewest(false)} style={aspectStyle(a.aspect)} className="block w-full lg:w-auto max-w-full max-h-[82vh] object-contain bg-black rounded-2xl" />
               ) : a.type === 'audio' ? (
-                <audio src={a.r2_url} controls className="w-full lg:w-[360px] p-3" />
+                <audio src={a.r2_url} controls className="w-full lg:w-[420px] p-3" />
               ) : (
-                <img src={a.r2_url} alt="" onLoad={() => pinToNewest(false)} style={isMobile ? aspectStyle(a.aspect) : undefined} className="w-full lg:w-auto block object-contain rounded-2xl max-h-[70vh] lg:max-h-none lg:h-[360px]" loading="lazy" decoding="async" />
+                <img src={a.r2_url} alt="" onLoad={() => pinToNewest(false)} style={aspectStyle(a.aspect)} className="block w-full lg:w-auto max-w-full max-h-[82vh] object-contain rounded-2xl" loading="lazy" decoding="async" />
               )}
             </div>
           </div>
@@ -355,46 +329,50 @@ export default function FlowThread() {
 
         {/* In-flight generations: spinner in the image column, where the result lands. */}
         {Array.from({ length: pending }).map((_, i) => (
-          <div key={`p-${i}`} className="flex flex-col lg:flex-row lg:items-start gap-3 lg:gap-2">
-            {/* Spacer matches prompt card (230) + cord column (~44) so the
-                spinner lines up under the result images above it. */}
-            <div className="hidden lg:block lg:w-[282px] lg:shrink-0" />
-            <div className="rounded-2xl border border-white/10 bg-[#0D0F12] flex items-center justify-center w-full aspect-square lg:aspect-auto lg:w-[360px] lg:h-[360px]">
-              <CircleNotch size={22} className="animate-spin text-accent" />
+          <div key={`p-${i}`} className="flex flex-col lg:flex-row lg:items-start gap-3 lg:gap-6">
+            <div className="hidden lg:block lg:w-[260px] lg:shrink-0" />
+            <div className="rounded-2xl border border-white/10 bg-[#0D0F12] flex items-center justify-center w-full aspect-square lg:aspect-auto lg:w-[460px] lg:h-[60vh]">
+              <CircleNotch size={26} className="animate-spin text-accent" />
             </div>
           </div>
         ))}
 
-        <div ref={endRef} className="lg:scroll-mb-52" />
+        <div ref={endRef} className="lg:scroll-mb-56" />
       </div>
 
-      {/* Compose — a floating, centered rounded card (Krea-style): prompt input
-          on top, a single row of control pills, circular generate on the right. */}
+      {/* Compose — floating rounded card. A soft glow wraps it (idle), brightening
+          and gently breathing when the box or any of its controls is focused
+          (live), echoing the Canvas connector glow. */}
       <div className="sticky bottom-0 z-20 px-3 lg:px-0 pt-2" style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}>
-        <div className="mx-auto w-full lg:max-w-2xl rounded-2xl border border-white/10 bg-[#141414]/95 backdrop-blur-xl shadow-[0_10px_40px_rgba(0,0,0,0.5)] px-3 pt-3 pb-2.5 flex flex-col gap-2.5">
-          {error && <p className="text-[11px] font-mono text-red-400">{error}</p>}
+        <div className="relative mx-auto w-full lg:max-w-2xl group">
+          {/* Glow halo behind the card — dim idle, bright + pulsing when focused. */}
+          <div aria-hidden="true"
+            className="pointer-events-none absolute -inset-[2px] rounded-[18px] blur-[7px] opacity-25 transition-all duration-500 group-focus-within:opacity-90 group-focus-within:blur-[11px] group-focus-within:animate-pulse"
+            style={{ background: 'linear-gradient(115deg, rgba(174,195,210,0.5), rgba(231,241,251,0.75), rgba(107,143,168,0.5))' }} />
+          <div className="relative rounded-2xl border border-white/10 group-focus-within:border-[#aec3d2]/30 bg-[#141414]/95 backdrop-blur-xl shadow-[0_10px_40px_rgba(0,0,0,0.5)] px-3 pt-3 pb-2.5 flex flex-col gap-2.5 transition-colors">
+            {error && <p className="text-[11px] font-mono text-red-400">{error}</p>}
 
-          {refs.length > 0 && (
-            <div className="flex gap-2 overflow-x-auto">
-              {refs.map((r) => (
-                <div key={r.id} className="relative shrink-0">
-                  <img
-                    src={r.previewUrl}
-                    alt=""
-                    className="w-12 h-12 rounded-lg object-cover border border-white/10"
-                    onError={() => {
-                      // A restored reference whose image won't load has been
-                      // reclaimed by retention — drop it and let the user know.
-                      setRefs((prev) => prev.filter((x) => x.id !== r.id))
-                      setError('Some references expired and could not be restored.')
-                    }}
-                  />
-                  {r.uploading && <div className="absolute inset-0 bg-black/55 rounded-lg flex items-center justify-center"><CircleNotch size={14} className="animate-spin text-white" /></div>}
-                  <button onClick={() => removeRef(r.id)} className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-black border border-white/25 flex items-center justify-center"><X size={9} weight="bold" /></button>
-                </div>
-              ))}
-            </div>
-          )}
+            {refs.length > 0 && (
+              <div className="flex gap-2 overflow-x-auto pb-0.5">
+                {refs.map((r) => (
+                  <div key={r.id} className="relative shrink-0">
+                    <img
+                      src={r.previewUrl}
+                      alt=""
+                      className="w-16 h-16 rounded-xl object-cover border border-white/10"
+                      onError={() => {
+                        // A restored reference whose image won't load has been
+                        // reclaimed by retention — drop it and let the user know.
+                        setRefs((prev) => prev.filter((x) => x.id !== r.id))
+                        setError('Some references expired and could not be restored.')
+                      }}
+                    />
+                    {r.uploading && <div className="absolute inset-0 bg-black/55 rounded-xl flex items-center justify-center"><CircleNotch size={16} className="animate-spin text-white" /></div>}
+                    <button onClick={() => removeRef(r.id)} aria-label="Remove reference" className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-black/90 border border-white/30 flex items-center justify-center hover:bg-black active:scale-95 transition"><X size={11} weight="bold" /></button>
+                  </div>
+                ))}
+              </div>
+            )}
 
           <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="Describe an image and click generate…" rows={2}
             className="bg-transparent px-1 pt-0.5 text-[15px] text-foreground placeholder:text-muted-foreground/50 focus:outline-none resize-none" />
@@ -435,6 +413,7 @@ export default function FlowThread() {
               className="shrink-0 w-9 h-9 rounded-full bg-accent text-[#0D0F12] flex items-center justify-center disabled:opacity-40 active:scale-95 transition-transform">
               {busy ? <CircleNotch size={16} className="animate-spin" /> : <ArrowUp size={18} weight="bold" />}
             </button>
+          </div>
           </div>
         </div>
       </div>
