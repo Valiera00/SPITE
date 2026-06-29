@@ -60,13 +60,39 @@ function timeAgo(iso: string): string {
 }
 
 // Reserve the media box from the requested aspect (e.g. "16:9", "3:4") so a card
-// doesn't grow/jump when the lazy image finishes loading. Single-column view only;
-// grid view uses uniform fixed-height tiles instead.
+// doesn't grow/jump when the lazy image finishes loading. (Phone, full-width
+// media only; desktop uses a fixed media height.)
 function aspectStyle(a?: string): React.CSSProperties | undefined {
   if (!a) return undefined
   const m = a.match(/^\s*(\d+)\s*[:x/]\s*(\d+)\s*$/)
   if (!m) return undefined
   return { aspectRatio: `${m[1]} / ${m[2]}` }
+}
+
+// A distilled version of the canvas's braided "cord" connector — same cool
+// palette (#aec3d2 base, #e7f1fb core), soft glow and lit plugs, gently drifting.
+// Sits between a prompt card and its result so Flow echoes the Canvas connectors.
+const CORD_A = 'M4 14 C 16 7, 28 21, 40 14'
+const CORD_B = 'M4 14 C 16 21, 28 7, 40 14'
+function FlowCord({ className = '' }: { className?: string }) {
+  return (
+    <svg className={className} width="44" height="28" viewBox="0 0 44 28" fill="none" aria-hidden="true">
+      <path d={CORD_A} stroke="#aec3d2" strokeWidth="6" strokeLinecap="round" opacity="0.16" style={{ filter: 'blur(3px)' }}>
+        <animate attributeName="d" dur="6s" repeatCount="indefinite" values={`${CORD_A};${CORD_B};${CORD_A}`} />
+      </path>
+      <path d={CORD_A} stroke="#e7f1fb" strokeWidth="1.4" strokeLinecap="round" opacity="0.9" style={{ filter: 'drop-shadow(0 0 2.5px rgba(190,210,228,0.7))' }}>
+        <animate attributeName="d" dur="6s" repeatCount="indefinite" values={`${CORD_A};${CORD_B};${CORD_A}`} />
+      </path>
+      {[4, 40].map((cx, i) => (
+        <g key={cx}>
+          <circle cx={cx} cy="14" r="3" fill="#aec3d2" opacity="0.25" />
+          <circle cx={cx} cy="14" r="1.5" fill="#e7f1fb" opacity="0.85">
+            <animate attributeName="opacity" values="0.5;0.9;0.5" dur="3.2s" begin={`${i * 1.4}s`} repeatCount="indefinite" />
+          </circle>
+        </g>
+      ))}
+    </svg>
+  )
 }
 
 export default function FlowThread() {
@@ -283,7 +309,7 @@ export default function FlowThread() {
         {/* Oldest first → newest at the bottom. `assets` is stored newest-first
             (prepended), so render a reversed copy for chronological order. */}
         {assets.slice().reverse().map((a) => (
-          <div key={a.id} className="flex flex-col lg:flex-row lg:items-start gap-3 lg:gap-5">
+          <div key={a.id} className="flex flex-col lg:flex-row lg:items-start gap-3 lg:gap-2">
             {/* Prompt card — left on desktop, below the image on phone. */}
             <div className="order-2 lg:order-1 w-full lg:w-[230px] lg:shrink-0 rounded-2xl bg-white/[0.035] border border-white/[0.06] px-3.5 py-3 flex flex-col gap-2.5">
               {a.prompt && <p className="text-[12.5px] leading-relaxed text-foreground/70">{a.prompt}</p>}
@@ -308,9 +334,14 @@ export default function FlowThread() {
                 <span className="ml-auto text-[9px] font-mono text-muted-foreground/40">{timeAgo(a.created_at)}</span>
               </div>
             </div>
+            {/* Glowing cord linking prompt → result (desktop only), echoing the
+                Canvas connectors. Top-aligned to sit near the card's first line. */}
+            <div className="hidden lg:flex lg:order-2 shrink-0 self-stretch items-start">
+              <FlowCord className="mt-6" />
+            </div>
             {/* Media — right on desktop, top on phone. Fixed height on desktop
                 (natural width) for a consistent rhythm; full width on phone. */}
-            <div className="order-1 lg:order-2 min-w-0">
+            <div className="order-1 lg:order-3 min-w-0">
               {a.type === 'video' ? (
                 <video src={a.r2_url} controls playsInline preload="metadata" onLoadedMetadata={() => pinToNewest(false)} style={isMobile ? aspectStyle(a.aspect) : undefined} className="w-full lg:w-auto block object-contain bg-black rounded-2xl max-h-[70vh] lg:max-h-none lg:h-[360px]" />
               ) : a.type === 'audio' ? (
@@ -324,8 +355,10 @@ export default function FlowThread() {
 
         {/* In-flight generations: spinner in the image column, where the result lands. */}
         {Array.from({ length: pending }).map((_, i) => (
-          <div key={`p-${i}`} className="flex flex-col lg:flex-row lg:items-start gap-3 lg:gap-5">
-            <div className="hidden lg:block lg:w-[230px] lg:shrink-0" />
+          <div key={`p-${i}`} className="flex flex-col lg:flex-row lg:items-start gap-3 lg:gap-2">
+            {/* Spacer matches prompt card (230) + cord column (~44) so the
+                spinner lines up under the result images above it. */}
+            <div className="hidden lg:block lg:w-[282px] lg:shrink-0" />
             <div className="rounded-2xl border border-white/10 bg-[#0D0F12] flex items-center justify-center w-full aspect-square lg:aspect-auto lg:w-[360px] lg:h-[360px]">
               <CircleNotch size={22} className="animate-spin text-accent" />
             </div>
