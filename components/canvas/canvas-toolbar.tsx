@@ -105,6 +105,7 @@ export function CanvasToolbar({ projectName, onProjectNameChange, saveStatus, pr
             toolbar can render without it during early init). */}
         {onToggleJobsPanel && (
           <button
+            data-tour="jobs-toggle"
             onClick={onToggleJobsPanel}
             className={`relative flex items-center justify-center w-7 h-7 rounded-lg transition-colors ${
               jobsPanelOpen

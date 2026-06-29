@@ -30,6 +30,7 @@ import {
 import '@xyflow/react/dist/style.css'
 import { useCanvasAutoSave } from '@/hooks/use-canvas-auto-save'
 import { CanvasToolbar } from './canvas-toolbar'
+import { OnboardingTour } from '@/components/onboarding/use-onboarding-tour'
 import { JobsPanel } from './jobs-panel'
 import { LeftToolbar, type Asset, type AssetCategory } from './left-toolbar'
 import { BottomBar } from './bottom-bar'
@@ -1117,6 +1118,7 @@ function CanvasInner({ projectId }: { projectId: string }) {
 
   return (
     <div className="flex flex-col h-screen bg-[#080A0C] overflow-hidden">
+      <OnboardingTour surface="canvas" />
       {/* Scene Timeline */}
       <SceneTimeline
         scenes={scenesWithShots}

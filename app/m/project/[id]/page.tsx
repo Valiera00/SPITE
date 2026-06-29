@@ -10,6 +10,7 @@ import {
 import { FAL_MODELS, getModelById } from '@/lib/fal-models'
 import { estimateGenerationCost, formatUSD, COST_CONFIRM_THRESHOLD_USD } from '@/lib/fal-cost'
 import { useIsMobile } from '@/components/ui/use-mobile'
+import { OnboardingTour } from '@/components/onboarding/use-onboarding-tour'
 
 type Asset = {
   id: string
@@ -285,10 +286,10 @@ export default function FlowThread() {
 
         {/* Oldest first → newest at the bottom. `assets` is stored newest-first
             (prepended), so render a reversed copy for chronological order. */}
-        {assets.slice().reverse().map((a) => (
+        {assets.slice().reverse().map((a, ri) => (
           <div key={a.id} className="flex flex-col lg:flex-row lg:items-start gap-3 lg:gap-6">
             {/* Prompt card — left on desktop, below the image on phone. */}
-            <div className="order-2 lg:order-1 w-full lg:w-[260px] lg:shrink-0 rounded-2xl bg-white/[0.035] border border-white/[0.06] px-3.5 py-3 flex flex-col gap-3">
+            <div {...(ri === 0 ? { 'data-tour': 'result' } : {})} className="order-2 lg:order-1 w-full lg:w-[260px] lg:shrink-0 rounded-2xl bg-white/[0.035] border border-white/[0.06] px-3.5 py-3 flex flex-col gap-3">
               {a.prompt && <p className="text-[12.5px] leading-relaxed text-foreground/70">{a.prompt}</p>}
               {(a.refs?.length ?? 0) > 0 && (
                 <div className="flex items-center gap-1.5 flex-wrap">
@@ -349,7 +350,7 @@ export default function FlowThread() {
           <div aria-hidden="true"
             className="pointer-events-none absolute -inset-[2px] rounded-[18px] blur-[7px] opacity-25 transition-all duration-500 group-focus-within:opacity-90 group-focus-within:blur-[11px] group-focus-within:animate-pulse"
             style={{ background: 'linear-gradient(115deg, rgba(174,195,210,0.5), rgba(231,241,251,0.75), rgba(107,143,168,0.5))' }} />
-          <div className="relative rounded-2xl border border-white/10 group-focus-within:border-[#aec3d2]/30 bg-[#141414]/95 backdrop-blur-xl shadow-[0_10px_40px_rgba(0,0,0,0.5)] px-3 pt-3 pb-2.5 flex flex-col gap-2.5 transition-colors">
+          <div data-tour="compose" className="relative rounded-2xl border border-white/10 group-focus-within:border-[#aec3d2]/30 bg-[#141414]/95 backdrop-blur-xl shadow-[0_10px_40px_rgba(0,0,0,0.5)] px-3 pt-3 pb-2.5 flex flex-col gap-2.5 transition-colors">
             {error && <p className="text-[11px] font-mono text-red-400">{error}</p>}
 
             {refs.length > 0 && (
@@ -380,7 +381,7 @@ export default function FlowThread() {
           {/* Control row: pills wrap on the left, generate pinned right. */}
           <div className="flex items-end gap-2">
             <div className="flex flex-wrap items-center gap-1.5 flex-1 min-w-0">
-              <select value={modelId} onChange={(e) => setModelId(e.target.value)} aria-label="Model"
+              <select data-tour="model" value={modelId} onChange={(e) => setModelId(e.target.value)} aria-label="Model"
                 className="appearance-none w-[150px] lg:w-[180px] bg-white/[0.06] hover:bg-white/10 transition rounded-full px-3 h-8 text-[11px] font-mono text-foreground/90 focus:outline-none cursor-pointer">
                 {CREATE_MODELS.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
               </select>
@@ -396,7 +397,7 @@ export default function FlowThread() {
                   {model.resolutions!.map((r) => <option key={r} value={r}>{r}</option>)}
                 </select>
               )}
-              <button onClick={() => fileRef.current?.click()} aria-label="Attach reference images"
+              <button data-tour="attach" onClick={() => fileRef.current?.click()} aria-label="Attach reference images"
                 className="flex items-center gap-1 h-8 px-2.5 rounded-full bg-white/[0.06] hover:bg-white/10 transition text-[11px] font-mono text-foreground/80 active:scale-95">
                 <ImageSquare size={14} />{refs.length > 0 ? refs.length : ''}
               </button>
@@ -409,7 +410,7 @@ export default function FlowThread() {
                 <span className="text-[10px] font-mono text-muted-foreground/55 px-1">~{formatUSD(cost.total)}{count > 1 ? ` · ${count}` : ''}</span>
               )}
             </div>
-            <button onClick={generate} disabled={busy || uploadingRef || !prompt.trim()} aria-label="Generate"
+            <button data-tour="generate" onClick={generate} disabled={busy || uploadingRef || !prompt.trim()} aria-label="Generate"
               className="shrink-0 w-9 h-9 rounded-full bg-accent text-[#0D0F12] flex items-center justify-center disabled:opacity-40 active:scale-95 transition-transform">
               {busy ? <CircleNotch size={16} className="animate-spin" /> : <ArrowUp size={18} weight="bold" />}
             </button>
@@ -418,6 +419,8 @@ export default function FlowThread() {
         </div>
       </div>
       </div>
+
+      <OnboardingTour surface="flow" />
     </div>
   )
 }

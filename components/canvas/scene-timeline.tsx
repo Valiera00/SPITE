@@ -129,7 +129,7 @@ export function SceneTimeline({
   }
 
   return (
-    <div className="flex flex-col shrink-0 border-b border-border/50 bg-[#0a0c0e]">
+    <div data-tour="scene-timeline" className="flex flex-col shrink-0 border-b border-border/50 bg-[#0a0c0e]">
       {/* Scene tabs row with scroll controls */}
       <div className="relative flex items-center">
         {/* Scroll left button */}
@@ -361,6 +361,7 @@ export function SceneTimeline({
 
         <div className="ml-auto">
           <button
+            data-tour="export"
             onClick={handleExport}
             disabled={exporting}
             className="flex items-center gap-1.5 px-2.5 py-1 rounded text-[12px] font-mono text-muted-foreground hover:text-foreground hover:bg-white/5 transition-colors disabled:opacity-50 disabled:cursor-wait"

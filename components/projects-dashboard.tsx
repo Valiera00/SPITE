@@ -2,9 +2,12 @@
 
 import { useState, useMemo } from 'react'
 import useSWR from 'swr'
+import { Question } from '@phosphor-icons/react'
 import { ProjectCard } from './project-card'
 import { NewProjectCard } from './new-project-card'
 import { SearchBar } from './search-bar'
+import { OnboardingTour } from './onboarding/use-onboarding-tour'
+import { startTour } from '@/lib/onboarding'
 
 interface Project {
   id: string
@@ -89,12 +92,21 @@ export function ProjectsDashboard() {
               </div>
 
               {/* Search */}
-              <div className="flex-1 max-w-md">
+              <div className="flex-1 max-w-md" data-tour="search">
                 <SearchBar value={search} onChange={setSearch} />
               </div>
 
-              {/* Slot — intentionally empty per spec */}
-              <div className="shrink-0 w-[72px]" />
+              {/* Replay the tour */}
+              <div className="shrink-0 w-[72px] flex justify-end">
+                <button
+                  onClick={() => startTour('dashboard')}
+                  aria-label="Take the tour"
+                  title="Take the tour"
+                  className="flex items-center justify-center w-8 h-8 rounded-lg glass-hover text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  <Question size={16} weight="regular" />
+                </button>
+              </div>
             </div>
           </div>
         </header>
@@ -123,7 +135,7 @@ export function ProjectsDashboard() {
           {/* Grid — canvas projects */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             {/* New project card is always first */}
-            {!search && <NewProjectCard onCreated={handleProjectCreated} />}
+            {!search && <div data-tour="new-canvas"><NewProjectCard onCreated={handleProjectCreated} /></div>}
 
             {canvasProjects.map((project) => (
               <ProjectCard
@@ -175,7 +187,7 @@ export function ProjectsDashboard() {
                 </span>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                {!search && <NewProjectCard origin="flow" onCreated={handleProjectCreated} />}
+                {!search && <div data-tour="new-flow"><NewProjectCard origin="flow" onCreated={handleProjectCreated} /></div>}
                 {flowProjects.map((project) => (
                   <ProjectCard
                     key={project.id}
@@ -192,6 +204,8 @@ export function ProjectsDashboard() {
           )}
         </main>
       </div>
+
+      <OnboardingTour surface="dashboard" />
     </>
   )
 }

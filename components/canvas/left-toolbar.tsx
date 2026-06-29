@@ -1906,11 +1906,12 @@ export function LeftToolbar({
 
   // COMPACT TOOLBAR (normal view when history is closed)
   return (
-    <div className="absolute left-3 top-1/2 -translate-y-1/2 z-20 flex items-start gap-2">
+    <div data-tour="left-toolbar" className="absolute left-3 top-1/2 -translate-y-1/2 z-20 flex items-start gap-2">
       <div className="flex flex-col gap-1 glass rounded-xl p-1.5">
         {TOOLS.map((tool) => (
           <button
             key={tool.id}
+            data-tour={tool.id === 'add' ? 'tool-add' : undefined}
             onClick={() => {
               setLocalActiveTool(tool.id)
               if (tool.id === 'add' && onAddNode) onAddNode('imageGen')
