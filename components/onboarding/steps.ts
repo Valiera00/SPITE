@@ -72,9 +72,9 @@ export const TOURS: Record<TourSurface, TourStep[]> = {
       image: '/onboarding/canvas-add-menu.png',
     },
     {
-      target: '[data-tour="assets-button"]',
+      target: '[data-tour="assets-panel"]',
       title: 'Your asset library',
-      body: 'Characters, Props, Locations and uploads live here. Tag an image to a folder, then @mention it in any prompt to keep a character consistent.',
+      body: 'Characters, Props, Locations and uploads live in this side panel. Tag an image to a folder, then @mention it in any prompt to keep a character consistent.',
       onEnter: assets('side'),
       onLeave: assets('close'),
     },
@@ -150,6 +150,12 @@ export const TOURS: Record<TourSurface, TourStep[]> = {
       target: '[data-tour="settings-storage"]',
       title: 'Storage',
       body: 'See how much of your Cloudflare R2 free tier you’re using at a glance.',
+    },
+    {
+      target: '[data-tour="settings-recovery"]',
+      title: 'Recovery',
+      body: 'If a generation gets stuck (a spinner that never ends) or vanishes after a refresh, “Recover stuck generations” pulls any job fal actually finished back into your library — fal keeps results ~24h, and the check is free to run. Recovered assets get a small blue badge in the asset panel so you can tell them apart; “Backfill badges” adds that badge to anything recovered before the badge existed.',
+      image: '/onboarding/settings-recovery.png',
     },
   ],
 }

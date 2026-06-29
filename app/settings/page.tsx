@@ -478,7 +478,7 @@ export default function SettingsPage() {
             canvas (failed poll, refresh mid-gen, soft timeout, etc.). fal
             keeps results around for ~24h so a job that finished off-screen
             is usually still retrievable as long as we have its request id. */}
-        <section className="space-y-4">
+        <section data-tour="settings-recovery" className="space-y-4">
           <h2 className="text-sm font-mono uppercase tracking-wider text-foreground/80">Recovery</h2>
           <div className="glass rounded-xl border border-border/30 p-6 space-y-4">
             <div className="flex items-center justify-between gap-4">

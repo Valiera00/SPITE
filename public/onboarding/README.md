@@ -19,6 +19,7 @@ inside the tour popover (and are the assets you can reuse for promos/social).
 | `flow-welcome.png` | Flow · Welcome | The Flow compose box + a result. |
 | `flow-result.png` | Flow · Reuse/Copy/Save | A result card showing the Reuse / Copy / Save actions. |
 | `settings-overview.png` | Settings · Welcome | The Settings page (optional). |
+| `settings-recovery.png` | Settings · Recovery | The Recovery section, and/or an asset showing its blue "recovered" badge in the asset panel. |
 
 `.mp4` (and `.webm`) play muted + looping; everything else is a still image.
 

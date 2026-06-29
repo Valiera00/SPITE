@@ -1432,7 +1432,7 @@ export function LeftToolbar({
   // COMPACT ASSETS PANEL VIEW (current sidebar panel)
   if (historyOpen) {
     return (
-      <div className="absolute left-3 top-3 bottom-3 z-20 glass rounded-2xl w-80 flex flex-col overflow-hidden">
+      <div data-tour="assets-panel" className="absolute left-3 top-3 bottom-3 z-20 glass rounded-2xl w-80 flex flex-col overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-border/30">
           <h2 className="text-sm font-semibold text-foreground">Assets</h2>
