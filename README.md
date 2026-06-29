@@ -2,8 +2,9 @@
 
 **Built out of spite. Made for control.**
 
-An open-source, node-based visual canvas for AI filmmaking. Bring your own
-API keys. Pay providers directly. Own your workflow.
+An open-source studio for AI filmmaking — a node-based visual **Canvas**, plus
+**Flow**, a fast, linear prompt-to-result mode (desktop and mobile). Bring your
+own API keys. Pay providers directly. Own your workflow.
 
 SPITE was built because every AI filmmaking tool either traps you in a
 credit system you can't audit, or assumes you're an ML engineer who enjoys
@@ -19,6 +20,11 @@ all owned by you.
 - **Node canvas.** Drag prompts, references, image generators, and video
   generators onto an infinite plane. Connect them. Hit Generate on any
   node and SPITE orchestrates the right model call.
+- **Flow mode.** Prefer something simpler? Flow is a linear, conversational
+  generation thread (Krea-style): type a prompt, pick a model, generate. Each
+  result remembers its prompt, model, aspect, and the references it used —
+  Reuse brings them all back. Same projects and models as Canvas, and it works
+  from your phone.
 - **Character consistency.** Tag images to a named folder
   (Character / Prop / Location), use `@FolderName` in any prompt, and
   SPITE wires the reference into every generation that mentions it.
@@ -159,18 +165,32 @@ in.
 
 ### Cron cleanup
 
-There's a scheduled cleanup endpoint at `/api/assets/cleanup` that deletes
-old, unprotected generated assets after 30 days and sweeps the auth / spend
-bookkeeping tables so they don't grow unbounded. A daily schedule is already
-defined in [`vercel.json`](./vercel.json) (04:00 UTC). To activate it, just
-set `CRON_SECRET` to a long random string in your Vercel env — Vercel
-automatically sends it as `Authorization: Bearer <CRON_SECRET>` on each cron
-run, and the endpoint refuses to do anything without a matching secret.
+There's a scheduled cleanup endpoint at `/api/assets/cleanup` that enforces your
+data-retention settings (below) and sweeps the auth / spend bookkeeping tables so
+they don't grow unbounded. A daily schedule is already defined in
+[`vercel.json`](./vercel.json) (04:00 UTC). To activate it, just set `CRON_SECRET`
+to a long random string in your Vercel env — Vercel automatically sends it as
+`Authorization: Bearer <CRON_SECRET>` on each cron run, and the endpoint refuses
+to do anything without a matching secret.
 
 If `CRON_SECRET` is unset the cron simply no-ops (returns 500 and logs), so
 nothing breaks — but the cleanup won't run. On non-Vercel hosts, point any
 external scheduler (GitHub Actions, etc.) at the same path with that
 `Authorization` header; both `GET` and `POST` work.
+
+### Data retention (opt-in — nothing is deleted by default)
+
+Out of the box **SPITE never auto-deletes anything you generate.** Retention is
+opt-in per category, configured with two env vars (both default to `0` = keep
+forever) and also surfaced in-app under **Settings → Data Retention**:
+
+| Variable | Effect | Default |
+|---|---|---|
+| `ASSET_RETENTION_DAYS` | Delete generated results that were **never added to a canvas** after N days. Anything on a canvas is always kept. | `0` (never) |
+| `REFERENCE_RETENTION_DAYS` | Reclaim reference **input** images (attached to a prompt) after N days. The results they produced are never affected. | `0` (never) |
+
+Set a positive number to opt in (e.g. `ASSET_RETENTION_DAYS=30`,
+`REFERENCE_RETENTION_DAYS=7`); the daily cron then prunes anything past that age.
 
 ---
 
@@ -181,7 +201,8 @@ app/                  Next.js App Router pages + API routes
   api/                Server-side endpoints (auth, generate, assets, R2 proxy)
   login/              The password gate
   setup/              Shown when required env vars are missing
-  project/[id]/       The canvas for one project
+  project/[id]/       The Canvas (node graph) for one project
+  m/                  Flow mode — the linear generation thread (also mobile)
 components/
   canvas/             The node-based workspace (nodes, edges, toolbars)
   ui/                 shadcn/ui primitives
