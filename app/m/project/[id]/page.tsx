@@ -232,7 +232,7 @@ export default function MobileThread() {
   }
 
   return (
-    <div className="flex flex-col min-h-[100dvh] bg-[#080A0C] text-[#F0EDE6]">
+    <div className="flex flex-col min-h-[100dvh] bg-[#080A0C] text-[#F0EDE6] w-full max-w-2xl mx-auto">
       <input ref={fileRef} type="file" accept="image/*" multiple className="hidden"
         onChange={(e) => { const fs = e.target.files; if (fs) Array.from(fs).forEach((f) => onPickRef(f)); e.target.value = '' }} />
 

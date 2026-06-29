@@ -11,6 +11,7 @@ interface Project {
   name: string
   description: string | null
   thumbnail: string | null
+  origin?: string
   createdat: string
   updatedat: string
 }
@@ -35,6 +36,11 @@ export function ProjectsDashboard() {
         p.description?.toLowerCase().includes(q)
     )
   }, [search, projects])
+
+  // Mobile-companion projects open the simple generation thread, not the canvas,
+  // so they get their own section instead of sitting among the canvas projects.
+  const canvasProjects = useMemo(() => filtered.filter((p) => p.origin !== 'mobile'), [filtered])
+  const mobileProjects = useMemo(() => filtered.filter((p) => p.origin === 'mobile'), [filtered])
 
   // Format relative time
   const formatRelativeTime = (dateStr: string) => {
@@ -97,16 +103,16 @@ export function ProjectsDashboard() {
           {/* Section label */}
           <div className="flex items-baseline justify-between mb-6">
             <p className="text-[11px] font-mono tracking-[0.18em] uppercase text-muted-foreground/70">
-              {search ? `${filtered.length} result${filtered.length !== 1 ? 's' : ''} for "${search}"` : `${projects.length} project${projects.length !== 1 ? 's' : ''}`}
+              {search ? `${filtered.length} result${filtered.length !== 1 ? 's' : ''} for "${search}"` : `${canvasProjects.length} project${canvasProjects.length !== 1 ? 's' : ''}`}
             </p>
           </div>
 
-          {/* Grid */}
+          {/* Grid — canvas projects */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             {/* New project card is always first */}
             {!search && <NewProjectCard onCreated={handleProjectCreated} />}
 
-            {filtered.map((project) => (
+            {canvasProjects.map((project) => (
               <ProjectCard
                 key={project.id}
                 id={project.id}
@@ -117,7 +123,7 @@ export function ProjectsDashboard() {
               />
             ))}
 
-            {/* Empty state when searching */}
+            {/* Empty state when searching (and nothing matched anywhere) */}
             {search && filtered.length === 0 && (
               <div className="col-span-full flex flex-col items-center justify-center py-24 gap-3">
                 <p
@@ -132,7 +138,7 @@ export function ProjectsDashboard() {
               </div>
             )}
 
-            {/* Empty state when no projects */}
+            {/* Empty state when no projects at all */}
             {!search && projects.length === 0 && (
               <div className="col-span-full flex flex-col items-center justify-center py-12 gap-3">
                 <p className="text-sm text-muted-foreground/50 font-mono">
@@ -141,6 +147,34 @@ export function ProjectsDashboard() {
               </div>
             )}
           </div>
+
+          {/* Mobile projects — created from the /m companion. These open the
+              simple generation thread instead of the canvas. */}
+          {mobileProjects.length > 0 && (
+            <section className="mt-12">
+              <div className="flex items-baseline gap-3 mb-6">
+                <p className="text-[11px] font-mono tracking-[0.18em] uppercase text-muted-foreground/70">
+                  Mobile projects
+                </p>
+                <span className="text-[10px] font-mono text-muted-foreground/40">
+                  {mobileProjects.length} · generation threads
+                </span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                {mobileProjects.map((project) => (
+                  <ProjectCard
+                    key={project.id}
+                    id={project.id}
+                    name={project.name}
+                    thumbnail={project.thumbnail || undefined}
+                    lastModified={formatRelativeTime(project.updatedat)}
+                    href={`/m/project/${project.id}`}
+                    onMutate={() => mutate()}
+                  />
+                ))}
+              </div>
+            </section>
+          )}
         </main>
       </div>
     </>

@@ -21,10 +21,12 @@ interface ProjectCardProps {
   thumbnail?: string
   lastModified: string
   genre?: string
+  /** Where the card navigates. Defaults to the canvas; mobile projects pass the thread route. */
+  href?: string
   onMutate?: () => void
 }
 
-export function ProjectCard({ id, name, thumbnail, lastModified, genre, onMutate }: ProjectCardProps) {
+export function ProjectCard({ id, name, thumbnail, lastModified, genre, href, onMutate }: ProjectCardProps) {
   const [menuOpen, setMenuOpen] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [confirmText, setConfirmText] = useState('')
@@ -90,7 +92,7 @@ export function ProjectCard({ id, name, thumbnail, lastModified, genre, onMutate
   return (
     <>
       <Link
-        href={`/project/${id}`}
+        href={href ?? `/project/${id}`}
         className="block group focus:outline-none focus-visible:ring-2 focus-visible:ring-accent rounded-xl"
       >
         <article className="relative glass glass-hover rounded-xl overflow-hidden cursor-pointer">

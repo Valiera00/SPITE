@@ -5,16 +5,30 @@ import { v4 as uuidv4 } from 'uuid'
 // Default user ID for now (no auth)
 const DEFAULT_USER_ID = '00000000-0000-0000-0000-000000000001'
 
+// `origin` distinguishes how a project is meant to be worked in: 'canvas' (the
+// desktop node graph, the default) vs 'mobile' (the simple generation thread
+// created from the /m companion). The desktop dashboard groups them separately
+// and opens mobile projects in the thread UI instead of the canvas. Cached so
+// the idempotent ALTER runs once per serverless instance, not per request.
+let projectsOriginReady = false
+async function ensureProjectsOrigin(sql: ReturnType<typeof getDb>) {
+  if (projectsOriginReady) return
+  await sql`ALTER TABLE projects ADD COLUMN IF NOT EXISTS origin text NOT NULL DEFAULT 'canvas'`
+  projectsOriginReady = true
+}
+
 export async function POST(request: NextRequest) {
   try {
     const sql = getDb()
-    const { name, description } = await request.json()
+    await ensureProjectsOrigin(sql)
+    const { name, description, origin } = await request.json()
     const projectId = uuidv4()
+    const safeOrigin = origin === 'mobile' ? 'mobile' : 'canvas'
 
     const result = await sql`
-      INSERT INTO projects (id, userid, name, description, createdat, updatedat)
-      VALUES (${projectId}, ${DEFAULT_USER_ID}, ${name || 'Untitled Project'}, ${description || ''}, NOW(), NOW())
-      RETURNING id, name, description, thumbnail, createdat, updatedat
+      INSERT INTO projects (id, userid, name, description, origin, createdat, updatedat)
+      VALUES (${projectId}, ${DEFAULT_USER_ID}, ${name || 'Untitled Project'}, ${description || ''}, ${safeOrigin}, NOW(), NOW())
+      RETURNING id, name, description, thumbnail, origin, createdat, updatedat
     `
 
     return NextResponse.json(result[0])
@@ -27,6 +41,7 @@ export async function POST(request: NextRequest) {
 export async function GET() {
   try {
     const sql = getDb()
+    await ensureProjectsOrigin(sql)
     // Pull each project plus the URL of its "shot 1" node, if any. The
     // LATERAL join finds the first canvas_node whose data.shotId is
     // 'shot-1' for that project and returns whichever URL field it has
@@ -40,6 +55,7 @@ export async function GET() {
         p.name,
         p.description,
         COALESCE(shot1.thumb, p.thumbnail) AS thumbnail,
+        COALESCE(p.origin, 'canvas') AS origin,
         p.createdat,
         p.updatedat
       FROM projects p

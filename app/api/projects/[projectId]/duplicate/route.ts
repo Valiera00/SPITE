@@ -16,7 +16,7 @@ export async function POST(
     const { projectId } = await params
 
     const original = await sql`
-      SELECT name, description, thumbnail
+      SELECT name, description, thumbnail, COALESCE(origin, 'canvas') AS origin
       FROM projects
       WHERE id = ${projectId}
     `
@@ -28,17 +28,18 @@ export async function POST(
     const newName = `${original[0].name} (Copy)`
 
     const inserted = await sql`
-      INSERT INTO projects (id, userid, name, description, thumbnail, createdat, updatedat)
+      INSERT INTO projects (id, userid, name, description, thumbnail, origin, createdat, updatedat)
       VALUES (
         ${newId},
         ${DEFAULT_USER_ID},
         ${newName},
         ${original[0].description || ''},
         ${original[0].thumbnail || null},
+        ${original[0].origin},
         NOW(),
         NOW()
       )
-      RETURNING id, name, description, thumbnail, createdat, updatedat
+      RETURNING id, name, description, thumbnail, origin, createdat, updatedat
     `
 
     // Copy canvas in one shot per table — the (projectId, nodeId/edgeId)
