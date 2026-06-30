@@ -88,16 +88,28 @@ export default function SettingsPage() {
   }, [])
 
   const saveRetention = async () => {
+    const a = Math.max(0, Math.floor(Number(assetDaysDraft) || 0))
+    const r = Math.max(0, Math.floor(Number(refDaysDraft) || 0))
+    // Guard against an accidental tiny window (e.g. 1) that would prune
+    // aggressively every night. Confirm anything between 1 and 6 days.
+    const aggressive = [a, r].filter((n) => n > 0 && n < 7)
+    if (aggressive.length > 0) {
+      const minN = Math.min(...aggressive)
+      const ok = window.confirm(
+        `Heads up — a ${minN}-day window is short.\n\n` +
+        `Each night the cleanup will permanently delete UNPROTECTED items only ` +
+        `(results that are NOT on any canvas, and reference inputs) once they pass ${minN} day${minN === 1 ? '' : 's'}.\n\n` +
+        `Anything on a canvas is always kept — it is never touched. Continue?`,
+      )
+      if (!ok) return
+    }
     setSavingRetention(true)
     setRetentionSaved(false)
     try {
       const res = await fetch('/api/settings/retention', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          assetRetentionDays: Math.max(0, Math.floor(Number(assetDaysDraft) || 0)),
-          referenceRetentionDays: Math.max(0, Math.floor(Number(refDaysDraft) || 0)),
-        }),
+        body: JSON.stringify({ assetRetentionDays: a, referenceRetentionDays: r }),
       })
       if (res.ok) {
         const data = await res.json()
@@ -502,16 +514,28 @@ export default function SettingsPage() {
               </p>
             </div>
 
-            <div className="flex items-center gap-3 pt-3 border-t border-border/50">
-              <button
-                onClick={saveRetention}
-                disabled={savingRetention || retention === null}
-                className="px-4 py-2 text-xs font-mono rounded-lg bg-foreground text-background hover:bg-foreground/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {savingRetention ? 'Saving…' : 'Save'}
-              </button>
-              {retentionSaved && <span className="text-xs font-mono text-accent">Saved.</span>}
-              <span className="ml-auto text-[11px] text-muted-foreground/60">Overrides the env defaults; no redeploy needed.</span>
+            <div className="pt-3 border-t border-border/50 space-y-3">
+              <p className="text-[11px] text-muted-foreground/80 leading-relaxed">
+                <span className="text-foreground/80">Safety:</span> only <span className="text-foreground/80">unprotected</span> items
+                are ever deleted — generated results <em>not</em> on a canvas, and reference inputs.
+                <span className="text-foreground/80"> Anything on a canvas is always kept and is never touched.</span>
+              </p>
+              {((Number(assetDaysDraft) > 0 && Number(assetDaysDraft) < 7) || (Number(refDaysDraft) > 0 && Number(refDaysDraft) < 7)) && (
+                <p className="text-[11px] font-mono text-amber-400/90 leading-relaxed">
+                  ⚠ A short window prunes unprotected items aggressively, every night. You’ll be asked to confirm on save.
+                </p>
+              )}
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={saveRetention}
+                  disabled={savingRetention || retention === null}
+                  className="px-4 py-2 text-xs font-mono rounded-lg bg-foreground text-background hover:bg-foreground/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {savingRetention ? 'Saving…' : 'Save'}
+                </button>
+                {retentionSaved && <span className="text-xs font-mono text-accent">Saved.</span>}
+                <span className="ml-auto text-[11px] text-muted-foreground/60">Overrides the env defaults; no redeploy needed.</span>
+              </div>
             </div>
           </div>
         </section>

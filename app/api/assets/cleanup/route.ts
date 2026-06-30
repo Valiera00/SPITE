@@ -87,11 +87,21 @@ async function runCleanup(request: NextRequest) {
 
   try {
     const sql = getDb()
-    // Get expired assets that are NOT used in canvas
+    // SAFETY — this is the ONLY query that deletes generated assets, and it must
+    // only ever touch UNPROTECTED ones. Three independent conditions, all required:
+    //   used_in_canvas = false      → never an asset that's on a canvas (protected).
+    //                                  `= false` also excludes NULL, so an unknown
+    //                                  protection state is treated as protected.
+    //   expires_at IS NOT NULL      → protected/permanent assets have NULL expiry;
+    //                                  this excludes them outright.
+    //   expires_at < CURRENT_TIMESTAMP → only assets whose retention window has
+    //                                  actually elapsed.
+    // Do NOT relax any of these.
     const expiredAssets = await sql`
       SELECT id, r2_url FROM generation_history
       WHERE used_in_canvas = false
-      AND expires_at < CURRENT_TIMESTAMP
+        AND expires_at IS NOT NULL
+        AND expires_at < CURRENT_TIMESTAMP
     `
 
     // Delete from R2 first
@@ -104,11 +114,13 @@ async function runCleanup(request: NextRequest) {
       }
     }
 
-    // Then delete from database
+    // Then delete from database — identical guard to the SELECT above. Keep these
+    // two WHERE clauses in lock-step; both must only match unprotected, expired rows.
     const result = await sql`
       DELETE FROM generation_history
       WHERE used_in_canvas = false
-      AND expires_at < CURRENT_TIMESTAMP
+        AND expires_at IS NOT NULL
+        AND expires_at < CURRENT_TIMESTAMP
       RETURNING id
     `
 
