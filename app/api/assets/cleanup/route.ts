@@ -30,7 +30,7 @@ async function deleteFromR2(key: string) {
 // nothing, so a self-hosted install never silently deletes a user's data.
 // Set REFERENCE_RETENTION_DAYS=7 on a deployment that wants weekly reclaim.
 async function sweepOldReferences(): Promise<number> {
-  const days = getReferenceRetentionDays()
+  const days = await getReferenceRetentionDays()
   if (days <= 0) return 0
   const cutoff = Date.now() - days * 24 * 60 * 60 * 1000
   const s3 = getR2Client()

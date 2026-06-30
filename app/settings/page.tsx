@@ -49,8 +49,13 @@ export default function SettingsPage() {
   const [storage, setStorage] = useState<{ usedBytes: number; objectCount: number; freeTierBytes: number } | null>(null)
   const [storageState, setStorageState] = useState<'loading' | 'ready' | 'error'>('loading')
 
-  // Effective data-retention windows (configured via env, surfaced here).
+  // Editable data-retention windows. `retention` is what's saved/effective;
+  // the draft fields hold in-progress edits until Save.
   const [retention, setRetention] = useState<{ assetRetentionDays: number; referenceRetentionDays: number } | null>(null)
+  const [assetDaysDraft, setAssetDaysDraft] = useState('')
+  const [refDaysDraft, setRefDaysDraft] = useState('')
+  const [savingRetention, setSavingRetention] = useState(false)
+  const [retentionSaved, setRetentionSaved] = useState(false)
 
   // Check API key + load preferences on mount
   useEffect(() => {
@@ -72,11 +77,40 @@ export default function SettingsPage() {
         const res = await fetch('/api/settings/retention')
         if (!res.ok) return
         const data = await res.json()
-        if (!cancelled) setRetention(data)
+        if (!cancelled) {
+          setRetention(data)
+          setAssetDaysDraft(String(data.assetRetentionDays ?? 0))
+          setRefDaysDraft(String(data.referenceRetentionDays ?? 0))
+        }
       } catch { /* non-critical */ }
     })()
     return () => { cancelled = true }
   }, [])
+
+  const saveRetention = async () => {
+    setSavingRetention(true)
+    setRetentionSaved(false)
+    try {
+      const res = await fetch('/api/settings/retention', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          assetRetentionDays: Math.max(0, Math.floor(Number(assetDaysDraft) || 0)),
+          referenceRetentionDays: Math.max(0, Math.floor(Number(refDaysDraft) || 0)),
+        }),
+      })
+      if (res.ok) {
+        const data = await res.json()
+        setRetention(data)
+        setAssetDaysDraft(String(data.assetRetentionDays))
+        setRefDaysDraft(String(data.referenceRetentionDays))
+        setRetentionSaved(true)
+        setTimeout(() => setRetentionSaved(false), 2500)
+      }
+    } catch { /* surfaced by the unchanged button state */ } finally {
+      setSavingRetention(false)
+    }
+  }
 
   // Bytes → human-readable (B / KB / MB / GB).
   const fmtBytes = (bytes: number) => {
@@ -409,8 +443,7 @@ export default function SettingsPage() {
         </section>
 
         {/* Data Retention — what the nightly cleanup cron deletes, and when.
-            Values come from env vars and are surfaced here so it's unambiguous
-            what will and won't be removed. */}
+            Editable here (saved to the DB, overriding the env defaults). */}
         <section data-tour="settings-retention" className="space-y-4">
           <h2 className="text-sm font-mono uppercase tracking-wider text-muted-foreground">Data Retention</h2>
           <div className="glass rounded-xl p-6 space-y-5">
@@ -426,20 +459,22 @@ export default function SettingsPage() {
             <div className="space-y-1.5 pt-1">
               <div className="flex items-center justify-between gap-3">
                 <p className="text-sm text-foreground">Unused results</p>
-                <span className="shrink-0 text-xs font-mono px-2 py-0.5 rounded-md bg-background/60 border border-border/50 text-foreground/80">
-                  {retention
-                    ? retention.assetRetentionDays > 0
-                      ? `Delete after ${retention.assetRetentionDays} days`
-                      : 'Never delete'
-                    : '…'}
-                </span>
+                <div className="flex items-center gap-2 shrink-0">
+                  <input
+                    type="number" min={0} step={1} inputMode="numeric"
+                    value={assetDaysDraft}
+                    onChange={(e) => setAssetDaysDraft(e.target.value)}
+                    disabled={retention === null}
+                    className="w-16 px-2 py-1 text-xs font-mono text-right rounded-md bg-background/60 border border-border/50 focus:border-accent/50 outline-none disabled:opacity-50"
+                  />
+                  <span className="text-xs font-mono text-muted-foreground/70 w-8">days</span>
+                </div>
               </div>
               <p className="text-xs text-muted-foreground leading-relaxed">
-                Generated images/videos that you never added to a canvas (left only in the
-                library) are deleted once they pass this age, freeing storage. The moment a
-                result is dropped onto a canvas it becomes permanent and this no longer applies.
-                Controlled by <span className="text-foreground font-mono">ASSET_RETENTION_DAYS</span>{' '}
-                (default 0 = keep forever; set e.g. 30 to prune after a month — any number works).
+                Generated images/videos you never added to a canvas (left only in the library)
+                are deleted once they pass this age, freeing storage. The moment a result is
+                dropped onto a canvas it becomes permanent and this no longer applies.{' '}
+                <span className="text-foreground/80">0 = keep forever.</span>
               </p>
             </div>
 
@@ -447,30 +482,37 @@ export default function SettingsPage() {
             <div className="space-y-1.5 pt-3 border-t border-border/50">
               <div className="flex items-center justify-between gap-3">
                 <p className="text-sm text-foreground">Reference inputs</p>
-                <span className="shrink-0 text-xs font-mono px-2 py-0.5 rounded-md bg-background/60 border border-border/50 text-foreground/80">
-                  {retention
-                    ? retention.referenceRetentionDays > 0
-                      ? `Reclaim after ${retention.referenceRetentionDays} days`
-                      : 'Never delete'
-                    : '…'}
-                </span>
+                <div className="flex items-center gap-2 shrink-0">
+                  <input
+                    type="number" min={0} step={1} inputMode="numeric"
+                    value={refDaysDraft}
+                    onChange={(e) => setRefDaysDraft(e.target.value)}
+                    disabled={retention === null}
+                    className="w-16 px-2 py-1 text-xs font-mono text-right rounded-md bg-background/60 border border-border/50 focus:border-accent/50 outline-none disabled:opacity-50"
+                  />
+                  <span className="text-xs font-mono text-muted-foreground/70 w-8">days</span>
+                </div>
               </div>
               <p className="text-xs text-muted-foreground leading-relaxed">
-                Reference images you attach to a prompt are inputs, not outputs. After this
-                many days they&apos;re reclaimed from storage; the generated results they
-                produced are <span className="text-foreground/80">never</span> affected. Once a
-                reference is gone, &ldquo;Reuse&rdquo; can no longer re-attach it. Controlled by{' '}
-                <span className="text-foreground font-mono">REFERENCE_RETENTION_DAYS</span>{' '}
-                (default 0 = never; set e.g. 7 for weekly reclaim — any number works).
+                Reference images you attach to a prompt are inputs, not outputs. After this many
+                days they&apos;re reclaimed from storage; the generated results they produced are{' '}
+                <span className="text-foreground/80">never</span> affected. Once a reference is
+                gone, &ldquo;Reuse&rdquo; can no longer re-attach it.{' '}
+                <span className="text-foreground/80">0 = never.</span>
               </p>
             </div>
 
-            <p className="text-[11px] text-muted-foreground/80 leading-relaxed pt-3 border-t border-border/50">
-              These are set as environment variables in your host (e.g. Vercel →
-              Settings → Environment Variables) and take effect on the next deploy —
-              the same as your API key and app password. Changing the number only
-              affects which items the <em>next</em> nightly run considers expired.
-            </p>
+            <div className="flex items-center gap-3 pt-3 border-t border-border/50">
+              <button
+                onClick={saveRetention}
+                disabled={savingRetention || retention === null}
+                className="px-4 py-2 text-xs font-mono rounded-lg bg-foreground text-background hover:bg-foreground/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {savingRetention ? 'Saving…' : 'Save'}
+              </button>
+              {retentionSaved && <span className="text-xs font-mono text-accent">Saved.</span>}
+              <span className="ml-auto text-[11px] text-muted-foreground/60">Overrides the env defaults; no redeploy needed.</span>
+            </div>
           </div>
         </section>
 

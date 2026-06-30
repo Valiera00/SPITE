@@ -236,7 +236,7 @@ export async function recordAsset(
   const sql = getDb()
   await ensureRecoveredColumn(sql)
   const id = `asset-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`
-  const expiresAt = assetExpiresAt() // null when ASSET_RETENTION_DAYS is 0 (never expires)
+  const expiresAt = await assetExpiresAt() // null when asset retention is 0 (never expires)
   const recovered = options.recovered === true
 
   await sql`

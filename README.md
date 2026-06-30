@@ -181,8 +181,9 @@ external scheduler (GitHub Actions, etc.) at the same path with that
 ### Data retention (opt-in — nothing is deleted by default)
 
 Out of the box **SPITE never auto-deletes anything you generate.** Retention is
-opt-in per category, configured with two env vars (both default to `0` = keep
-forever) and also surfaced in-app under **Settings → Data Retention**:
+opt-in per category. Edit it live (no redeploy) under **Settings → Data
+Retention**, or set the defaults with two env vars (both default to `0` = keep
+forever). A value saved in Settings overrides the env default:
 
 | Variable | Effect | Default |
 |---|---|---|

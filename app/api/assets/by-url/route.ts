@@ -55,7 +55,7 @@ export async function POST(request: NextRequest) {
 
     // When detaching from canvas, restart the retention clock (null when
     // ASSET_RETENTION_DAYS is 0 → never expires). On canvas → permanent.
-    const expiresAt = used_in_canvas ? null : (assetExpiresAt()?.toISOString() ?? null)
+    const expiresAt = used_in_canvas ? null : ((await assetExpiresAt())?.toISOString() ?? null)
     let result
     if (key) {
       // Match by URL key suffix
