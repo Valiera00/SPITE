@@ -16,6 +16,7 @@ import { getImageModels, getModelById, buildModelInput, type ModelConfig } from 
 import { compileMentionsForModel } from '@/lib/mention-prompt'
 import { estimateGenerationCost, formatUSD, COST_CONFIRM_THRESHOLD_USD } from '@/lib/fal-cost'
 import { resolveNodeMediaUrl } from '@/lib/node-media'
+import { ConnectedInputs } from '../connected-inputs'
 
 const IMAGE_MODELS = getImageModels()
 
@@ -972,6 +973,7 @@ function ImageNodeImpl({ id, data, selected }: NodeProps) {
         <>
           <Handle type="target" id="image-in" position={Position.Left} style={{ top: 180, left: -12, opacity: 0, width: 24, height: 24, zIndex: 5 }} />
           <HandleIcon icon={ImageIcon} color="rgba(96,165,250,0.8)" position="left" top={180} visible />
+          <ConnectedInputs nodeId={id} handleId="image-in" side="left" top={180} label="Images" />
         </>
       )}
 

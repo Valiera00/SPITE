@@ -16,6 +16,7 @@ import { getVideoModels, getModelById, buildModelInput, type ModelConfig } from 
 import { compileMentionsForModel } from '@/lib/mention-prompt'
 import { estimateGenerationCost, formatUSD, COST_CONFIRM_THRESHOLD_USD } from '@/lib/fal-cost'
 import { resolveNodeMediaUrl } from '@/lib/node-media'
+import { ConnectedInputs } from '../connected-inputs'
 import { captureVideoThumbnail } from '@/lib/video-thumbnail'
 
 const VIDEO_MODELS = getVideoModels()
@@ -1038,6 +1039,7 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
         <>
           <Handle type="target" id="image-in" title="First frame" position={Position.Left} style={{ top: 150, left: -12, opacity: 0, width: 24, height: 24, zIndex: 5 }} />
           <HandleIcon icon={ImageIcon} color="rgba(96,165,250,0.8)" position="left" top={150} visible />
+          <ConnectedInputs nodeId={id} handleId="image-in" side="left" top={150} label="First frame" />
         </>
       )}
 
@@ -1046,6 +1048,7 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
         <>
           <Handle type="target" id="end-frame-in" title="End frame" position={Position.Left} style={{ top: 200, left: -12, opacity: 0, width: 24, height: 24, zIndex: 5 }} />
           <HandleIcon icon={ImageIcon} color="rgba(251,191,36,0.9)" position="left" top={200} visible />
+          <ConnectedInputs nodeId={id} handleId="end-frame-in" side="left" top={200} label="End frame" />
         </>
       )}
 
@@ -1055,6 +1058,7 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
         <>
           <Handle type="target" id="reference-in" title="Reference image(s)" position={Position.Left} style={{ top: 250, left: -12, opacity: 0, width: 24, height: 24, zIndex: 5 }} />
           <HandleIcon icon={ImageIcon} color="rgba(236,72,153,0.9)" position="left" top={250} visible />
+          <ConnectedInputs nodeId={id} handleId="reference-in" side="left" top={250} label="References" />
         </>
       )}
 
@@ -1063,6 +1067,7 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
         <>
           <Handle type="target" id="video-in" title="Source video" position={Position.Left} style={{ top: 310, left: -12, opacity: 0, width: 24, height: 24, zIndex: 5 }} />
           <HandleIcon icon={FilmStrip} color="rgba(74,222,128,0.8)" position="left" top={310} visible />
+          <ConnectedInputs nodeId={id} handleId="video-in" side="left" top={310} label="Source video" />
         </>
       )}
 
