@@ -176,7 +176,17 @@ export default function FlowThread() {
         }),
       })
       const submitData = await submitRes.json().catch(() => ({}))
-      if (!submitRes.ok || !submitData.request_id) { setError(submitData.error || 'Submit failed'); decPending(); return }
+      if (!submitRes.ok || !submitData.request_id) {
+        // /api/generate/submit forwards fal's status + text verbatim, so 401/403
+        // here is fal (bad key / exhausted balance), not our host. Show both the
+        // actionable hint and fal's own words.
+        const hint =
+          submitRes.status === 401 ? 'fal rejected the key (invalid or rotated FAL_KEY)'
+          : submitRes.status === 403 ? 'fal refused the request — usually an exhausted balance. Check fal.ai billing.'
+          : ''
+        const msg = [hint, submitData.error].filter(Boolean).join(' — ')
+        setError(msg || 'Submit failed'); decPending(); return
+      }
       const { request_id, model: pollModel } = submitData
       for (let k = 0; k < 120; k++) {
         await new Promise((r) => setTimeout(r, 2000))

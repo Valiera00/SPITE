@@ -51,7 +51,14 @@ export async function GET() {
     Accept: 'application/json',
   }
 
+  // Current documented endpoint first. fal's Platform API exposes
+  //   GET https://api.fal.ai/v1/account/billing
+  //   -> { username, credits: { current_balance, currency } }
+  // The older rest.alpha.fal.ai paths now 404, which is why the badge silently
+  // showed a dash (and gave no warning before a balance ran out). The legacy
+  // URLs stay as fallbacks for older keys/accounts.
   const candidates = [
+    'https://api.fal.ai/v1/account/billing',
     'https://rest.alpha.fal.ai/billing/user-balance',
     'https://rest.alpha.fal.ai/billing/balance',
     'https://api.fal.ai/billing/balance',
@@ -67,6 +74,7 @@ export async function GET() {
     // `{ available_credit_in_cents: 1234 }` in various endpoints over
     // the years.
     const numericBalance =
+      typeof data?.credits?.current_balance === 'number' ? data.credits.current_balance :
       typeof data.balance === 'number' ? data.balance :
       typeof data.amount === 'number' ? data.amount :
       typeof data?.user?.balance === 'number' ? data.user.balance :
@@ -78,7 +86,9 @@ export async function GET() {
       return NextResponse.json<FalBalanceResponse>({
         available: true,
         balance: numericBalance,
-        currency: typeof data.currency === 'string' ? data.currency : 'USD',
+        currency:
+          typeof data?.credits?.currency === 'string' ? data.credits.currency :
+          typeof data.currency === 'string' ? data.currency : 'USD',
         source: url,
       })
     }
