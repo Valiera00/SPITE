@@ -7,6 +7,7 @@ import { ProjectCard } from './project-card'
 import { NewProjectCard } from './new-project-card'
 import { SearchBar } from './search-bar'
 import { OnboardingTour } from './onboarding/use-onboarding-tour'
+import { VersionBadge } from './version-badge'
 import { startTour } from '@/lib/onboarding'
 
 interface Project {
@@ -96,8 +97,9 @@ export function ProjectsDashboard() {
                 <SearchBar value={search} onChange={setSearch} />
               </div>
 
-              {/* Replay the tour */}
-              <div className="shrink-0 w-[72px] flex justify-end">
+              {/* Build marker + replay the tour */}
+              <div className="shrink-0 flex items-center justify-end gap-2">
+                <VersionBadge />
                 <button
                   onClick={() => startTour('dashboard')}
                   aria-label="Take the tour"

@@ -7,6 +7,7 @@ import { useState } from 'react'
 import { useAuth } from '@/components/auth-provider'
 import { startTour } from '@/lib/onboarding'
 import { FalBalanceBadge } from './fal-balance-badge'
+import { VersionBadge } from '@/components/version-badge'
 
 interface CanvasToolbarProps {
   projectName: string
@@ -124,6 +125,8 @@ export function CanvasToolbar({ projectName, onProjectNameChange, saveStatus, pr
             )}
           </button>
         )}
+
+        <VersionBadge className="mr-1" />
 
         <FalBalanceBadge />
 

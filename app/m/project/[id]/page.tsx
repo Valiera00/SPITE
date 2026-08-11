@@ -11,6 +11,7 @@ import { FAL_MODELS, getModelById } from '@/lib/fal-models'
 import { estimateGenerationCost, formatUSD, COST_CONFIRM_THRESHOLD_USD } from '@/lib/fal-cost'
 import { useIsMobile } from '@/components/ui/use-mobile'
 import { OnboardingTour } from '@/components/onboarding/use-onboarding-tour'
+import { VersionBadge } from '@/components/version-badge'
 import { startTour } from '@/lib/onboarding'
 
 type Asset = {
@@ -283,7 +284,7 @@ export default function FlowThread() {
             {balance !== null && (
               <span className="text-[10px] font-mono text-muted-foreground px-2 py-1 rounded-full border border-white/10">fal {formatUSD(balance)}</span>
             )}
-            <span className="text-[9px] font-mono text-muted-foreground/40">{(process.env.NEXT_PUBLIC_COMMIT_SHA || 'dev').slice(0, 7)}</span>
+            <VersionBadge />
           </div>
         </div>
 
