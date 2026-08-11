@@ -758,14 +758,13 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
         },
       })
 
-      // Each video is a separate fal job. Stagger the parallel POSTs by
-      // ~200ms each so Vercel's edge / fal's per-key limiter doesn't
-      // reject 1-2 of N as anomalous traffic (the image-node hit this
-      // with a 403 on one of three simultaneous submits). Requests
-      // still complete in parallel; only the start times are spread.
+      // Each video is a separate fal job. Submit them ONE AT A TIME (never
+      // overlapping) — parallel POSTs, even staggered, can overlap in flight and
+      // get an "anomalous burst" 403 from the host edge (our API never returns
+      // 403 — it uses 429). Serialised enqueue + one retry on a transient 403 /
+      // network blip. The jobs still run in parallel on fal afterwards.
       const count = Math.max(1, Math.min(12, numVideos))
-      const submitOnce = async (i: number) => {
-        if (i > 0) await new Promise<void>(r => setTimeout(r, i * 200))
+      const submitOnce = async () => {
         try {
           const res = await fetch('/api/generate/submit', {
             method: 'POST',
@@ -778,16 +777,23 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
           return { _httpStatus: 0 }
         }
       }
-      const results = await Promise.all(
-        Array.from({ length: count }, (_, i) => submitOnce(i)),
-      )
+      const results: Array<Awaited<ReturnType<typeof submitOnce>>> = []
+      for (let i = 0; i < count; i++) {
+        if (i > 0) await new Promise<void>(r => setTimeout(r, 300))
+        let r = await submitOnce()
+        if (!r.request_id && (r._httpStatus === 403 || r._httpStatus === 0)) {
+          await new Promise<void>(res => setTimeout(res, 700))
+          r = await submitOnce() // one retry for a transient edge rejection
+        }
+        results.push(r)
+      }
       const ok = results.filter(r => r.request_id)
       const failedCount = count - ok.length
       if (ok.length === 0) {
         const firstFail = results[0]
         const status = firstFail?._httpStatus
         const reason =
-          status === 403 ? 'rejected by Vercel edge (rate limit on parallel requests)'
+          status === 403 ? 'blocked by the host edge (firewall / burst limit) — retry, or lower the batch count'
           : status === 503 ? 'generation disabled (GENERATION_DISABLED env var)'
           : firstFail?.error || `HTTP ${status || 'error'}`
         setStatus('failed')
