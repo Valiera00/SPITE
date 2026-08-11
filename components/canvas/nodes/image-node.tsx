@@ -585,6 +585,7 @@ function ImageNodeImpl({ id, data, selected }: NodeProps) {
     // Compile prompts from connected nodes and this node's prompt
     let compiledPrompt = ''
     let connectedImageUrl: string | null = null
+    const connectedImageUrls: string[] = []
     let deadImageEdges = 0
 
     try {
@@ -613,11 +614,15 @@ function ImageNodeImpl({ id, data, selected }: NodeProps) {
           const sourceNode = nodes.find(n => n.id === imageEdge.source)
           const sourceImageUrl = resolveNodeMediaUrl(sourceNode?.data as Record<string, unknown>)
           if (sourceImageUrl) {
-            if (!connectedImageUrl) connectedImageUrl = sourceImageUrl
+            // Keep EVERY connected image, not just the first. The extras ride
+            // along as reference groups below so wiring 3 images in actually
+            // sends 3 (previously only the first was ever submitted).
+            if (!connectedImageUrls.includes(sourceImageUrl)) connectedImageUrls.push(sourceImageUrl)
           } else {
             deadImageEdges++
           }
         }
+        connectedImageUrl = connectedImageUrls[0] ?? null
       }
       
       // Sort by the order edges were created (which is their index in the array)
@@ -685,15 +690,41 @@ function ImageNodeImpl({ id, data, selected }: NodeProps) {
     // For image_urls-style image models (Nano Banana etc.) the first slot
     // is reserved for the connected primary frame, so mentions start at
     // slot 1 when connectedImageUrl is present.
-    const primaryInImageUrls =
-      !!connectedImageUrl && currentModel?.imageParam === 'image_urls'
+    // How many image slots the connected cords already occupy. Models whose
+    // image input is a LIST (image_urls) can carry every connected image;
+    // single-slot (image_url) models can only take the first, and anything
+    // extra has to ride in a dedicated referenceParam if the model has one.
+    const takesMultipleImages =
+      currentModel?.imageParam === 'image_urls' || !!currentModel?.referenceParam
+    const extraConnected = takesMultipleImages ? connectedImageUrls.slice(1) : []
+    const usedSlots =
+      currentModel?.imageParam === 'image_urls'
+        ? (connectedImageUrl ? 1 : 0) + extraConnected.length
+        : connectedImageUrl ? 1 : 0
     const compiled = compileMentionsForModel(
       compiledPrompt,
       mentions,
       folders,
       currentModel,
-      primaryInImageUrls ? 1 : 0,
+      usedSlots,
     )
+
+    // Extra connected images go ahead of folder-mention refs (they're the more
+    // explicit intent), then the mention groups keep their order.
+    const allRefGroups = [
+      ...extraConnected.map((u) => ({ urls: [u] })),
+      ...compiled.refGroups,
+    ]
+
+    // If the model physically can't take the extras, say so instead of dropping
+    // them silently — that's the exact failure this whole pass is about.
+    const droppedExtras = connectedImageUrls.length - 1 - extraConnected.length
+    if (droppedExtras > 0) {
+      toast.warning(
+        `${currentModel?.name || 'This model'} accepts one input image — ${droppedExtras} extra connected ${droppedExtras === 1 ? 'image was' : 'images were'} not sent.`,
+        { duration: 7000 },
+      )
+    }
 
     try {
       // Fan out one fal job per requested image, mirroring how video-node
@@ -703,7 +734,7 @@ function ImageNodeImpl({ id, data, selected }: NodeProps) {
         modelId,
         prompt: compiled.prompt,
         referenceImageUrl: connectedImageUrl,
-        referenceGroups: compiled.refGroups.length > 0 ? compiled.refGroups : undefined,
+        referenceGroups: allRefGroups.length > 0 ? allRefGroups : undefined,
         settings: { aspectRatio, resolution, numImages: 1 },
       })
       const count = Math.max(1, Math.min(12, numImages))
