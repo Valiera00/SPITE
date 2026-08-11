@@ -15,6 +15,7 @@ import { labelFromPrompt, DEFAULT_VIDEO_LABEL } from '@/lib/auto-name'
 import { getVideoModels, getModelById, buildModelInput, type ModelConfig } from '@/lib/fal-models'
 import { compileMentionsForModel } from '@/lib/mention-prompt'
 import { estimateGenerationCost, formatUSD, COST_CONFIRM_THRESHOLD_USD } from '@/lib/fal-cost'
+import { resolveNodeMediaUrl } from '@/lib/node-media'
 import { captureVideoThumbnail } from '@/lib/video-thumbnail'
 
 const VIDEO_MODELS = getVideoModels()
@@ -559,10 +560,16 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
     let connectedVideoUrl: string | null = null
     let connectedAudioUrl: string | null = null
 
+    // Every media input resolves through the shared helper so no field a node
+    // might store its URL under is missed. A cord that resolves to nothing is
+    // counted as "dead": it looks attached but would contribute no input, and
+    // generating anyway burns a paid call that ignores it.
+    let deadMediaEdges = 0
     const urlOfSource = (edge: any) => {
       const sourceNode = nodes.find(n => n.id === edge.source)
-      // Generated nodes store the URL in outputUrl; reference/upload nodes in thumbnail.
-      return (sourceNode?.data?.outputUrl || sourceNode?.data?.thumbnail) as string | undefined
+      const url = resolveNodeMediaUrl(sourceNode?.data as Record<string, unknown>)
+      if (!url) deadMediaEdges++
+      return url
     }
 
     let nodes: any[] = []
@@ -675,6 +682,18 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
     // here for those; let the server handle whatever's missing.
     const isUpscalerStandard =
       modelId === 'topaz-video-upscale' && upscaleMode === 'standard'
+
+    // Failsafe: a media cord is attached but its source has nothing yet, so that
+    // input would be silently dropped. Refuse rather than burn a paid render.
+    if (deadMediaEdges > 0) {
+      setError(
+        deadMediaEdges === 1
+          ? 'A connected node has no image/video yet — generate or upload it first (that input would be ignored).'
+          : `${deadMediaEdges} connected nodes have no image/video yet — generate or upload them first (those inputs would be ignored).`,
+      )
+      return
+    }
+
     if (!compiledPrompt && !isUpscalerStandard) {
       setError('Please enter a prompt')
       return

@@ -30,6 +30,7 @@ import {
 import '@xyflow/react/dist/style.css'
 import { useCanvasAutoSave } from '@/hooks/use-canvas-auto-save'
 import { CanvasToolbar } from './canvas-toolbar'
+import { nodeHasNoMedia } from '@/lib/node-media'
 import { OnboardingTour } from '@/components/onboarding/use-onboarding-tour'
 import { JobsPanel } from './jobs-panel'
 import { LeftToolbar, type Asset, type AssetCategory } from './left-toolbar'
@@ -1088,6 +1089,18 @@ function CanvasInner({ projectId }: { projectId: string }) {
     const activeFlags = sceneEdges.map(
       e => selectedNodeIds.has(e.source) || selectedNodeIds.has(e.target),
     )
+    // A media cord whose source holds no image/video yet delivers nothing to the
+    // target. Flag it so the cord renders as "not connected" instead of looking
+    // identical to a live one — that ambiguity let references be silently
+    // dropped. Prompt/text cords are exempt (they carry text, not media).
+    const nodeById = new Map(sceneNodes.map(n => [n.id, n]))
+    const emptyFlags = sceneEdges.map(e => {
+      const isMediaCord =
+        (e.sourceHandle && /image-out|video-out|audio-out/.test(e.sourceHandle)) ||
+        (e.targetHandle && /image-in|video-in|reference-in|end-frame-in/.test(e.targetHandle))
+      if (!isMediaCord) return false
+      return nodeHasNoMedia(nodeById.get(e.source)?.data as Record<string, unknown>)
+    })
     const activeCount = activeFlags.reduce((n, a) => (a ? n + 1 : n), 0)
     const edgeCount = sceneEdges.length
     return sceneEdges.map((edge, i) => ({
@@ -1104,6 +1117,7 @@ function CanvasInner({ projectId }: { projectId: string }) {
       data: {
         ...(edge.data || {}),
         active: activeFlags[i],
+        empty: emptyFlags[i],
         animMode: connectorAnim,
         activeCount,
         edgeCount,

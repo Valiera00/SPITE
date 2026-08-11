@@ -159,8 +159,13 @@ export function ScissorsEdge({
   const { setEdges } = useReactFlow()
 
   const d = data as
-    | { active?: boolean; animMode?: 'auto' | 'on' | 'off'; activeCount?: number; edgeCount?: number }
+    | { active?: boolean; empty?: boolean; animMode?: 'auto' | 'on' | 'off'; activeCount?: number; edgeCount?: number }
     | undefined
+
+  // "Empty" = a media cord whose source has no image/video yet, so it would
+  // deliver nothing. Drawn as a faint dashed line with unlit plugs so it reads
+  // as clearly NOT connected, instead of looking identical to a live cord.
+  const isEmpty = !!d?.empty
 
   // "active" = a node this cord connects to is selected (flagged in
   // edge.data.active by the canvas), or the edge itself is selected.
@@ -239,7 +244,18 @@ export function ScissorsEdge({
         style={{ cursor: 'pointer' }}
       />
 
-      {animate && anim ? (
+      {isEmpty ? (
+        // Not delivering anything — faint, dashed, static.
+        <path
+          d={geo.smooth}
+          fill="none"
+          stroke="#8a94a0"
+          strokeWidth={1.4}
+          strokeLinecap="round"
+          strokeDasharray="5 6"
+          opacity={0.4}
+        />
+      ) : animate && anim ? (
         live ? (
           // ACTIVE / HOVER: bigger braid, brighter, soft blurred glow.
           <>
@@ -266,9 +282,9 @@ export function ScissorsEdge({
       {/* Lit "plugs" where the cord meets each node — gentle pulse when live. */}
       {[geo.p0, geo.p1].map((p, i) => (
         <g key={i}>
-          <circle cx={p.x} cy={p.y} r={live ? 5.5 : 4.5} fill="#aec3d2" opacity={live ? 0.3 : 0.16} />
-          <circle cx={p.x} cy={p.y} r={1.9} fill="#e7f1fb" opacity={live ? 0.9 : 0.55}>
-            {live && (
+          <circle cx={p.x} cy={p.y} r={live ? 5.5 : 4.5} fill="#aec3d2" opacity={isEmpty ? 0.08 : live ? 0.3 : 0.16} />
+          <circle cx={p.x} cy={p.y} r={1.9} fill={isEmpty ? '#8a94a0' : '#e7f1fb'} opacity={isEmpty ? 0.35 : live ? 0.9 : 0.55}>
+            {live && !isEmpty && (
               <animate
                 attributeName="opacity"
                 values="0.5;0.9;0.5"

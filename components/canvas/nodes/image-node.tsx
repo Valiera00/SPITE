@@ -15,6 +15,7 @@ import { labelFromPrompt, DEFAULT_IMAGE_LABEL } from '@/lib/auto-name'
 import { getImageModels, getModelById, buildModelInput, type ModelConfig } from '@/lib/fal-models'
 import { compileMentionsForModel } from '@/lib/mention-prompt'
 import { estimateGenerationCost, formatUSD, COST_CONFIRM_THRESHOLD_USD } from '@/lib/fal-cost'
+import { resolveNodeMediaUrl } from '@/lib/node-media'
 
 const IMAGE_MODELS = getImageModels()
 
@@ -583,7 +584,8 @@ function ImageNodeImpl({ id, data, selected }: NodeProps) {
     // Compile prompts from connected nodes and this node's prompt
     let compiledPrompt = ''
     let connectedImageUrl: string | null = null
-    
+    let deadImageEdges = 0
+
     try {
       const edges = getEdges()
       const nodes = getNodes()
@@ -599,14 +601,21 @@ function ImageNodeImpl({ id, data, selected }: NodeProps) {
         edge => edge.target === id && edge.targetHandle === 'image-in'
       )
       
-      // Get image URL from connected image source node
+      // Get image URL from connected image source node. Resolve through the
+      // shared helper so every field a node might store media under is covered
+      // (outputUrl / assetUrl / thumbnail / ...). Track any edge that resolves
+      // to nothing: the cord is attached but would contribute no reference, and
+      // silently generating without it wastes a paid call and returns the wrong
+      // image. We refuse to submit in that case (see the guard below).
       if (incomingImageEdges.length > 0) {
-        const imageEdge = incomingImageEdges[0]
-        const sourceNode = nodes.find(n => n.id === imageEdge.source)
-        // Generated nodes store the URL in outputUrl; reference/upload nodes in thumbnail.
-        const sourceImageUrl = (sourceNode?.data?.outputUrl || sourceNode?.data?.thumbnail) as string | undefined
-        if (sourceImageUrl) {
-          connectedImageUrl = sourceImageUrl
+        for (const imageEdge of incomingImageEdges) {
+          const sourceNode = nodes.find(n => n.id === imageEdge.source)
+          const sourceImageUrl = resolveNodeMediaUrl(sourceNode?.data as Record<string, unknown>)
+          if (sourceImageUrl) {
+            if (!connectedImageUrl) connectedImageUrl = sourceImageUrl
+          } else {
+            deadImageEdges++
+          }
         }
       }
       
@@ -630,6 +639,18 @@ function ImageNodeImpl({ id, data, selected }: NodeProps) {
     } catch (error) {
       console.error('Error compiling prompts:', error)
       compiledPrompt = prompt.trim()
+    }
+
+    // Failsafe: an image cord is attached but its source has no image yet, so
+    // the reference would be silently dropped. Refuse rather than burn a paid
+    // generation that ignores it.
+    if (deadImageEdges > 0) {
+      setError(
+        deadImageEdges === 1
+          ? 'A connected image node has no image yet — generate or upload it first (the reference would be ignored).'
+          : `${deadImageEdges} connected image nodes have no image yet — generate or upload them first (those references would be ignored).`,
+      )
+      return
     }
 
     if (!compiledPrompt && !currentModel?.optionalPrompt) {
