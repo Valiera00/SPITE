@@ -792,10 +792,16 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
       if (ok.length === 0) {
         const firstFail = results[0]
         const status = firstFail?._httpStatus
-        const reason =
-          status === 403 ? 'blocked by the host edge (firewall / burst limit) — retry, or lower the batch count'
+        // ALWAYS prefer the real message. /api/generate/submit forwards fal's
+        // status AND its error text verbatim, so a 401/403 here is usually fal
+        // (bad key / exhausted balance / model access), not our host.
+        const falMsg = typeof firstFail?.error === 'string' ? firstFail.error.slice(0, 300) : ''
+        const hint =
+          status === 401 ? 'fal rejected the key (invalid or rotated FAL_KEY)'
+          : status === 403 ? 'fal refused the request — usually an exhausted balance or billing hold. Check fal.ai billing.'
           : status === 503 ? 'generation disabled (GENERATION_DISABLED env var)'
-          : firstFail?.error || `HTTP ${status || 'error'}`
+          : `HTTP ${status || 'error'}`
+        const reason = falMsg ? `${hint} — ${falMsg}` : hint
         setStatus('failed')
         setError(`Failed to submit job — ${reason}`)
         return
