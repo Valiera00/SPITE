@@ -13,6 +13,12 @@ canvas for people who think in shots and scenes — characters, prompts,
 references, generated images, generated video, all on one infinite plane,
 all owned by you.
 
+![The SPITE canvas — scenes and shots on top, connected prompt/image/video nodes below](docs/media/canvas.png)
+
+![Tagging a character folder into a prompt with an @mention](docs/media/tagging.png)
+
+More at **[spite.run](https://spite.run)**.
+
 ---
 
 ## What it does

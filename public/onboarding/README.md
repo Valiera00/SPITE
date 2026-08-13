@@ -1,8 +1,10 @@
 # Onboarding tour images
 
-Drop screenshots / renders here to illustrate the first-time tour steps. Each
-file is **optional** — if it's missing, that step simply shows its text without
-an image (no errors). Replace any of them anytime without touching code.
+All image slots are **filled with real app captures** (Aug 2026). Replace any of
+them anytime without touching code — the table below documents what each slot
+shows. Each file is optional: if one is missing, that step simply shows its text
+without an image (no errors). The one remaining empty slot is the
+`canvas-working.mp4` welcome video.
 
 Recommended: 16:9-ish PNG or GIF, ~1200px wide. They render at up to ~176px tall
 inside the tour popover (and are the assets you can reuse for promos/social).
