@@ -4,4 +4,12 @@ onlyBuiltDependencies:
   - sharp
 verifyDepsBeforeRun: false
 overrides:
-  postcss@<8.5.15: '>=8.5.15'
+  # Security overrides for transitive deps we don't control directly.
+  # postcss/nanoid: path-traversal + infinite-loop advisories.
+  # sharp: libvips CVEs. Next only declares it as an OPTIONAL dep pinned to
+  # ^0.34.5, and this app sets images.unoptimized, so sharp is never actually
+  # invoked — but pinning forward keeps the advisory closed rather than relying
+  # on that mitigation holding forever.
+  postcss@<8.5.23: '>=8.5.23'
+  nanoid@<3.3.17: '>=3.3.17'
+  sharp: '>=0.35.0'
