@@ -92,6 +92,16 @@ export default function FlowThread() {
   const [error, setError] = useState('')
   const [balance, setBalance] = useState<number | null>(null)
 
+  // Click-to-expand: a result image opens in a fullscreen lightbox.
+  // Esc, backdrop click, or the ✕ closes it.
+  const [lightbox, setLightbox] = useState<string | null>(null)
+  useEffect(() => {
+    if (!lightbox) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setLightbox(null) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [lightbox])
+
   // Chat-style thread: oldest at top, newest at the bottom. Sentinel at the end
   // of the feed that we scroll to so you land on the latest result on entry and
   // stay pinned as new ones append.
@@ -336,7 +346,12 @@ export default function FlowThread() {
               ) : a.type === 'audio' ? (
                 <audio src={a.r2_url} controls className="w-full lg:w-[420px] p-3" />
               ) : (
-                <img src={a.r2_url} alt="" onLoad={() => pinToNewest(false)} style={aspectStyle(a.aspect)} className="block w-full lg:w-auto max-w-full max-h-[82vh] object-contain rounded-2xl" loading="lazy" decoding="async" />
+                <img
+                  src={a.r2_url} alt="" onLoad={() => pinToNewest(false)} style={aspectStyle(a.aspect)}
+                  onClick={() => setLightbox(a.r2_url)}
+                  className="block w-full lg:w-auto max-w-full max-h-[82vh] object-contain rounded-2xl cursor-zoom-in"
+                  loading="lazy" decoding="async"
+                />
               )}
             </div>
           </div>
@@ -435,6 +450,14 @@ export default function FlowThread() {
       </div>
 
       <OnboardingTour surface="flow" />
+
+      {/* Fullscreen lightbox for a clicked result. */}
+      {lightbox && (
+        <div className="fixed inset-0 z-[120] bg-black/92 backdrop-blur-sm flex items-center justify-center p-4 cursor-zoom-out" onClick={() => setLightbox(null)}>
+          <img src={lightbox} alt="" className="max-w-[96vw] max-h-[94vh] object-contain rounded-lg shadow-[0_20px_80px_rgba(0,0,0,0.8)]" onClick={(e) => e.stopPropagation()} />
+          <button onClick={() => setLightbox(null)} aria-label="Close" className="absolute top-4 right-4 w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-foreground transition"><X size={16} weight="bold" /></button>
+        </div>
+      )}
     </div>
   )
 }
