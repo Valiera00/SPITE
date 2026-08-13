@@ -51,6 +51,8 @@ export async function GET(request: NextRequest) {
       releaseUrl: rel.html_url || `https://github.com/${UPSTREAM_REPO}/releases`,
       releaseName: rel.name || `v${latest}`,
       publishedAt: rel.published_at || null,
+      // The release notes (markdown), so "What's new" can render in-app.
+      notes: typeof rel.body === 'string' ? rel.body.slice(0, 4000) : '',
     })
   } catch {
     return NextResponse.json({ current, updateAvailable: false })
