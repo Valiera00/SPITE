@@ -33,6 +33,9 @@ CREATE TABLE IF NOT EXISTS projects (
 -- runs when the table is missing entirely.
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS scenes jsonb;
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS active_scene_id text;
+-- origin: how the project is worked in — 'canvas' (node graph) or 'flow'
+-- (the linear generation thread). Anything not 'canvas' is treated as Flow.
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS origin text NOT NULL DEFAULT 'canvas';
 
 -- Generation history: every AI image/video you generate, plus canvas uploads.
 -- This is the "asset library" the left panel reads from. id is TEXT because the
@@ -47,8 +50,16 @@ CREATE TABLE IF NOT EXISTS generation_history (
     is_upload      boolean DEFAULT false,
     created_at     timestamptz DEFAULT now(),
     expires_at     timestamptz,
-    project_id     text
+    project_id     text,
+    -- recovered: pulled back from fal after a stuck/vanished generation
+    -- (shows the blue badge in the asset panel).
+    recovered      boolean DEFAULT false,
+    -- refs: reference-image proxy URLs used to produce this result, so
+    -- Flow's "Reuse" can re-attach them after a reload. JSON array.
+    refs           jsonb
 );
+ALTER TABLE generation_history ADD COLUMN IF NOT EXISTS recovered boolean DEFAULT false;
+ALTER TABLE generation_history ADD COLUMN IF NOT EXISTS refs jsonb;
 
 -- Assets: project file uploads with metadata + tags (separate from the AI
 -- generation history above).
@@ -136,7 +147,20 @@ CREATE TABLE IF NOT EXISTS spend_ledger (
     id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     model_id       text NOT NULL,
     estimated_usd  numeric(10,4) NOT NULL,
-    created_at     timestamptz NOT NULL DEFAULT now()
+    created_at     timestamptz NOT NULL DEFAULT now(),
+    -- request_id: fal request id tagged after submit, so a rejected job's
+    -- reservation can be rolled back precisely.
+    request_id     text
+);
+ALTER TABLE spend_ledger ADD COLUMN IF NOT EXISTS request_id text;
+
+-- App settings: small key/value store for options editable from the
+-- Settings UI at runtime (e.g. data-retention windows), overriding env
+-- defaults without a redeploy.
+CREATE TABLE IF NOT EXISTS app_settings (
+    key         text PRIMARY KEY,
+    value       text NOT NULL,
+    updated_at  timestamptz NOT NULL DEFAULT now()
 );
 
 -- Voice ID cache: maps an audio asset's SPITE proxy URL to the
@@ -159,3 +183,5 @@ CREATE INDEX IF NOT EXISTS idx_folder_items_folder      ON asset_folder_items (f
 CREATE INDEX IF NOT EXISTS idx_sessions_expires         ON sessions (expires_at);
 CREATE INDEX IF NOT EXISTS idx_auth_attempts_ip_time    ON auth_attempts (ip, attempted_at);
 CREATE INDEX IF NOT EXISTS idx_spend_ledger_time        ON spend_ledger (created_at);
+CREATE INDEX IF NOT EXISTS idx_spend_ledger_request     ON spend_ledger (request_id);
+CREATE INDEX IF NOT EXISTS idx_genhistory_project_created ON generation_history (project_id, created_at DESC);

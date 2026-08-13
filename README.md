@@ -195,6 +195,40 @@ Set a positive number to opt in (e.g. `ASSET_RETENTION_DAYS=30`,
 
 ---
 
+## Updating
+
+SPITE tells you when a new release is out — a small **"Update vX.Y.Z"** link
+appears next to the version number in the top right (plus a one-time toast).
+
+**One-click update (recommended).** Set two env vars on your host and the
+Update button does everything — it merges the latest release into your fork on
+GitHub, and your host redeploys automatically:
+
+| Variable | Value |
+|---|---|
+| `GITHUB_UPDATE_REPO` | Your fork, e.g. `alice/SPITE` |
+| `GITHUB_UPDATE_TOKEN` | A [fine-grained personal access token](https://github.com/settings/personal-access-tokens/new) scoped to **only that fork**, with **Contents: Read and write** |
+| `GITHUB_UPDATE_BRANCH` | Optional — defaults to `main` |
+
+The token stays server-side and is only ever used to call GitHub's
+merge-upstream API on your own fork.
+
+**Manual update.** On your fork's GitHub page, click **Sync fork → Update
+branch**. Your host redeploys from the push. (Or locally:
+`git pull upstream main && git push`.)
+
+**What you don't have to do:** migrate the database. Schema changes are
+idempotent and apply themselves on first request after a deploy. Re-running
+[`database-setup.sql`](./database-setup.sql) is always safe but never required
+for updates.
+
+If your fork has local code changes that conflict with upstream, GitHub will
+ask you to resolve the merge — the in-app updater reports this instead of
+guessing. New optional env vars are listed in each
+[release's notes](https://github.com/Valiera00/SPITE/releases).
+
+---
+
 ## Project structure
 
 ```
