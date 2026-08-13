@@ -54,6 +54,13 @@ const COST_TABLE: Record<string, { unit: Unit; price: number }> = {
   'pixverse-v6':         { unit: 'video', price: 0.30 },  // unknown; estimate
   // Upscalers — flat-rate estimate covering up to ~10sec at 4x.
   'topaz-video-upscale': { unit: 'video', price: 1.00 },
+  // Depth chain — fal publishes no price on either model page, and the submit
+  // route fails closed on unknown cost, so these are deliberately HIGH
+  // placeholders: the gate stays conservative until a real bill lands. Depth
+  // estimation is pure inference (cheap); VACE is a 14B generative pass.
+  // Correct both from fal's billing page after the first run.
+  'depth-anything-video': { unit: 'video', price: 0.30 },
+  'wan-vace-depth':       { unit: 'video', price: 1.00 },
   // Image upscalers — per-image estimates (real cost is per-megapixel on fal,
   // so these are conservative gate ceilings, not exact billing).
   'topaz-image-upscale':   { unit: 'image', price: 0.08 },

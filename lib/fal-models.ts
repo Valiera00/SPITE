@@ -535,6 +535,43 @@ export const FAL_MODELS: ModelConfig[] = [
     description: 'Upscale 2x or 4x. Standard = Proteus model (fast). Creative = Starlight HQ (diffusion-based, better restoration).'
   },
 
+  // ===== DEPTH =====
+  // A two-node chain: run a clip through Depth Anything Video to get a
+  // temporally-consistent depth pass, then wire THAT into Wan VACE Depth to
+  // re-render the shot in a new style while the original camera move and scene
+  // geometry are preserved. (DepthCrafter does the same job but isn't hosted on
+  // fal — Video Depth Anything is the maintained, API-available equivalent.)
+  {
+    id: 'depth-anything-video',
+    name: 'Depth Anything Video',
+    falModel: 'fal-ai/depth-anything-video',
+    category: 'video',
+    inputTypes: ['video'],     // No prompt — it just reads the clip.
+    aspectRatios: [],          // Output inherits from input.
+    durations: [],             // Output inherits from input.
+    resolutions: ['auto', '360p', '480p', '720p', '1080p'],
+    optionalPrompt: true,
+    supportsAudio: false,
+    defaultAspectRatio: '16:9',
+    defaultResolution: 'auto',
+    description: 'Per-frame depth map video, temporally consistent. Wire a clip into video-in. Feed the result into Wan VACE Depth to restyle a shot while keeping its camera move.'
+  },
+  {
+    id: 'wan-vace-depth',
+    name: 'Wan VACE Depth',
+    falModel: 'fal-ai/wan-vace-14b/depth',
+    category: 'video',
+    inputTypes: ['text', 'video'],
+    aspectRatios: ['auto', '16:9', '1:1', '9:16'],
+    durations: ['5s', '10s', '15s'],  // mapped to num_frames at 16fps
+    resolutions: ['auto', '240p', '360p', '480p', '580p', '720p'],
+    supportsAudio: false,
+    defaultAspectRatio: 'auto',
+    defaultDuration: '5s',
+    defaultResolution: '480p',
+    description: 'Depth-conditioned video generation. Wire in a depth pass (or any video) + a prompt: the new render follows the source geometry and camera motion.'
+  },
+
   // ----- IMAGE UPSCALERS -----
   // Used inside the Image Generator node: wire an image into image-in, pick the
   // upscaler, set 2x/4x, hit Generate. No prompt needed (optionalPrompt) — the
@@ -1123,6 +1160,35 @@ export function buildModelInput(
   if (model.id === 'topaz-video-upscale') {
     input.upscale_factor = options.resolution === '4x' ? 4 : 2
     input.model = options.upscaleMode === 'creative' ? 'Starlight HQ' : 'Proteus'
+    return input
+  }
+
+  // DEPTH ANYTHING VIDEO — video_url is attached by the submit route from the
+  // connected video-in handle. No prompt. Largest model + greyscale output,
+  // since the depth pass is meant to be fed into a depth-conditioned model
+  // (a colormapped preview would corrupt the depth values).
+  if (model.id === 'depth-anything-video') {
+    input.model = 'VDA-Large'
+    input.colormap = 'grayscale'
+    if (options.resolution && options.resolution !== 'auto') {
+      input.resolution = options.resolution
+    }
+    return input
+  }
+
+  // WAN VACE DEPTH — depth-conditioned generation. video_url (the depth pass or
+  // any source clip) comes from the submit route. num_frames is derived from the
+  // duration picker at the default 16fps, clamped to fal's 81–241 range.
+  if (model.id === 'wan-vace-depth') {
+    input.prompt = prompt
+    const secs = Number(String(options.duration || '5s').replace(/[^0-9.]/g, '')) || 5
+    input.num_frames = Math.max(81, Math.min(241, Math.round(secs * 16) + 1))
+    if (options.resolution && options.resolution !== 'auto') {
+      input.resolution = options.resolution
+    }
+    if (options.aspectRatio && options.aspectRatio !== 'auto') {
+      input.aspect_ratio = options.aspectRatio
+    }
     return input
   }
 
