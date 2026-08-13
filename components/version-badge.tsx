@@ -28,8 +28,23 @@ interface UpdateInfo {
 let checkPromise: Promise<UpdateInfo | null> | null = null
 let announced = false
 
+// Test hook (mirrors ?tour=): visiting any page with `?test-update=0.1.0`
+// pretends the running build is that version, so the whole notice → toast →
+// confirm → apply chain can be exercised against real GitHub release data.
+function testVersionFromUrl(): string | null {
+  if (typeof window === 'undefined') return null
+  const v = new URLSearchParams(window.location.search).get('test-update')
+  return v && /^\d+\.\d+\.\d+$/.test(v) ? v : null
+}
+
 function fetchUpdateInfo(): Promise<UpdateInfo | null> {
-  checkPromise ??= fetch('/api/update/check')
+  const test = testVersionFromUrl()
+  const url = test ? `/api/update/check?as=${test}` : '/api/update/check'
+  if (test) {
+    // Don't cache test lookups into the normal path.
+    return fetch(url).then((r) => (r.ok ? r.json() : null)).catch(() => null)
+  }
+  checkPromise ??= fetch(url)
     .then((r) => (r.ok ? r.json() : null))
     .catch(() => null)
   return checkPromise
@@ -69,7 +84,11 @@ function useUpdateInfo(): UpdateInfo | null {
       if (cancelled || !data?.updateAvailable || !data.latest) return
       setInfo(data)
       // Announce once per page load, unless this version was dismissed.
-      const dismissed = typeof window !== 'undefined' && window.localStorage.getItem(DISMISS_KEY) === data.latest
+      // Test mode ignores dismissal so the toast can always be re-triggered.
+      const dismissed =
+        !testVersionFromUrl() &&
+        typeof window !== 'undefined' &&
+        window.localStorage.getItem(DISMISS_KEY) === data.latest
       if (!announced && !dismissed) {
         announced = true
         toast(`SPITE v${data.latest} is available`, {

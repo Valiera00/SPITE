@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 
 // Is a newer SPITE release out? Compares the running build's version against
 // the latest *published* GitHub release of the upstream repo (drafts and
@@ -24,8 +24,15 @@ function isNewer(latest: string, current: string): boolean {
   return false
 }
 
-export async function GET() {
-  const current = process.env.NEXT_PUBLIC_APP_VERSION || '0.0.0'
+export async function GET(request: NextRequest) {
+  // Test hook (mirrors ?tour=): `?as=0.1.0` pretends the running build is that
+  // version, so the notice/update flow can be exercised against the real
+  // GitHub release data without deploying an old build. Read-only, auth-gated.
+  const pretend = request.nextUrl.searchParams.get('as')
+  const current =
+    pretend && parseSemver(pretend)
+      ? pretend
+      : process.env.NEXT_PUBLIC_APP_VERSION || '0.0.0'
   try {
     const res = await fetch(`https://api.github.com/repos/${UPSTREAM_REPO}/releases/latest`, {
       headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'spite-app' },
