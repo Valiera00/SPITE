@@ -142,6 +142,10 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
   const [upscaleMode, setUpscaleMode] = useState<'standard' | 'creative'>(
     (data.upscaleMode as 'standard' | 'creative') || 'standard',
   )
+  // Depth-map colouring. Grayscale is the raw depth data and the only variant
+  // safe to feed into a depth-conditioned model; the colormaps are for when you
+  // want the depth pass itself as a visual element.
+  const [colormap, setColormap] = useState<string>((data.colormap as string) || 'grayscale')
   const [mentions, setMentions] = useState<Mention[]>((data.mentions as Mention[]) || [])
   const { folders } = useProjectFolders(projectId)
   const [modelId, setModelId] = useState((data.modelId as string) || 'seedance-1.5')
@@ -308,9 +312,9 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
   useEffect(() => {
     setNodes(ns => ns.map(n => n.id === id ? {
       ...n,
-      data: { ...n.data, prompt, modelId, duration, aspectRatio, resolution, enableAudio, enableLoop, numVideos, outputUrl, mentions, upscaleMode, voiceIds, status, error, submittedAt }
+      data: { ...n.data, prompt, modelId, duration, aspectRatio, resolution, enableAudio, enableLoop, numVideos, outputUrl, mentions, upscaleMode, colormap, voiceIds, status, error, submittedAt }
     } : n))
-  }, [prompt, modelId, duration, aspectRatio, resolution, enableAudio, enableLoop, numVideos, outputUrl, mentions, upscaleMode, voiceIds, status, error, submittedAt, id, setNodes])
+  }, [prompt, modelId, duration, aspectRatio, resolution, enableAudio, enableLoop, numVideos, outputUrl, mentions, upscaleMode, colormap, voiceIds, status, error, submittedAt, id, setNodes])
 
   // Auto-name: once a generation completes, replace the default
   // "Video Generator #N" label with the first few words of the prompt.
@@ -773,6 +777,8 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
           audioUrl: connectedAudioUrl || undefined,
           // Upscaler mode picks the Topaz model variant server-side.
           upscaleMode,
+          // Depth-map colouring (Depth Anything Video).
+          colormap,
           // Kling 2.6 voice IDs — parsed server-side into array.
           voiceIds: voiceIds.trim() || undefined,
         },
@@ -1221,6 +1227,24 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
                   { value: 'creative', label: 'Creative' },
                 ]}
                 onChange={(v) => setUpscaleMode(v as 'standard' | 'creative')}
+                disabled={isGenerating}
+              />
+            )}
+
+            {/* Depth colouring — only for the depth pass. Grayscale IS the raw
+                depth data (and the only one a depth-conditioned model can read
+                correctly); the colormaps are display-only. */}
+            {modelId === 'depth-anything-video' && (
+              <ControlSelect
+                value={colormap === 'grayscale' ? 'Grayscale (recommended)' : colormap}
+                options={[
+                  { value: 'grayscale', label: 'Grayscale (recommended)' },
+                  { value: 'turbo', label: 'Turbo' },
+                  { value: 'inferno', label: 'Inferno' },
+                  { value: 'magma', label: 'Magma' },
+                  { value: 'viridis', label: 'Viridis' },
+                ]}
+                onChange={setColormap}
                 disabled={isGenerating}
               />
             )}

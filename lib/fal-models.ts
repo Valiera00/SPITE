@@ -662,6 +662,7 @@ export function buildModelInput(
     // Topaz upscaler mode — picks which underlying Topaz model variant
     // to send. Doesn't affect any other model.
     upscaleMode?: 'standard' | 'creative'
+    colormap?: string
     // Kling 2.6 voice IDs — comma-separated string of fal-issued voice
     // IDs from the create-voice endpoint. Server splits into array;
     // max 2 used by fal even if more supplied.
@@ -1169,7 +1170,11 @@ export function buildModelInput(
   // (a colormapped preview would corrupt the depth values).
   if (model.id === 'depth-anything-video') {
     input.model = 'VDA-Large'
-    input.colormap = 'grayscale'
+    // Grayscale (the default) is the raw depth data — the only variant a
+    // depth-conditioned model downstream can read correctly. The colormaps are
+    // display-only, for when the depth pass is the deliverable itself.
+    const ALLOWED = ['grayscale', 'turbo', 'inferno', 'magma', 'viridis']
+    input.colormap = ALLOWED.includes(String(options.colormap)) ? options.colormap : 'grayscale'
     if (options.resolution && options.resolution !== 'auto') {
       input.resolution = options.resolution
     }
