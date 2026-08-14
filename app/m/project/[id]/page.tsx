@@ -191,11 +191,17 @@ export default function FlowThread() {
         // /api/generate/submit forwards fal's status + text verbatim, so 401/403
         // here is fal (bad key / exhausted balance), not our host. Show both the
         // actionable hint and fal's own words.
+        // 401 comes from EITHER our middleware (expired session — body is
+        // exactly "Unauthorized") or fal (bad key). Don't blame the key for a
+        // lapsed session.
+        const sessionExpired =
+          submitRes.status === 401 && /^unauthorized$/i.test(String(submitData.error || '').trim())
         const hint =
-          submitRes.status === 401 ? 'fal rejected the key (invalid or rotated FAL_KEY)'
+          sessionExpired ? 'Session expired — reload and log in again (your API key is fine).'
+          : submitRes.status === 401 ? 'fal rejected the key (invalid or rotated FAL_KEY)'
           : submitRes.status === 403 ? 'fal refused the request — usually an exhausted balance. Check fal.ai billing.'
           : ''
-        const msg = [hint, submitData.error].filter(Boolean).join(' — ')
+        const msg = sessionExpired ? hint : [hint, submitData.error].filter(Boolean).join(' — ')
         setError(msg || 'Submit failed'); decPending(); return
       }
       const { request_id, model: pollModel } = submitData

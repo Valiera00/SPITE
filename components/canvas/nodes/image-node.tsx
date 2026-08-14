@@ -779,12 +779,18 @@ function ImageNodeImpl({ id, data, selected }: NodeProps) {
         // (bad key / exhausted balance / model access), not our host. Guessing a
         // cause and discarding fal's text hid the real reason for ages — don't.
         const falMsg = typeof firstFail?.error === 'string' ? firstFail.error.slice(0, 300) : ''
+        // A 401 has TWO very different sources: our own middleware rejecting an
+        // expired session (body is exactly "Unauthorized"), or fal rejecting the
+        // key. Blaming the key for a lapsed session sends you off debugging the
+        // wrong system entirely — tell them apart before saying anything.
+        const sessionExpired = status === 401 && /^unauthorized$/i.test(falMsg.trim())
         const hint =
-          status === 401 ? 'fal rejected the key (invalid or rotated FAL_KEY)'
+          sessionExpired ? 'your session expired — reload the page and log in again (your API key is fine)'
+          : status === 401 ? 'fal rejected the key (invalid or rotated FAL_KEY)'
           : status === 403 ? 'fal refused the request — usually an exhausted balance or billing hold. Check fal.ai billing.'
           : status === 503 ? 'generation disabled (GENERATION_DISABLED env var)'
           : `HTTP ${status || 'error'}`
-        const reason = falMsg ? `${hint} — ${falMsg}` : hint
+        const reason = sessionExpired ? hint : falMsg ? `${hint} — ${falMsg}` : hint
         setStatus('failed')
         setError(`Failed to submit job — ${reason}`)
         return
