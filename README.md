@@ -66,6 +66,28 @@ More at **[spite.run](https://spite.run)**.
 
 ## Self-host
 
+### Fastest way — deploy to Vercel
+
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FValiera00%2FSPITE&env=DATABASE_URL%2CAPP_PASSWORD%2CFAL_KEY%2CR2_ACCOUNT_ID%2CR2_ACCESS_KEY_ID%2CR2_SECRET_ACCESS_KEY%2CR2_BUCKET_NAME&envDescription=SPITE%20needs%20a%20database%2C%20object%20storage%20and%20a%20fal.ai%20key.%20The%20guide%20shows%20where%20to%20copy%20each%20value%20from.&envLink=https%3A%2F%2Fgithub.com%2FValiera00%2FSPITE%23configure&project-name=spite&repository-name=spite)
+
+Vercel clones this repo into your own GitHub account and asks for every value in
+a form before the first build. No terminal, no editing files. Have these three
+tabs open to copy from: [Neon](https://neon.tech) (database),
+[Cloudflare R2](https://dash.cloudflare.com) (storage) and
+[fal.ai](https://fal.ai) (generation) — the [Configure](#configure) table below
+says exactly where each value lives.
+
+**Two things to do after it deploys:**
+
+1. Run [`database-setup.sql`](./database-setup.sql) in your database's SQL console.
+2. Set the [R2 CORS policy](#r2-bucket-cors-do-this-once-or-uploads-fail) — uploads fail silently without it.
+
+If anything is missing, SPITE won't boot into a broken app: it routes you to a
+`/setup` page listing exactly which values are absent and where to get them.
+
+Prefer doing it by hand, or hosting somewhere other than Vercel? The full manual
+walkthrough follows.
+
 ### Prerequisites
 
 - Node 20+ and [pnpm](https://pnpm.io/) (or npm/yarn — pnpm is what we
