@@ -247,23 +247,101 @@ export default function SetupPage() {
           })}
         </ol>
 
-        {/* where the values go */}
-        <div
-          className="w-full flex flex-col gap-2 text-[11.5px] leading-relaxed"
-          style={{ fontWeight: 300, color: 'rgba(240,237,230,0.45)' }}
-        >
-          <p className="m-0">
-            <span style={{ fontFamily: MONO, color: 'rgba(240,237,230,0.75)' }}>Local dev:</span>{' '}
-            copy <span style={{ fontFamily: MONO }}>.env.example</span> to{' '}
-            <span style={{ fontFamily: MONO }}>.env.local</span>, fill in the values, then restart{' '}
-            <span style={{ fontFamily: MONO }}>pnpm dev</span>.
-          </p>
-          <p className="m-0">
-            <span style={{ fontFamily: MONO, color: 'rgba(240,237,230,0.75)' }}>Vercel:</span>{' '}
-            Settings → Environment Variables, add each name, then redeploy. Values only take effect
-            on a fresh build.
-          </p>
-        </div>
+        {/* Where the values go. Written for someone who has never seen a
+            config file: exact filenames, the hidden-file gotcha, the exact
+            shape of a line, and the restart that everyone forgets. */}
+        {!allDone && (
+          <div className="w-full flex flex-col gap-5">
+            <p
+              className="m-0 text-[11px] uppercase"
+              style={{ fontFamily: MONO, letterSpacing: '0.2em', color: 'rgba(240,237,230,0.45)' }}
+            >
+              Where do I put these?
+            </p>
+
+            <div
+              className="rounded-xl"
+              style={{
+                padding: '16px 18px',
+                border: '1px solid rgba(255,255,255,0.07)',
+                background: 'rgba(255,255,255,0.02)',
+              }}
+            >
+              <p
+                className="m-0 mb-2.5 text-[12.5px]"
+                style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 500, color: OFF_WHITE }}
+              >
+                Running SPITE on your own computer
+              </p>
+              <ol
+                className="m-0 pl-4 flex flex-col gap-1.5 text-[11.5px] leading-relaxed"
+                style={{ fontWeight: 300, color: 'rgba(240,237,230,0.55)' }}
+              >
+                <li>
+                  Open the SPITE folder you downloaded. Find the file called{' '}
+                  <span style={{ fontFamily: MONO, color: ICE }}>.env.example</span> — it starts with
+                  a dot, so if you can&apos;t see it, turn on “show hidden files”.
+                </li>
+                <li>
+                  Make a copy of it in the same folder and rename the copy to exactly{' '}
+                  <span style={{ fontFamily: MONO, color: ICE }}>.env.local</span>
+                </li>
+                <li>Open that copy in any text editor — Notepad or TextEdit is fine.</li>
+                <li>
+                  Find the line starting with the name above and paste your value between the
+                  quotes, so it looks like{' '}
+                  <span style={{ fontFamily: MONO, color: ICE }}>FAL_KEY=&quot;your-value-here&quot;</span>.
+                  No spaces around the <span style={{ fontFamily: MONO }}>=</span>.
+                </li>
+                <li>Save the file.</li>
+                <li>
+                  Stop SPITE in the terminal (press{' '}
+                  <span style={{ fontFamily: MONO, color: ICE }}>Ctrl + C</span>) and start it again
+                  with <span style={{ fontFamily: MONO, color: ICE }}>pnpm dev</span>. It only reads
+                  the file on startup, so this step is not optional.
+                </li>
+              </ol>
+            </div>
+
+            <div
+              className="rounded-xl"
+              style={{
+                padding: '16px 18px',
+                border: '1px solid rgba(255,255,255,0.07)',
+                background: 'rgba(255,255,255,0.02)',
+              }}
+            >
+              <p
+                className="m-0 mb-2.5 text-[12.5px]"
+                style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 500, color: OFF_WHITE }}
+              >
+                Running SPITE on Vercel
+              </p>
+              <ol
+                className="m-0 pl-4 flex flex-col gap-1.5 text-[11.5px] leading-relaxed"
+                style={{ fontWeight: 300, color: 'rgba(240,237,230,0.55)' }}
+              >
+                <li>
+                  Go to <span style={{ fontFamily: MONO, color: ICE }}>vercel.com</span>, open your
+                  SPITE project, then <span style={{ color: OFF_WHITE }}>Settings → Environment
+                  Variables</span>.
+                </li>
+                <li>
+                  Click <span style={{ color: OFF_WHITE }}>Add another</span>. Put the name from
+                  above (like <span style={{ fontFamily: MONO, color: ICE }}>FAL_KEY</span>) in the
+                  Key box, and your value in the Value box. No quotes needed here.
+                </li>
+                <li>Save it, and repeat for each one listed above.</li>
+                <li>
+                  Go to the <span style={{ color: OFF_WHITE }}>Deployments</span> tab, open the
+                  newest one, click the <span style={{ fontFamily: MONO }}>···</span> menu and choose{' '}
+                  <span style={{ color: OFF_WHITE }}>Redeploy</span>. Vercel only picks up new values
+                  on a fresh build — nothing changes until you do this.
+                </li>
+              </ol>
+            </div>
+          </div>
+        )}
 
         <p
           className="text-[9.5px] text-center uppercase select-none"
