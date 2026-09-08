@@ -280,13 +280,17 @@ export default function SetupPage() {
                 <li>
                   Open the SPITE folder you downloaded. Find the file called{' '}
                   <span style={{ fontFamily: MONO, color: ICE }}>.env.example</span> — it starts with
-                  a dot, so if you can&apos;t see it, turn on “show hidden files”.
+                  a dot, so on a Mac press Cmd + Shift + . if you can&apos;t see it (Windows shows it by default).
                 </li>
                 <li>
                   Make a copy of it in the same folder and rename the copy to exactly{' '}
                   <span style={{ fontFamily: MONO, color: ICE }}>.env.local</span>
                 </li>
-                <li>Open that copy in any text editor — Notepad or TextEdit is fine.</li>
+                <li>
+                  Open that copy in a plain-text editor — Notepad on Windows. On a Mac, TextEdit works,
+                  but choose <span style={{ color: OFF_WHITE }}>Format → Make Plain Text</span> first, or it
+                  swaps your quotes for curly ones and the file won&apos;t load.
+                </li>
                 <li>
                   Find the line starting with the name above and paste your value between the
                   quotes, so it looks like{' '}

@@ -112,11 +112,27 @@ pnpm install
 
 ### Configure
 
-Copy the template and fill in real values:
+SPITE reads its settings from a file called `.env.local` in the project
+folder. Make one from the template:
 
 ```bash
 cp .env.example .env.local
 ```
+
+**Never used a terminal?** Do the same thing in your file manager:
+
+1. Open the SPITE folder. Find the file called `.env.example`. It starts with
+   a dot, so on a Mac press **Cmd + Shift + .** if you can't see it. (Windows
+   shows it by default.)
+2. Copy it, keep the copy in the same folder, and rename the copy to exactly
+   `.env.local`.
+3. Open `.env.local` in a plain-text editor. **Notepad** on Windows. On a Mac,
+   **TextEdit** works, but choose **Format → Make Plain Text** first, or it
+   swaps your quotes for curly ones and the file won't load.
+4. Each line looks like `FAL_KEY=""`. Paste your value between the quotes so it
+   reads `FAL_KEY="your-value-here"`. No spaces around the `=`.
+5. Save. SPITE only reads this file when it starts, so if it's already running,
+   stop it (**Ctrl + C** in the terminal) and start it again.
 
 Every field is required except the ones marked optional. SPITE refuses to
 boot with missing variables — it will route every request to a `/setup`
