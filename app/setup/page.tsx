@@ -165,27 +165,14 @@ export default function SetupPage() {
                   className="mt-2 text-[12.5px] leading-relaxed"
                   style={{ fontWeight: 300, color: 'rgba(240,237,230,0.6)' }}
                 >
-                  {g.blurb}{' '}
-                  {/* Name the store actually in use. When a custom endpoint is
-                      set, show it INSTEAD of the Cloudflare link — showing both
-                      reads as "which one is it?", the exact confusion this is
-                      meant to prevent. */}
-                  {g.title === 'Storage' && storage.custom ? (
+                  {g.blurb}
+                  {/* Name the store actually in use. Showing both this and the
+                      Cloudflare link would read as "so which is it?" — the exact
+                      confusion this line exists to prevent. */}
+                  {g.title === 'Storage' && storage.custom && (
                     <span style={{ color: 'rgba(240,237,230,0.4)' }}>
-                      Using <span style={{ fontFamily: MONO, color: ICE }}>{storage.label}</span>
+                      {' '}Using <span style={{ fontFamily: MONO, color: ICE }}>{storage.label}</span>
                     </span>
-                  ) : g.linkUrl ? (
-                    <a
-                      href={g.linkUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="underline underline-offset-2"
-                      style={{ color: ICE }}
-                    >
-                      {g.linkLabel}
-                    </a>
-                  ) : (
-                    <span style={{ color: 'rgba(240,237,230,0.4)' }}>— {g.linkLabel}</span>
                   )}
                 </p>
 
@@ -205,6 +192,32 @@ export default function SetupPage() {
                         </span>
                       </div>
                     ))}
+
+                    {/* Only on steps you still have to act on — a finished step
+                        doesn't need to send you anywhere. Opens in a new tab so
+                        nobody loses this page mid-setup. */}
+                    {g.linkUrl && !(g.title === 'Storage' && storage.custom) && (
+                      <a
+                        href={g.linkUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center self-start gap-1.5 mt-1.5 rounded-lg"
+                        style={{
+                          padding: '7px 13px',
+                          border: `1px solid rgba(107,143,168,0.35)`,
+                          background: 'rgba(107,143,168,0.09)',
+                          color: ICE,
+                          fontSize: 11.5,
+                          fontWeight: 500,
+                          letterSpacing: '0.01em',
+                        }}
+                      >
+                        Open {g.linkLabel}
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <path d="M7 17 17 7M9 7h8v8" />
+                        </svg>
+                      </a>
+                    )}
                   </div>
                 )}
               </li>

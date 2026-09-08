@@ -186,8 +186,17 @@ in.
 
 ### Other storage providers
 
-Cloudflare R2 is the default, and the only path the setup page walks you through.
-To use MinIO, Backblaze B2 or AWS S3 instead, set one extra variable:
+**Most people should skip this section.** Cloudflare R2 is the default, it's the
+path the setup page walks you through, and it's the one that gets tested. If you
+followed the steps above, you're already done.
+
+This is for people who'd rather keep their files somewhere else — MinIO,
+Backblaze B2, AWS S3. It assumes you're comfortable creating S3 credentials and
+writing a CORS policy yourself, because the setup page won't hold your hand
+through this part. If that sentence sounds like work, stay on R2: it's free for
+this kind of use and everything is written for it.
+
+To point SPITE at another S3-compatible store, set one extra variable:
 
 | Variable | Effect |
 |---|---|
@@ -198,8 +207,14 @@ To use MinIO, Backblaze B2 or AWS S3 instead, set one extra variable:
 and still apply — they are ordinary S3 credentials.
 
 Leave `S3_ENDPOINT` unset and nothing changes: SPITE talks to R2 exactly as it
-always has. This route is less travelled than the R2 one, so if you hit a rough
-edge, please open an issue.
+always has.
+
+Being straight about how well-trodden this is: the wiring is verified — set a
+custom endpoint and SPITE stops asking for `R2_ACCOUNT_ID` and points the S3
+client where you tell it. But it has **not** been run end-to-end against every
+provider, and each one has its own quirks (AWS needs a real `S3_REGION`, most
+need their own CORS syntax). Expect a little debugging, and please open an issue
+if you hit something — that's how this path gets better.
 
 ## Deploy
 

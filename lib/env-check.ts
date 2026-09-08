@@ -74,15 +74,19 @@ export const ENV_GROUPS: EnvGroup[] = [
     title: 'Database',
     blurb: 'Stores your projects, canvases and asset records.',
     vars: ['DATABASE_URL'],
-    linkLabel: 'neon.tech',
-    linkUrl: 'https://neon.tech',
+    // the console, not the marketing site — this is where the
+    // connection string actually lives
+    linkLabel: 'Neon console',
+    linkUrl: 'https://console.neon.tech/',
   },
   {
     title: 'Storage',
     blurb: 'Holds the images and video you generate. Yours, not ours.',
     vars: ['R2_ACCOUNT_ID', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET_NAME'],
-    linkLabel: 'Cloudflare R2',
-    linkUrl: 'https://dash.cloudflare.com',
+    // ?to= survives the login redirect, dropping you straight on the R2
+    // API-tokens screen instead of the dashboard home
+    linkLabel: 'Cloudflare R2 tokens',
+    linkUrl: 'https://dash.cloudflare.com/?to=/:account/r2/api-tokens',
   },
   {
     title: 'Generation',
