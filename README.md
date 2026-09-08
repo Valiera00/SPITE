@@ -70,9 +70,15 @@ More at **[spite.run](https://spite.run)**.
 
 - Node 20+ and [pnpm](https://pnpm.io/) (or npm/yarn — pnpm is what we
   develop against)
-- A free [Neon](https://neon.tech) account (Postgres)
-- A [Cloudflare](https://dash.cloudflare.com) account with R2 enabled
-  (S3-compatible storage; free tier covers most personal use)
+- **Any PostgreSQL database.** `DATABASE_URL` is a standard
+  `postgresql://` connection string and [`database-setup.sql`](./database-setup.sql)
+  is plain SQL, so Supabase, RDS, Docker or a local Postgres all work.
+  [Neon](https://neon.tech)'s free tier is simply what we develop against.
+- **S3-compatible object storage.** Today the endpoint is built for
+  [Cloudflare R2](https://dash.cloudflare.com) (free tier covers most personal
+  use). The storage layer is the standard AWS S3 SDK, so support for other
+  S3-compatible providers (MinIO, Backblaze B2, S3) is a small change to
+  `lib/r2-upload.ts` — PRs welcome.
 - A [fal.ai](https://fal.ai) account with a funded key (the generation
   provider — you pay them directly per generation)
 
@@ -109,7 +115,8 @@ Where to find each value:
 
 ### Database
 
-Open your Neon project's SQL editor and paste the contents of
+Open your database's SQL console — Neon's SQL editor, `psql`, TablePlus,
+whatever you use — and paste the contents of
 [`database-setup.sql`](./database-setup.sql). Hit Run. The script is
 idempotent — re-running it is safe and won't touch existing data.
 
@@ -157,7 +164,14 @@ in.
 
 ---
 
-## Deploy to Vercel
+## Deploy
+
+SPITE is a standard [Next.js](https://nextjs.org) app: anywhere Node 20+ runs
+will host it — a VPS, a container, your own box. Vercel is just the path with
+the least setup, and the one below is written out because it's what most people
+pick.
+
+### Vercel
 
 1. Push your fork to GitHub.
 2. Import the repo on [vercel.com/new](https://vercel.com/new).
