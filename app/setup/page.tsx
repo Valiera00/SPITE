@@ -166,7 +166,15 @@ export default function SetupPage() {
                   style={{ fontWeight: 300, color: 'rgba(240,237,230,0.6)' }}
                 >
                   {g.blurb}{' '}
-                  {g.linkUrl ? (
+                  {/* Name the store actually in use. When a custom endpoint is
+                      set, show it INSTEAD of the Cloudflare link — showing both
+                      reads as "which one is it?", the exact confusion this is
+                      meant to prevent. */}
+                  {g.title === 'Storage' && storage.custom ? (
+                    <span style={{ color: 'rgba(240,237,230,0.4)' }}>
+                      Using <span style={{ fontFamily: MONO, color: ICE }}>{storage.label}</span>
+                    </span>
+                  ) : g.linkUrl ? (
                     <a
                       href={g.linkUrl}
                       target="_blank"
@@ -178,13 +186,6 @@ export default function SetupPage() {
                     </a>
                   ) : (
                     <span style={{ color: 'rgba(240,237,230,0.4)' }}>— {g.linkLabel}</span>
-                  )}
-                  {/* be explicit about which store is in use, so a custom
-                      endpoint never silently sends files somewhere unexpected */}
-                  {g.title === 'Storage' && storage.custom && (
-                    <span style={{ color: 'rgba(240,237,230,0.4)' }}>
-                      {' '}· using <span style={{ fontFamily: MONO, color: ICE }}>{storage.label}</span>
-                    </span>
                   )}
                 </p>
 
