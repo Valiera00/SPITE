@@ -40,3 +40,48 @@ export const ENV_VAR_HINTS: Record<RequiredEnvVar, string> = {
   R2_SECRET_ACCESS_KEY: 'Cloudflare R2 secret key — issued alongside the access key above',
   R2_BUCKET_NAME: 'The name of the R2 bucket you created for SPITE',
 }
+
+// Presentational grouping for the setup page. Purely additive — the boot
+// check above is unchanged. Grouping by service means a new self-hoster
+// works through four short errands ("get a database", "make a bucket")
+// instead of staring at seven unrelated variable names.
+export interface EnvGroup {
+  title: string
+  /** what this group is for, in one plain-English line */
+  blurb: string
+  vars: RequiredEnvVar[]
+  /** where to go to obtain these values */
+  linkLabel: string
+  linkUrl: string
+}
+
+export const ENV_GROUPS: EnvGroup[] = [
+  {
+    title: 'Database',
+    blurb: 'Stores your projects, canvases and asset records.',
+    vars: ['DATABASE_URL'],
+    linkLabel: 'neon.tech',
+    linkUrl: 'https://neon.tech',
+  },
+  {
+    title: 'Storage',
+    blurb: 'Holds the images and video you generate. Yours, not ours.',
+    vars: ['R2_ACCOUNT_ID', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET_NAME'],
+    linkLabel: 'Cloudflare R2',
+    linkUrl: 'https://dash.cloudflare.com',
+  },
+  {
+    title: 'Generation',
+    blurb: 'The models. You pay fal directly for what you generate.',
+    vars: ['FAL_KEY'],
+    linkLabel: 'fal.ai keys',
+    linkUrl: 'https://fal.ai/dashboard/keys',
+  },
+  {
+    title: 'Your login',
+    blurb: 'The password that keeps the internet out of your canvas.',
+    vars: ['APP_PASSWORD'],
+    linkLabel: 'pick anything strong',
+    linkUrl: '',
+  },
+]
