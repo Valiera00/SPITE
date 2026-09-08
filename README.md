@@ -96,11 +96,9 @@ walkthrough follows.
   `postgresql://` connection string and [`database-setup.sql`](./database-setup.sql)
   is plain SQL, so Supabase, RDS, Docker or a local Postgres all work.
   [Neon](https://neon.tech)'s free tier is simply what we develop against.
-- **S3-compatible object storage.** Today the endpoint is built for
-  [Cloudflare R2](https://dash.cloudflare.com) (free tier covers most personal
-  use). The storage layer is the standard AWS S3 SDK, so support for other
-  S3-compatible providers (MinIO, Backblaze B2, S3) is a small change to
-  `lib/r2-upload.ts` — PRs welcome.
+- **S3-compatible object storage.** [Cloudflare R2](https://dash.cloudflare.com)
+  by default (free tier covers most personal use). MinIO, Backblaze B2 and AWS S3
+  work too — see [Other storage providers](#other-storage-providers).
 - A [fal.ai](https://fal.ai) account with a funded key (the generation
   provider — you pay them directly per generation)
 
@@ -185,6 +183,23 @@ Open `http://localhost:3000`, type the `APP_PASSWORD` you set, and you're
 in.
 
 ---
+
+### Other storage providers
+
+Cloudflare R2 is the default, and the only path the setup page walks you through.
+To use MinIO, Backblaze B2 or AWS S3 instead, set one extra variable:
+
+| Variable | Effect |
+|---|---|
+| `S3_ENDPOINT` | Any S3-compatible endpoint, e.g. `https://s3.us-west-002.backblazeb2.com`. Replaces the Cloudflare URL, and `R2_ACCOUNT_ID` is then ignored and no longer required. |
+| `S3_REGION` | Only for providers that need a real region (AWS S3). Defaults to `auto`, which is what R2 expects. |
+
+`R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` and `R2_BUCKET_NAME` keep their names
+and still apply — they are ordinary S3 credentials.
+
+Leave `S3_ENDPOINT` unset and nothing changes: SPITE talks to R2 exactly as it
+always has. This route is less travelled than the R2 one, so if you hit a rough
+edge, please open an issue.
 
 ## Deploy
 

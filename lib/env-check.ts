@@ -22,10 +22,24 @@ export interface EnvCheckResult {
 }
 
 export function checkRequiredEnv(): EnvCheckResult {
-  const missing = REQUIRED_ENV_VARS.filter(
-    (key) => !process.env[key]?.trim(),
-  )
+  // R2_ACCOUNT_ID exists only to build Cloudflare's endpoint URL. If a
+  // custom S3_ENDPOINT is supplied it replaces that entirely, so stop
+  // demanding it — otherwise anyone using MinIO/B2 would be stuck on the
+  // setup page forever with no way to satisfy it.
+  const customEndpoint = !!process.env.S3_ENDPOINT?.trim()
+  const missing = REQUIRED_ENV_VARS.filter((key) => {
+    if (key === 'R2_ACCOUNT_ID' && customEndpoint) return false
+    return !process.env[key]?.trim()
+  })
   return { ok: missing.length === 0, missing }
+}
+
+/** Which object store this install is talking to, for display on /setup. */
+export function storageTarget(): { label: string; custom: boolean } {
+  const custom = process.env.S3_ENDPOINT?.trim()
+  return custom
+    ? { label: custom.replace(/^https?:\/\//, ''), custom: true }
+    : { label: 'Cloudflare R2', custom: false }
 }
 
 // Human-friendly explanation for each variable. Surfaced on the setup

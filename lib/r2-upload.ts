@@ -13,12 +13,18 @@ import crypto from 'crypto'
 // from getDb() / getR2Client() instead of a cryptic crash at import.
 export function getR2Client(): S3Client {
   return new S3Client({
-    region: 'auto',
+    // R2 wants 'auto'; real AWS S3 wants a real region.
+    region: process.env.S3_REGION?.trim() || 'auto',
     credentials: {
       accessKeyId: process.env.R2_ACCESS_KEY_ID!,
       secretAccessKey: process.env.R2_SECRET_ACCESS_KEY!,
     },
-    endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+    // Cloudflare R2 by default. Setting S3_ENDPOINT points SPITE at any
+    // other S3-compatible store (MinIO, Backblaze B2, AWS S3) instead —
+    // leave it unset and nothing about this changes.
+    endpoint:
+      process.env.S3_ENDPOINT?.trim() ||
+      `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
     // Stop the SDK injecting x-amz-checksum-mode into presigned URLs — it
     // breaks fetches of those URLs on R2 (and intermittently on fal.ai).
     requestChecksumCalculation: 'WHEN_REQUIRED',
