@@ -55,9 +55,31 @@ export default function SetupPage() {
             style={{ color: 'rgba(240,237,230,0.62)', maxWidth: '46ch' }}
           >
             {allDone
-              ? 'Everything is configured. Restart the server so the new values are picked up.'
+              ? 'Everything is connected. If you just added these values, restart the server (or redeploy) so they take effect.'
               : 'SPITE runs on your own accounts, so it needs a few connections before it will start. Grab each value and paste it into your environment.'}
           </p>
+
+          {allDone && (
+            <a
+              href="/"
+              className="inline-flex items-center justify-center gap-2 mt-7 rounded-xl w-full"
+              style={{
+                padding: '15px 22px',
+                background: `linear-gradient(120deg, #cfe4f2, ${ICE})`,
+                color: '#07121b',
+                fontFamily: 'var(--font-montserrat)',
+                fontWeight: 600,
+                fontSize: 15,
+                letterSpacing: '-0.01em',
+                boxShadow: '0 10px 34px rgba(107,143,168,0.28)',
+              }}
+            >
+              Open SPITE
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M4 12h15m0 0-6-6m6 6-6 6" />
+              </svg>
+            </a>
+          )}
 
           <div className="w-full mt-6" aria-hidden="true">
             <div
