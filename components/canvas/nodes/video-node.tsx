@@ -735,7 +735,7 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
     const wiredGroups = connectedReferenceUrls.map((url) => ({ urls: [url] }))
     const referenceGroups = [...wiredGroups, ...compiled.refGroups]
 
-    // Models whose references go to a SEPARATE endpoint (Seedance 2.0's
+    // Models whose references go to a SEPARATE endpoint (Seedance 2.0/2.5's
     // reference-to-video) cannot also take a first/end frame — fal's
     // image-to-video and reference-to-video endpoints are mutually exclusive,
     // neither accepts the other's inputs. The server would silently route to

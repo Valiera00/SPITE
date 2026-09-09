@@ -162,7 +162,7 @@ export async function POST(request: NextRequest) {
   const refsSigned: string[] = refGroupsSigned.flatMap((g) => g.urls)
 
   // Reference images use a different endpoint/param per model:
-  //  - Models with `referenceParam` (Seedance 2.0, Kling v3, Kling o1/1.6,
+  //  - Models with `referenceParam` (Seedance 2.0/2.5, Kling v3, Kling o1/1.6,
   //    MiniMax) carry refs in a dedicated field; some of those have a
   //    `referenceModel` endpoint that does NOT accept first/end frames.
   //  - Models WITHOUT `referenceParam` (Nano Banana, FLUX Dev) reuse their

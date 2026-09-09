@@ -25,6 +25,11 @@ const COST_TABLE: Record<string, { unit: Unit; price: number }> = {
   // Video models
   'seedance-1.5':        { unit: 'video', price: 4.50 },  // ~5sec 720p — same tier as 2.0
   'seedance-2.0':        { unit: 'video', price: 4.50 },  // ~5sec 720p Seedance
+  // Seedance 2.5 is billed per second: $0.2205/s at 480p, $0.473/s at
+  // 720p, $1.164/s at 1080p (fal, Sept 2026). Clips run up to 30s, so a
+  // flat per-video number would be wildly wrong at either end. $0.50/s is
+  // the 720p default rounded up; 1080p runs will be under-estimated.
+  'seedance-2.5':        { unit: 'sec',   price: 0.50 },
   'kling-1.0':           { unit: 'video', price: 0.50 },
   'kling-1.5':           { unit: 'video', price: 0.50 },
   'kling-1.6':           { unit: 'video', price: 0.50 },

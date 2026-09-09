@@ -193,6 +193,30 @@ export const FAL_MODELS: ModelConfig[] = [
     defaultResolution: '720p',
     description: 'Native audio, multi-shot editing, 4-15s'
   },
+
+  {
+    id: 'seedance-2.5',
+    name: 'Seedance 2.5',
+    // Endpoint IDs verified against fal's OpenAPI (Sept 2026). Same three
+    // modes as 2.0; the /pro/ variants fal lists are empty placeholders.
+    falModel: 'bytedance/seedance-2.5/text-to-video',
+    editModel: 'bytedance/seedance-2.5/image-to-video',
+    referenceModel: 'bytedance/seedance-2.5/reference-to-video',
+    referenceParam: 'image_urls',
+    referenceCite: '@Image',
+    category: 'video',
+    inputTypes: ['text', 'image'],
+    aspectRatios: ['auto', '21:9', '16:9', '4:3', '1:1', '3:4', '9:16'],
+    // fal accepts every whole second from 4 to 30 (plus auto). The list is
+    // stepped past 15s so the dropdown stays usable.
+    durations: ['auto', '4s', '5s', '6s', '7s', '8s', '9s', '10s', '11s', '12s', '13s', '14s', '15s', '18s', '20s', '24s', '25s', '30s'],
+    resolutions: ['480p', '720p', '1080p'],
+    supportsAudio: true,
+    defaultAspectRatio: '16:9',
+    defaultDuration: '5s',
+    defaultResolution: '720p',
+    description: 'Native audio, single-shot up to 30s, 50 multimodal refs'
+  },
   
   {
     id: 'kling-1.0',
@@ -863,8 +887,8 @@ export function buildModelInput(
     return input
   }
 
-  // SEEDANCE 2.0 model
-  if (model.id === 'seedance-2.0') {
+  // SEEDANCE 2.0 / 2.5 — identical input schema (2.5 just allows up to 30s)
+  if (model.id === 'seedance-2.0' || model.id === 'seedance-2.5') {
     input.prompt = prompt
     // aspect_ratio can be "auto" or specific ratio
     if (options.aspectRatio && model.aspectRatios.includes(options.aspectRatio)) {
