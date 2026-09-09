@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { checkRequiredEnv } from '@/lib/env-check'
+import { isSchemaReady } from '@/lib/db-schema'
 import { SESSION_COOKIE_NAME, isSessionValid } from '@/lib/sessions'
 
 // Paths that must stay reachable without a login cookie.
@@ -40,7 +41,23 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL('/setup', request.url))
   }
 
-  // Second gate: validate the session token against the sessions table.
+  // Second gate: the database must have its tables. On a working install
+  // this is a cached boolean and costs nothing. On a fresh install it sends
+  // people to /setup, which creates the tables and lets them through.
+  if (!(await isSchemaReady())) {
+    if (pathname === '/setup' || pathname.startsWith('/_next/')) {
+      return NextResponse.next()
+    }
+    if (pathname.startsWith('/api/')) {
+      return NextResponse.json(
+        { error: 'Setup required', missing: ['database tables'] },
+        { status: 503 },
+      )
+    }
+    return NextResponse.redirect(new URL('/setup', request.url))
+  }
+
+  // Third gate: validate the session token against the sessions table.
   // The cookie value is now a random 256-bit token, not a static
   // string, so a captured cookie can be invalidated server-side by
   // logout / expiry.

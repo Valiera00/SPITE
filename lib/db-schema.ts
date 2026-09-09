@@ -1,3 +1,13 @@
+import { getDb } from './db'
+
+// The core schema, embedded so the app can create its own tables on a fresh
+// install. Verbatim copy of database-setup.sql: that file stays the
+// human-facing source (paste it into a SQL console); this is the runtime copy.
+// `pnpm check:schema` fails if the two drift.
+//
+// Edge-safe on purpose: no Node APIs, so the readiness check below can run
+// from middleware, same as lib/sessions.ts does.
+export const CORE_SCHEMA_SQL = String.raw`
 -- NOTE: SPITE runs this file automatically the first time it starts (see
 -- lib/db-schema.ts, which holds a verbatim copy). Keep the two in sync -
 -- pnpm check:schema fails if they drift. Running this by hand in a SQL
@@ -190,3 +200,72 @@ CREATE INDEX IF NOT EXISTS idx_auth_attempts_ip_time    ON auth_attempts (ip, at
 CREATE INDEX IF NOT EXISTS idx_spend_ledger_time        ON spend_ledger (created_at);
 CREATE INDEX IF NOT EXISTS idx_spend_ledger_request     ON spend_ledger (request_id);
 CREATE INDEX IF NOT EXISTS idx_genhistory_project_created ON generation_history (project_id, created_at DESC);
+`
+
+// Split into individual statements. The file is plain CREATE / ALTER with no
+// functions or dollar-quoting, so ';' is a safe delimiter once comments are
+// stripped (a comment could otherwise contain a stray ';').
+export function splitStatements(sql: string): string[] {
+  return sql
+    .replace(/--[^\n]*/g, '')
+    .split(';')
+    .map((s) => s.trim())
+    .filter(Boolean)
+}
+
+type Probe = 'ready' | 'missing' | 'error'
+
+// Cached on the warm worker once the tables are known to exist. They don't
+// disappear, so a working install pays for exactly one tiny query, ever.
+let known = false
+
+async function probe(): Promise<{ state: Probe; error?: string }> {
+  if (known) return { state: 'ready' }
+  try {
+    const sql = getDb()
+    const rows = (await sql`SELECT to_regclass('public.projects') AS t`) as Array<{ t: string | null }>
+    if (rows[0]?.t != null) {
+      known = true
+      return { state: 'ready' }
+    }
+    return { state: 'missing' }
+  } catch (err) {
+    return { state: 'error', error: err instanceof Error ? err.message : String(err) }
+  }
+}
+
+// For middleware. Only a definite "the tables are missing" blocks the app.
+// If the check itself fails (network blip, database briefly unreachable) the
+// request goes through - better than taking a working install down over a
+// hiccup; the app's own error handling will surface a real outage.
+export async function isSchemaReady(): Promise<boolean> {
+  const { state } = await probe()
+  return state !== 'missing'
+}
+
+export type EnsureResult =
+  | { ok: true; created: boolean }
+  | { ok: false; error: string }
+
+// For the setup page. Creates the tables on a fresh install. Every statement
+// is IF NOT EXISTS, so re-running is harmless and two requests racing on a
+// cold start can't hurt each other.
+export async function ensureCoreSchema(): Promise<EnsureResult> {
+  const first = await probe()
+  if (first.state === 'ready') return { ok: true, created: false }
+  if (first.state === 'error') {
+    return { ok: false, error: `Could not reach the database: ${first.error}` }
+  }
+  try {
+    const sql = getDb()
+    for (const stmt of splitStatements(CORE_SCHEMA_SQL)) {
+      await sql.query(stmt)
+    }
+    known = true
+    return { ok: true, created: true }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error('[schema] automatic setup failed:', msg)
+    return { ok: false, error: msg }
+  }
+}

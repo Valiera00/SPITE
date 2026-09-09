@@ -77,13 +77,14 @@ tabs open to copy from: [Neon](https://neon.tech) (database),
 [fal.ai](https://fal.ai) (generation) — the [Configure](#configure) table below
 says exactly where each value lives.
 
-**Two things to do after it deploys:**
-
-1. Run [`database-setup.sql`](./database-setup.sql) in your database's SQL console.
-2. Set the [R2 CORS policy](#r2-bucket-cors-do-this-once-or-uploads-fail) — uploads fail silently without it.
+**One thing to do after it deploys:** set the
+[R2 CORS policy](#r2-bucket-cors-do-this-once-or-uploads-fail) — uploads fail
+silently without it. (The database sets itself up the first time the app
+starts, so there's nothing to run by hand.)
 
 If anything is missing, SPITE won't boot into a broken app: it routes you to a
-`/setup` page listing exactly which values are absent and where to get them.
+`/setup` page that tells you exactly what's absent and where to get it — and
+creates the database tables for you along the way.
 
 Prefer doing it by hand, or hosting somewhere other than Vercel? The full manual
 walkthrough follows.
@@ -151,10 +152,15 @@ Where to find each value:
 
 ### Database
 
-Open your database's SQL console — Neon's SQL editor, `psql`, TablePlus,
-whatever you use — and paste the contents of
-[`database-setup.sql`](./database-setup.sql). Hit Run. The script is
-idempotent — re-running it is safe and won't touch existing data.
+**SPITE sets up its own tables the first time it starts.** There's nothing to
+run here: open the app, and if the tables aren't there yet it creates them and
+shows you a "Ready to go" screen.
+
+If it can't — a few hosting setups don't let the app create tables — the setup
+page says so and points you here. In that case, open your database's SQL
+console (Neon's SQL editor, `psql`, TablePlus, whatever you use), paste in the
+contents of [`database-setup.sql`](./database-setup.sql) and hit Run. The
+script is idempotent: re-running it is safe and won't touch existing data.
 
 ### R2 bucket CORS (do this once, or uploads fail)
 

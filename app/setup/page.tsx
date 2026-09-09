@@ -4,6 +4,7 @@ import {
   ENV_GROUPS,
   storageTarget,
 } from '@/lib/env-check'
+import { ensureCoreSchema } from '@/lib/db-schema'
 
 // Server component: re-evaluates env vars on every request, so as soon
 // as the missing variables are filled in (and the server is restarted
@@ -15,19 +16,26 @@ const OFF_WHITE = '#F0EDE6'
 const BG = '#07090b'
 const MONO = 'ui-monospace, Menlo, Consolas, monospace'
 
-export default function SetupPage() {
+export default async function SetupPage() {
   const { missing } = checkRequiredEnv()
   const missingSet = new Set<string>(missing)
   const storage = storageTarget()
+
+  // With a database URL in hand, make sure the tables exist - creating them
+  // on a fresh install. Nothing runs if they're already there.
+  const schema = missingSet.has('DATABASE_URL') ? null : await ensureCoreSchema()
+  const schemaOk = schema?.ok === true
 
   // Group-level progress. Four short errands reads far better than seven
   // loose variable names to someone who has never seen an env file.
   const groups = ENV_GROUPS.map((g) => {
     const absent = g.vars.filter((v) => missingSet.has(v))
-    return { ...g, absent, done: absent.length === 0 }
+    // Database only counts as connected once its tables actually exist.
+    const done = absent.length === 0 && (g.title !== 'Database' || schemaOk)
+    return { ...g, absent, done }
   })
   const doneCount = groups.filter((g) => g.done).length
-  const allDone = missing.length === 0
+  const allDone = missing.length === 0 && schemaOk
   const currentIndex = groups.findIndex((g) => !g.done)
 
   return (
@@ -58,6 +66,14 @@ export default function SetupPage() {
               ? 'Everything is connected. If you just added these values, restart the server (or redeploy) so they take effect.'
               : 'SPITE runs on your own accounts, so it needs a few connections before it will start. Grab each value and paste it into your environment.'}
           </p>
+          {schema?.ok && schema.created && (
+            <p
+              className="m-0 mt-2.5 text-[10px] uppercase"
+              style={{ fontFamily: MONO, letterSpacing: '0.18em', color: ICE }}
+            >
+              Database tables created just now
+            </p>
+          )}
 
           {allDone && (
             <a
@@ -179,7 +195,7 @@ export default function SetupPage() {
                       color: g.done ? ICE : 'rgba(240,237,230,0.38)',
                     }}
                   >
-                    {g.done ? 'connected' : `${g.absent.length} missing`}
+                    {g.done ? 'connected' : g.absent.length ? `${g.absent.length} missing` : 'needs setup'}
                   </span>
                 </div>
 
@@ -240,6 +256,72 @@ export default function SetupPage() {
                         </svg>
                       </a>
                     )}
+                  </div>
+                )}
+
+                {/* The database URL works but the tables don't exist and the
+                    automatic setup couldn't create them (some hosts forbid
+                    it). Say so plainly and hand over the manual route. */}
+                {g.title === 'Database' && g.absent.length === 0 && schema && !schema.ok && (
+                  <div
+                    className="mt-3.5 pt-3.5 flex flex-col gap-3"
+                    style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}
+                  >
+                    <div
+                      className="rounded-lg"
+                      style={{
+                        padding: '12px 14px',
+                        border: '1px solid rgba(139,32,32,0.55)',
+                        background: 'rgba(139,32,32,0.10)',
+                      }}
+                    >
+                      <p
+                        className="m-0 text-[12.5px]"
+                        style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 500, color: '#E3A3A3' }}
+                      >
+                        Connected, but the tables aren&apos;t set up yet
+                      </p>
+                      <p
+                        className="m-0 mt-1 text-[11.5px] leading-relaxed"
+                        style={{ fontWeight: 300, color: 'rgba(240,237,230,0.6)' }}
+                      >
+                        SPITE tried to create them for you and couldn&apos;t. {schema.error}
+                      </p>
+                    </div>
+                    <ol
+                      className="m-0 pl-4 flex flex-col gap-1.5 text-[11.5px] leading-relaxed"
+                      style={{ fontWeight: 300, color: 'rgba(240,237,230,0.55)' }}
+                    >
+                      <li>
+                        Open your database&apos;s SQL console. On Neon that&apos;s your project →{' '}
+                        <span style={{ color: OFF_WHITE }}>SQL Editor</span>.
+                      </li>
+                      <li>
+                        Open <span style={{ fontFamily: MONO, color: ICE }}>database-setup.sql</span> from
+                        the SPITE folder, copy everything in it, paste it into the console and press{' '}
+                        <span style={{ color: OFF_WHITE }}>Run</span>. It&apos;s safe to run more than once.
+                      </li>
+                      <li>Come back here and refresh.</li>
+                    </ol>
+                    <a
+                      href="https://console.neon.tech/"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center self-start gap-1.5 rounded-lg"
+                      style={{
+                        padding: '7px 13px',
+                        border: '1px solid rgba(107,143,168,0.35)',
+                        background: 'rgba(107,143,168,0.09)',
+                        color: ICE,
+                        fontSize: 11.5,
+                        fontWeight: 500,
+                      }}
+                    >
+                      Open Neon console
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <path d="M7 17 17 7M9 7h8v8" />
+                      </svg>
+                    </a>
                   </div>
                 )}
               </li>

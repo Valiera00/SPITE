@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
+    "check:schema": "node scripts/check-schema-sync.mjs",
     "release": "node scripts/release.mjs"
   },
   "dependencies": {
