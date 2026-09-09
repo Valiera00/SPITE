@@ -2,7 +2,7 @@
 
 import { Position, NodeProps, Handle, useReactFlow, useUpdateNodeInternals } from '@xyflow/react'
 import { useParams } from 'next/navigation'
-import { Play, CaretDown, SpeakerHigh, SpeakerSlash, TextT, Image as ImageIcon, FilmStrip, CircleNotch, X, Check, ArrowsClockwise, Minus, Plus } from '@phosphor-icons/react'
+import { Play, CaretDown, SpeakerHigh, SpeakerSlash, Waveform, TextT, Image as ImageIcon, FilmStrip, CircleNotch, X, Check, ArrowsClockwise, Minus, Plus } from '@phosphor-icons/react'
 import { memo, useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { toast } from 'sonner'
 import { NodeActionToolbar } from './node-toolbar'
@@ -152,7 +152,13 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
   const [duration, setDuration] = useState((data.duration as string) || '')
   const [aspectRatio, setAspectRatio] = useState((data.aspectRatio as string) || '')
   const [resolution, setResolution] = useState((data.resolution as string) || '')
+  // Two separate things that used to be one button:
+  //  - enableAudio: ask the MODEL to generate sound (sent to fal, affects
+  //    the output file and on some models the price).
+  //  - muted: silence the PREVIEW player on the canvas. Playback only,
+  //    never sent anywhere.
   const [enableAudio, setEnableAudio] = useState((data.enableAudio as boolean) || false)
+  const [muted, setMuted] = useState((data.muted as boolean) || false)
   const [enableLoop, setEnableLoop] = useState((data.enableLoop as boolean) || false)
   // Kling 2.6 voice IDs — up to 2, comma-separated in the input box.
   // User pastes IDs they generated from fal's create-voice endpoint;
@@ -314,9 +320,9 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
   useEffect(() => {
     setNodes(ns => ns.map(n => n.id === id ? {
       ...n,
-      data: { ...n.data, prompt, modelId, duration, aspectRatio, resolution, enableAudio, enableLoop, numVideos, outputUrl, mentions, upscaleMode, colormap, voiceIds, status, error, submittedAt }
+      data: { ...n.data, prompt, modelId, duration, aspectRatio, resolution, enableAudio, muted, enableLoop, numVideos, outputUrl, mentions, upscaleMode, colormap, voiceIds, status, error, submittedAt }
     } : n))
-  }, [prompt, modelId, duration, aspectRatio, resolution, enableAudio, enableLoop, numVideos, outputUrl, mentions, upscaleMode, colormap, voiceIds, status, error, submittedAt, id, setNodes])
+  }, [prompt, modelId, duration, aspectRatio, resolution, enableAudio, muted, enableLoop, numVideos, outputUrl, mentions, upscaleMode, colormap, voiceIds, status, error, submittedAt, id, setNodes])
 
   // Auto-name: once a generation completes, replace the default
   // "Video Generator #N" label with the first few words of the prompt.
@@ -1001,6 +1007,7 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
         open={lightboxOpen}
         url={outputUrl}
         type="video"
+        muted={muted}
         onClose={() => setLightboxOpen(false)}
       />
 
@@ -1115,7 +1122,7 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
               src={outputUrl}
               controls
               loop={enableLoop}
-              muted={!enableAudio}
+              muted={muted}
               preload="metadata"
               controlsList="nofullscreen"
               onDoubleClick={(e) => {
@@ -1287,7 +1294,8 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
               />
             )}
             
-            {/* Audio toggle - only if model supports audio generation */}
+            {/* Generate-sound toggle: tells the MODEL whether to produce audio.
+                Only shown when the model can. Independent of the preview mute. */}
             {currentModel?.supportsAudio && (
               <button
                 onClick={() => setEnableAudio(a => !a)}
@@ -1295,11 +1303,27 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
                 className={`flex items-center justify-center w-6 h-6 rounded-md transition-colors disabled:opacity-50 ${
                   enableAudio ? 'bg-accent/20 text-accent' : 'bg-white/5 hover:bg-white/10 text-muted-foreground'
                 }`}
-                title="Generate with audio"
+                title={enableAudio
+                  ? 'Sound: ON — the model will generate audio for this video'
+                  : 'Sound: OFF — the model will generate a silent video'}
               >
-                {enableAudio
-                  ? <SpeakerHigh size={11} weight="fill" />
-                  : <SpeakerSlash size={11} weight="thin" />
+                <Waveform size={11} weight={enableAudio ? 'fill' : 'thin'} />
+              </button>
+            )}
+
+            {/* Preview mute: silences playback on the canvas only. Has no
+                effect on what gets generated. Shown once there is a video. */}
+            {outputUrl && (
+              <button
+                onClick={() => setMuted(m => !m)}
+                className={`flex items-center justify-center w-6 h-6 rounded-md transition-colors ${
+                  muted ? 'bg-white/5 hover:bg-white/10 text-muted-foreground' : 'bg-accent/20 text-accent'
+                }`}
+                title={muted ? 'Preview muted — click to unmute playback' : 'Preview sound on — click to mute playback'}
+              >
+                {muted
+                  ? <SpeakerSlash size={11} weight="thin" />
+                  : <SpeakerHigh size={11} weight="fill" />
                 }
               </button>
             )}

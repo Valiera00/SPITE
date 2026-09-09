@@ -503,7 +503,8 @@ export const FAL_MODELS: ModelConfig[] = [
     aspectRatios: [],  // Inherits from input image.
     durations: ['3s', '4s', '5s', '6s', '7s', '8s', '9s', '10s', '11s', '12s', '13s', '14s', '15s'],
     resolutions: ['720p', '1080p'],
-    supportsAudio: true,  // Has native multilingual lip-sync.
+    // No supportsAudio: fal's endpoint has no audio on/off field, so a
+    // toggle here would do nothing. Lip-sync is part of the model itself.
     defaultAspectRatio: '16:9',
     defaultDuration: '5s',
     defaultResolution: '1080p',
@@ -921,10 +922,9 @@ export function buildModelInput(
     } else if (model.defaultResolution) {
       input.resolution = model.defaultResolution
     }
-    // Audio generation
-    if (options.enableAudio) {
-      input.generate_audio = true
-    }
+    // Always send the boolean. fal defaults generate_audio to TRUE, so
+    // leaving it out when the toggle is off silently produced sound anyway.
+    input.generate_audio = !!options.enableAudio
     return input
   }
 
@@ -1004,10 +1004,9 @@ export function buildModelInput(
     if (model.id === 'kling-3.0-4k' && model.resolutions) {
       input.resolution = '4K'
     }
-    // Audio for Kling 3.0/Pro and 1.6, o1
-    if (model.supportsAudio && options.enableAudio) {
-      input.generate_audio = true
-    }
+    // Audio for Kling 3.0/Pro. Always send the boolean: fal's default is
+    // TRUE, so an omitted field is "yes, with sound", not "no".
+    if (model.supportsAudio) input.generate_audio = !!options.enableAudio
     return input
   }
 
@@ -1112,8 +1111,9 @@ export function buildModelInput(
   }
 
   // VEO 3.1 / VEO 3.1 FAST — same input schema, different endpoint.
-  // Native audio toggle is `audio` (not generate_audio). Resolution
-  // includes true 4K. Duration capped at 8s per fal's docs.
+  // Native audio toggle is generate_audio and defaults to TRUE on fal's
+  // side, so it is always sent explicitly. Resolution includes true 4K.
+  // Duration capped at 8s per fal's docs.
   if (model.id === 'veo-3.1' || model.id === 'veo-3.1-fast') {
     input.prompt = prompt
     if (options.aspectRatio && model.aspectRatios.includes(options.aspectRatio)) {
@@ -1131,7 +1131,7 @@ export function buildModelInput(
     } else if (model.defaultResolution) {
       input.resolution = model.defaultResolution
     }
-    if (options.enableAudio !== undefined) input.audio = options.enableAudio
+    input.generate_audio = !!options.enableAudio
     return input
   }
 
@@ -1184,7 +1184,7 @@ export function buildModelInput(
     } else if (model.defaultResolution) {
       input.resolution = model.defaultResolution
     }
-    if (options.enableAudio) input.generate_audio_switch = true
+    input.generate_audio_switch = !!options.enableAudio
     return input
   }
 

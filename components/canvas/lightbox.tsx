@@ -9,11 +9,12 @@ interface LightboxProps {
   url: string | null | undefined
   type: 'image' | 'video'
   onClose: () => void
+  muted?: boolean          // video only: start the preview muted
 }
 
 // Full-screen preview overlay for image/video node outputs. Click outside
 // the media or press Escape to close.
-export function Lightbox({ open, url, type, onClose }: LightboxProps) {
+export function Lightbox({ open, url, type, onClose, muted = false }: LightboxProps) {
   useEffect(() => {
     if (!open) return
     const onKey = (e: KeyboardEvent) => {
@@ -64,6 +65,7 @@ export function Lightbox({ open, url, type, onClose }: LightboxProps) {
             src={url}
             controls
             autoPlay
+            muted={muted}
             playsInline
             controlsList="nofullscreen"
             onDoubleClick={(e) => e.preventDefault()}
