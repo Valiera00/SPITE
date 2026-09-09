@@ -19,7 +19,7 @@ const PUBLIC_PATHS = [
   '/api/r2-image',
 ]
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
 
   // First gate: refuse to boot if required env vars are missing. Sends
@@ -94,7 +94,7 @@ export const config = {
   matcher: [
     // Run on everything except Next.js internals and static asset files.
     // The image-extension exemption is anchored to `$` — paths like
-    // `/api/r2-image/foo.png/extra` still go through middleware because
+    // `/api/r2-image/foo.png/extra` still go through the proxy because
     // they don't END in an image extension. Without the anchor, any
     // route containing `.png` (or .svg, .jpg, etc.) anywhere in its
     // path would silently skip authz.

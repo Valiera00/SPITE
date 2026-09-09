@@ -343,7 +343,7 @@ lib/
   mention-prompt.ts   Model-aware reference grammar compilation
 scripts/              Tooling (secret check, etc.)
 database-setup.sql    Idempotent schema for first-time setup
-middleware.ts         Auth gate + env-check redirect
+proxy.ts              Auth gate + env-check redirect
 ```
 
 ## Contributing
