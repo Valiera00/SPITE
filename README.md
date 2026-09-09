@@ -34,9 +34,9 @@ More at **[spite.run](https://spite.run)**.
 - **Character consistency.** Tag images to a named folder
   (Character / Prop / Location), use `@FolderName` in any prompt, and
   SPITE wires the reference into every generation that mentions it.
-- **Multi-model.** Nano Banana Pro, FLUX, Kling, Seedance, Luma Ray2,
-  MiniMax Hailuo, Wan — all in one canvas, switchable per node, all
-  routed through fal.ai with your own key.
+- **Multi-model.** Nano Banana Pro, FLUX, Kling, Seedance, Veo, Wan 3.0,
+  MiniMax H3 Max, Gemini Omni Flash, Luma Ray2 — all in one canvas,
+  switchable per node, all routed through fal.ai with your own key.
 - **Scenes and shots.** First-class production primitives. Tag a node as
   Shot 1 of Scene A; the scene strip at the top of the canvas keeps the
   structure visible.

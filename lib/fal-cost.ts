@@ -30,6 +30,13 @@ const COST_TABLE: Record<string, { unit: Unit; price: number }> = {
   // flat per-video number would be wildly wrong at either end. $0.50/s is
   // the 720p default rounded up; 1080p runs will be under-estimated.
   'seedance-2.5':        { unit: 'sec',   price: 0.50 },
+  // Sept 2026 arena leaders. All billed per second on fal.
+  // Wan 3.0: $0.05/s 480p, $0.10/s 720p, $0.20/s 1080p (the default).
+  'wan-3.0':             { unit: 'sec',   price: 0.20 },
+  // H3 Max: $0.0125/s 480P, $0.02/s 768P (default), 1080P is 2x. Rounded up.
+  'minimax-h3-max':      { unit: 'sec',   price: 0.05 },
+  // Gemini Omni Flash: fal lists $0.13/s. Rounded up.
+  'gemini-omni-flash':   { unit: 'sec',   price: 0.15 },
   'kling-1.0':           { unit: 'video', price: 0.50 },
   'kling-1.5':           { unit: 'video', price: 0.50 },
   'kling-1.6':           { unit: 'video', price: 0.50 },

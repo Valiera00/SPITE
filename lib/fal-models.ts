@@ -11,7 +11,7 @@ export interface ModelConfig {
   editModel?: string            // fal endpoint to use when a reference image is supplied
   imageParam?: 'image_url' | 'image_urls' | 'start_image_url'  // how the reference image is passed (default image_url)
   // Reference-image support (subject/style refs, distinct from first/end frame):
-  referenceParam?: 'image_urls' | 'elements' | 'input_image_urls' | 'subject_reference_image_url'
+  referenceParam?: 'image_urls' | 'elements' | 'input_image_urls' | 'subject_reference_image_url' | 'reference_image_urls'
   referenceModel?: string       // separate endpoint for references (omit if refs ride the editModel, e.g. Kling v3 elements)
   referenceCite?: '@Image' | '@Element'  // prompt citation token the model needs (auto-appended)
   category: ModelCategory
@@ -490,6 +490,73 @@ export const FAL_MODELS: ModelConfig[] = [
     defaultDuration: '8s',
     defaultResolution: '720p',
     description: 'Veo 3.1 Fast — half the cost, same model family'
+  },
+
+  // ---- Added Sept 2026 after checking the Artificial Analysis video arena
+  // (blind human votes). Only models that rank at or near the top made it.
+
+  {
+    id: 'wan-3.0',
+    name: 'Wan 3.0',
+    // #1 in the arena with and without audio (Sept 2026). Endpoints and
+    // fields verified against fal's OpenAPI.
+    falModel: 'alibaba/wan-3.0/text-to-video',
+    editModel: 'alibaba/wan-3.0/image-to-video',
+    imageParam: 'start_image_url',
+    referenceModel: 'alibaba/wan-3.0/reference-to-video',
+    referenceParam: 'reference_image_urls',
+    // No @Image syntax: Wan reads refs positionally ("the woman in Image 1").
+    category: 'video',
+    inputTypes: ['text', 'image'],
+    // 'adaptive' = follow the prompt / input image.
+    aspectRatios: ['adaptive', '16:9', '4:3', '1:1', '3:4', '9:16'],
+    // fal takes any whole number of seconds up to 30, or null to let the
+    // model pick ("smart duration", shown as auto).
+    durations: ['auto', '5s', '6s', '7s', '8s', '9s', '10s', '11s', '12s', '13s', '14s', '15s', '20s', '25s', '30s'],
+    resolutions: ['480p', '720p', '1080p'],
+    supportsAudio: true,
+    defaultAspectRatio: '16:9',
+    defaultDuration: '5s',
+    defaultResolution: '1080p',
+    description: 'Alibaba — #1 in blind votes, up to 30s at 1080p, native audio'
+  },
+
+  {
+    id: 'minimax-h3-max',
+    name: 'MiniMax H3 Max',
+    // fal's own post-trained MiniMax H3: #1 image-to-video with audio in
+    // the arena and very cheap. Sound is always generated (no off switch
+    // on fal's side), so there is no audio toggle.
+    falModel: 'minimax/h3-max/text-to-video',
+    editModel: 'minimax/h3-max/image-to-video',
+    referenceModel: 'minimax/h3-max/reference-to-video',
+    referenceParam: 'reference_image_urls',
+    category: 'video',
+    inputTypes: ['text', 'image'],
+    aspectRatios: ['16:9', '21:9', '4:3', '1:1', '3:4', '9:16'],
+    durations: ['5s', '6s', '7s', '8s', '9s', '10s', '11s', '12s', '13s', '14s', '15s'],
+    // Capital P is what fal expects. 1080P is refined up from 768P.
+    resolutions: ['480P', '768P', '1080P'],
+    defaultAspectRatio: '16:9',
+    defaultDuration: '5s',
+    defaultResolution: '768P',
+    description: 'fal-tuned MiniMax H3 — top image-to-video, always with sound, 5-15s'
+  },
+
+  {
+    id: 'gemini-omni-flash',
+    name: 'Gemini Omni Flash',
+    // Google's Omni Flash (preview). Top-2 in the arena. fal exposes very
+    // few knobs: 16:9 or 9:16, 3-10s, audio always on, no resolution pick.
+    falModel: 'fal-ai/gemini-omni-flash',
+    editModel: 'fal-ai/gemini-omni-flash/image-to-video',
+    category: 'video',
+    inputTypes: ['text', 'image'],
+    aspectRatios: ['16:9', '9:16'],
+    durations: ['3s', '4s', '5s', '6s', '7s', '8s', '9s', '10s'],
+    defaultAspectRatio: '16:9',
+    defaultDuration: '8s',
+    description: 'Google Omni Flash — cinematic 3-10s clips with native sound'
   },
 
   {
@@ -1231,6 +1298,71 @@ export function buildModelInput(
     }
     if (options.aspectRatio && options.aspectRatio !== 'auto') {
       input.aspect_ratio = options.aspectRatio
+    }
+    return input
+  }
+
+  // WAN 3.0 — first frame rides start_image_url (set generically above),
+  // end frame end_image_url. `audio` defaults TRUE on fal's side, so it is
+  // always sent. Duration null = let the model pick.
+  if (model.id === 'wan-3.0') {
+    input.prompt = prompt
+    input.aspect_ratio =
+      options.aspectRatio && model.aspectRatios.includes(options.aspectRatio)
+        ? options.aspectRatio
+        : model.defaultAspectRatio
+    const dur =
+      options.duration && model.durations?.includes(options.duration)
+        ? options.duration
+        : model.defaultDuration
+    input.duration = !dur || dur === 'auto' ? null : parseInt(dur)
+    if (model.resolutions && options.resolution && model.resolutions.includes(options.resolution)) {
+      input.resolution = options.resolution
+    } else if (model.defaultResolution) {
+      input.resolution = model.defaultResolution
+    }
+    input.audio = !!options.enableAudio
+    return input
+  }
+
+  // MINIMAX H3 MAX — prompt_expansion_mode is a required field ('balanced'
+  // returns in ~1s, 'quality' spends up to 30s rewriting the prompt).
+  // Image-to-video has no aspect_ratio: the frame decides. Sound is always
+  // generated; fal offers no switch.
+  if (model.id === 'minimax-h3-max') {
+    input.prompt = prompt
+    input.prompt_expansion_mode = 'balanced'
+    if (!options.imageUrl) {
+      input.aspect_ratio =
+        options.aspectRatio && model.aspectRatios.includes(options.aspectRatio)
+          ? options.aspectRatio
+          : model.defaultAspectRatio
+    }
+    if (options.duration && model.durations?.includes(options.duration)) {
+      input.duration = parseInt(options.duration)
+    } else if (model.defaultDuration) {
+      input.duration = parseInt(model.defaultDuration)
+    }
+    if (model.resolutions && options.resolution && model.resolutions.includes(options.resolution)) {
+      input.resolution = options.resolution
+    } else if (model.defaultResolution) {
+      input.resolution = model.defaultResolution
+    }
+    return input
+  }
+
+  // GEMINI OMNI FLASH — prompt, 16:9 / 9:16, integer duration 3-10. No
+  // resolution field, no audio switch (always on).
+  if (model.id === 'gemini-omni-flash') {
+    input.prompt = prompt
+    input.aspect_ratio =
+      options.aspectRatio && model.aspectRatios.includes(options.aspectRatio)
+        ? options.aspectRatio
+        : model.defaultAspectRatio
+    if (options.duration && model.durations?.includes(options.duration)) {
+      input.duration = parseInt(options.duration)
+    } else if (model.defaultDuration) {
+      input.duration = parseInt(model.defaultDuration)
     }
     return input
   }
