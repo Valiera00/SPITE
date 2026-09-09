@@ -7,7 +7,7 @@ import {
   CaretLeft, CircleNotch, ArrowUp, ImageSquare, X, DownloadSimple,
   ArrowUUpLeft, CopySimple, Plus, Minus, Sparkle, Question,
 } from '@phosphor-icons/react'
-import { FAL_MODELS, getModelById } from '@/lib/fal-models'
+import { FAL_MODELS, getModelById, carrySetting } from '@/lib/fal-models'
 import { estimateGenerationCost, formatUSD, COST_CONFIRM_THRESHOLD_USD } from '@/lib/fal-cost'
 import { useIsMobile } from '@/components/ui/use-mobile'
 import { OnboardingTour } from '@/components/onboarding/use-onboarding-tour'
@@ -134,13 +134,15 @@ export default function FlowThread() {
   }, [loading, assets.length, pending])
 
   const model = useMemo(() => getModelById(modelId), [modelId])
-  // Default a model's resolution to 2K when it offers it (never go lower by
-  // default); otherwise fall back to the model's own default or its highest tier.
+  // On model change keep the current aspect/resolution if the new model
+  // offers it. Otherwise default resolution to 2K when available (never go
+  // lower by default), else the model's own default or its highest tier.
   useEffect(() => {
-    setAspect(model?.defaultAspectRatio || '')
+    setAspect((prev) => carrySetting(prev, model?.aspectRatios, model?.defaultAspectRatio))
     const rs = model?.resolutions || []
-    setResolution(
-      rs.includes('2K') ? '2K'
+    setResolution((prev) =>
+      rs.includes(prev) ? prev
+        : rs.includes('2K') ? '2K'
         : (model?.defaultResolution && rs.includes(model.defaultResolution)) ? model.defaultResolution
         : rs[rs.length - 1] || '',
     )

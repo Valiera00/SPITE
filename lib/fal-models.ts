@@ -32,6 +32,20 @@ export interface ModelConfig {
   description: string
 }
 
+// When the user switches model, keep whatever they had set if the new model
+// offers the same option, otherwise fall back to that model's default. Saves
+// re-picking 1080p / 16:9 / 10s on every model change. Exact-match only:
+// '1080p' carries between video models, '2K' between image models, and
+// anything the new model doesn't list falls back to its default.
+export function carrySetting(
+  previous: string | undefined,
+  options: string[] | undefined,
+  fallback: string | undefined,
+): string {
+  if (previous && options?.includes(previous)) return previous
+  return fallback || ''
+}
+
 // ============================================
 // MODEL REGISTRY - Accurate specs per model
 // ============================================

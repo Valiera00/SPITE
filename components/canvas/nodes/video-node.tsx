@@ -12,7 +12,7 @@ import { Lightbox } from '../lightbox'
 import { MentionTextarea, type Mention } from '../mention-textarea'
 import { useProjectFolders } from '@/hooks/use-project-folders'
 import { labelFromPrompt, DEFAULT_VIDEO_LABEL } from '@/lib/auto-name'
-import { getVideoModels, getModelById, buildModelInput, type ModelConfig } from '@/lib/fal-models'
+import { getVideoModels, getModelById, buildModelInput, type ModelConfig, carrySetting } from '@/lib/fal-models'
 import { compileMentionsForModel } from '@/lib/mention-prompt'
 import { estimateGenerationCost, formatUSD, COST_CONFIRM_THRESHOLD_USD } from '@/lib/fal-cost'
 import { resolveNodeMediaUrl } from '@/lib/node-media'
@@ -239,9 +239,11 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
   const refsRequireFirstFrame = !!currentModel?.referenceParam && currentModel.referenceParam === 'elements' && !currentModel.referenceModel
   const blockedNoFirstFrame = refsRequireFirstFrame && hasConnectedReferences && !hasConnectedFirstFrame
 
-  // Reset settings when the USER picks a new model. Skip the initial mount
-  // so saved settings on a reloaded or duplicated node aren't immediately
-  // clobbered by model defaults.
+  // When the USER picks a new model, carry the current settings across
+  // wherever the new model offers the same option (1080p stays 1080p, 16:9
+  // stays 16:9, 10s stays 10s) and fall back to that model's default only
+  // for options it doesn't have. Skip the initial mount so saved settings on
+  // a reloaded or duplicated node aren't touched.
   const prevModelIdRef = useRef<string | null>(null)
   useEffect(() => {
     if (!currentModel) return
@@ -250,11 +252,11 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
       return
     }
     if (prevModelIdRef.current !== currentModel.id) {
-      setAspectRatio(currentModel.defaultAspectRatio)
-      setDuration(currentModel.defaultDuration || '')
-      setResolution(currentModel.defaultResolution || '')
-      setEnableAudio(false)
-      setEnableLoop(false)
+      setAspectRatio((prev) => carrySetting(prev, currentModel.aspectRatios, currentModel.defaultAspectRatio))
+      setDuration((prev) => carrySetting(prev, currentModel.durations, currentModel.defaultDuration))
+      setResolution((prev) => carrySetting(prev, currentModel.resolutions, currentModel.defaultResolution))
+      setEnableAudio((prev) => prev && !!currentModel.supportsAudio)
+      setEnableLoop((prev) => prev && !!currentModel.supportsLoop)
       prevModelIdRef.current = currentModel.id
     }
   }, [currentModel])

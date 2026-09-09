@@ -12,7 +12,7 @@ import { Lightbox } from '../lightbox'
 import { MentionTextarea, type Mention } from '../mention-textarea'
 import { useProjectFolders } from '@/hooks/use-project-folders'
 import { labelFromPrompt, DEFAULT_IMAGE_LABEL } from '@/lib/auto-name'
-import { getImageModels, getModelById, buildModelInput, type ModelConfig } from '@/lib/fal-models'
+import { getImageModels, getModelById, buildModelInput, type ModelConfig, carrySetting } from '@/lib/fal-models'
 import { compileMentionsForModel } from '@/lib/mention-prompt'
 import { estimateGenerationCost, formatUSD, COST_CONFIRM_THRESHOLD_USD } from '@/lib/fal-cost'
 import { resolveNodeMediaUrl } from '@/lib/node-media'
@@ -277,9 +277,11 @@ function ImageNodeImpl({ id, data, selected }: NodeProps) {
     updateNodeInternals(id)
   }, [id, updateNodeInternals, currentModel?.id, currentModel?.inputTypes])
 
-  // Reset aspect/resolution when the USER picks a new model. Skip the
+  // When the USER picks a new model, carry aspect/resolution across wherever
+  // the new model offers the same option (2K stays 2K, 16:9 stays 16:9) and
+  // fall back to its default only for options it doesn't have. Skip the
   // initial mount so saved settings on a reloaded or duplicated node aren't
-  // immediately clobbered by model defaults.
+  // touched.
   const prevModelIdRef = useRef<string | null>(null)
   useEffect(() => {
     if (!currentModel) return
@@ -288,8 +290,8 @@ function ImageNodeImpl({ id, data, selected }: NodeProps) {
       return
     }
     if (prevModelIdRef.current !== currentModel.id) {
-      setAspectRatio(currentModel.defaultAspectRatio)
-      setResolution(currentModel.defaultResolution || '')
+      setAspectRatio((prev) => carrySetting(prev, currentModel.aspectRatios, currentModel.defaultAspectRatio))
+      setResolution((prev) => carrySetting(prev, currentModel.resolutions, currentModel.defaultResolution))
       prevModelIdRef.current = currentModel.id
     }
   }, [currentModel])
