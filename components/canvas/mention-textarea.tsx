@@ -12,6 +12,8 @@ import {
 import { createPortal } from 'react-dom'
 import { X, User, Package, MapPin, Folder, Check, PencilSimple, Trash } from '@phosphor-icons/react'
 import { AssetThumb } from './asset-thumb'
+import { MicButton } from '@/components/mic-button'
+import { useSpeechInput } from '@/lib/use-speech-input'
 
 export type FolderType = 'character' | 'prop' | 'location' | 'general'
 
@@ -302,6 +304,50 @@ export const MentionTextarea = forwardRef<MentionTextareaRef, Props>(function Me
     : folders
   ).slice(0, 8)
 
+  // ---- Dictation ----------------------------------------------------------
+  // Finalized phrases arrive one at a time and are inserted at the caret via
+  // the same execCommand path as paste, so the normal input event fires and
+  // @mention detection keeps working on dictated text. Append-only — we never
+  // rewrite what the recognizer already committed.
+  const insertDictated = useCallback(
+    (chunk: string) => {
+      const el = editorRef.current
+      if (!el || disabled) return
+
+      // Clicking the mic blurs the editor, so re-focus and park the caret at
+      // the end unless the user still has a live selection inside the box.
+      const sel = window.getSelection()
+      const inside =
+        !!sel && sel.rangeCount > 0 && el.contains(sel.getRangeAt(0).startContainer)
+      if (!inside) {
+        el.focus()
+        const range = document.createRange()
+        range.selectNodeContents(el)
+        range.collapse(false)
+        sel?.removeAllRanges()
+        sel?.addRange(range)
+      }
+
+      // The recognizer hands back bare phrases with no leading space. Decide
+      // from the text actually preceding the caret, so dictating into the
+      // middle of a sentence spaces correctly too.
+      let needsSpace = false
+      const s2 = window.getSelection()
+      if (s2 && s2.rangeCount > 0) {
+        const probe = s2.getRangeAt(0).cloneRange()
+        probe.setStart(el, 0)
+        const preceding = probe.toString()
+        needsSpace = preceding.length > 0 && !/[\s([{]$/.test(preceding)
+      }
+
+      document.execCommand('insertText', false, (needsSpace ? ' ' : '') + chunk)
+      emit()
+    },
+    [disabled, emit],
+  )
+
+  const speech = useSpeechInput(insertDictated)
+
   // Input handler — detects @query and shows the dropdown, then emits the
   // serialized value.
   const handleInput = () => {
@@ -559,7 +605,9 @@ export const MentionTextarea = forwardRef<MentionTextareaRef, Props>(function Me
             const t = e.clipboardData.getData('text/plain')
             document.execCommand('insertText', false, t)
           }}
-          className={`${className || ''} whitespace-pre-wrap break-words [&_*]:select-text`}
+          className={`${className || ''} whitespace-pre-wrap break-words [&_*]:select-text ${
+            speech.supported ? 'pr-7' : ''
+          }`}
           style={{ minHeight: minH, outline: 'none' }}
           data-mention-editor
         />
@@ -573,6 +621,16 @@ export const MentionTextarea = forwardRef<MentionTextareaRef, Props>(function Me
             {placeholder}
           </div>
         )}
+
+        {/* Dictation. Sits in the prompt's top-right corner (the editor gets
+            matching right padding above); renders nothing where the browser
+            has no recognizer. */}
+        <MicButton
+          speech={speech}
+          variant="ghost"
+          disabled={disabled}
+          className="absolute top-0 right-0"
+        />
       </div>
 
       {/* Folder suggestion dropdown */}

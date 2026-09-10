@@ -13,6 +13,8 @@ import { useIsMobile } from '@/components/ui/use-mobile'
 import { OnboardingTour } from '@/components/onboarding/use-onboarding-tour'
 import { VersionBadge } from '@/components/version-badge'
 import { startTour } from '@/lib/onboarding'
+import { MicButton } from '@/components/mic-button'
+import { useSpeechInput, appendDictated } from '@/lib/use-speech-input'
 
 type Asset = {
   id: string
@@ -148,6 +150,12 @@ export default function FlowThread() {
     )
   }, [model])
   const cost = useMemo(() => estimateGenerationCost(model, { count }), [model, count])
+
+  // Dictation. Each finalized phrase is appended to whatever is already in
+  // the box, so speaking and typing can be mixed freely.
+  const speech = useSpeechInput((chunk) =>
+    setPrompt((p) => appendDictated(p, chunk)),
+  )
   const busy = pending > 0
   const uploadingRef = refs.some((r) => r.uploading)
   const decPending = () => setPending((p) => Math.max(0, p - 1))
@@ -438,6 +446,7 @@ export default function FlowThread() {
                 className="flex items-center gap-1 h-8 px-2.5 rounded-full bg-white/[0.06] hover:bg-white/10 transition text-[11px] font-mono text-foreground/80 active:scale-95">
                 <ImageSquare size={14} />{refs.length > 0 ? refs.length : ''}
               </button>
+              <MicButton speech={speech} variant="pill" disabled={busy} />
               <div className="flex items-center gap-0.5 h-8 px-1.5 rounded-full bg-white/[0.06]">
                 <button onClick={() => setCount((c) => Math.max(1, c - 1))} disabled={count <= 1} aria-label="Fewer" className="w-5 h-5 rounded-full flex items-center justify-center text-muted-foreground disabled:opacity-30 hover:text-foreground"><Minus size={12} /></button>
                 <span className="text-[11px] font-mono w-3.5 text-center">{count}</span>
