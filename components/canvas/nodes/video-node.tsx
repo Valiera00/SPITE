@@ -933,8 +933,9 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
     () => estimateGenerationCost(currentModel, {
       count: numVideos,
       durationSeconds: duration ? parseInt(duration) : undefined,
+      resolution,
     }),
-    [currentModel, numVideos, duration],
+    [currentModel, numVideos, duration, resolution],
   )
   const generateTooltip = useMemo(() => {
     if (!currentModel) return 'Generate video'

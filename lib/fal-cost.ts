@@ -10,18 +10,51 @@ import type { ModelConfig } from './fal-models'
 // For everything else the unit is 'image' or 'video' and the per-unit
 // price already covers a typical generation at default settings.
 type Unit = 'image' | 'video' | 'sec'
-const COST_TABLE: Record<string, { unit: Unit; price: number }> = {
+
+// `byTier` prices a model whose cost moves with the selector shown in the UI.
+// That selector is `ModelConfig.resolutions`, which is a RESOLUTION for most
+// models (1K/2K/4K) but a QUALITY mode for others (Ideogram's rendering
+// speed) — either way the chosen value is the key here.
+//
+// `price` stays the flat fallback and MUST be >= the dearest tier: it is what
+// gets charged when the tier is unknown ('auto', or a caller that passes
+// nothing and the model declares no default), and the gate must never
+// under-estimate.
+interface CostEntry {
+  unit: Unit
+  price: number
+  byTier?: Record<string, number>
+}
+
+const COST_TABLE: Record<string, CostEntry> = {
   // Image models
-  'nano-banana-2':       { unit: 'image', price: 0.04 },
-  'nano-banana-pro':     { unit: 'image', price: 0.15 },
+  // Nano Banana 2: $0.08 base at 1K, scaled by fal's published multipliers —
+  // 0.5K x0.75, 2K x1.5, 4K x2. (Web search +$0.015 and high thinking +$0.002
+  // are extras this app never enables.)
+  'nano-banana-2':       { unit: 'image', price: 0.16,
+                           byTier: { '0.5K': 0.06, '1K': 0.08, '2K': 0.12, '4K': 0.16 } },
+  // Nano Banana Pro: flat $0.15, except "4K outputs charged at double".
+  'nano-banana-pro':     { unit: 'image', price: 0.30,
+                           byTier: { '1K': 0.15, '2K': 0.15, '4K': 0.30 } },
   'flux-schnell':        { unit: 'image', price: 0.003 },
   'flux-dev':            { unit: 'image', price: 0.025 },
-  'kling-o1':            { unit: 'image', price: 0.10 },
-  // 2026 additions — pricing not published on fal docs; estimates
-  // err high so the gate is conservative until real bills come in.
-  'gpt-image-2':         { unit: 'image', price: 0.05 },
+  // Kling o1: fal charges $0.028 per image at BOTH 1K and 2K — no tier split.
+  'kling-o1':            { unit: 'image', price: 0.028 },
+  // GPT Image 2 is priced per quality tier x size, and buildModelInput pins
+  // quality to 'high' — the dearest tier — so these come off fal's published
+  // high-quality table. The exact pixel sizes this app sends aren't all listed
+  // there and the rates don't scale linearly with pixels (1024x1024 costs MORE
+  // than the larger 1920x1080, because OpenAI bills output image tokens), so
+  // each tier takes the CEILING of the published sizes it spans rather than an
+  // interpolation. 4K is exact: 3840x2160 high = $0.401.
+  'gpt-image-2':         { unit: 'image', price: 0.41,
+                           byTier: { '1K': 0.21, '2K': 0.25, '4K': 0.41 } },
   'flux-2-pro':          { unit: 'image', price: 0.05 },
-  'ideogram-v4':         { unit: 'image', price: 0.05 },
+  // Ideogram v4 bills per megapixel by rendering speed: TURBO $0.0075,
+  // BALANCED $0.015, QUALITY $0.025. The largest frame this app can request
+  // is 4:3 at 1408x1056 = 1.487 MP, so each tier is that ceiling.
+  'ideogram-v4':         { unit: 'image', price: 0.038,
+                           byTier: { TURBO: 0.012, BALANCED: 0.023, QUALITY: 0.038 } },
   // Video models
   'seedance-1.5':        { unit: 'video', price: 4.50 },  // ~5sec 720p — same tier as 2.0
   'seedance-2.0':        { unit: 'video', price: 4.50 },  // ~5sec 720p Seedance
@@ -85,11 +118,30 @@ export interface CostEstimate {
   total: number     // estimated total $ for this batch
   unit: Unit
   isKnown: boolean  // false when we don't have pricing data for this model
+  /** Tier the price came from, when the model has tiered pricing. For display. */
+  tier?: string
+}
+
+// Resolve the per-output base price for a tiered model. Falls back to the
+// model's own default when the caller passes no tier, and to the flat `price`
+// (>= the dearest tier by construction) when the tier isn't one we have a
+// number for — 'auto' being the common case.
+function basePrice(
+  entry: CostEntry,
+  model: ModelConfig,
+  resolution?: string,
+): { price: number; tier?: string } {
+  if (!entry.byTier) return { price: entry.price }
+  const tier = resolution || model.defaultResolution
+  if (tier && entry.byTier[tier] !== undefined) {
+    return { price: entry.byTier[tier], tier }
+  }
+  return { price: entry.price }
 }
 
 export function estimateGenerationCost(
   model: ModelConfig | null | undefined,
-  options: { count: number; durationSeconds?: number },
+  options: { count: number; durationSeconds?: number; resolution?: string },
 ): CostEstimate {
   if (!model) {
     return { perUnit: 0, total: 0, unit: 'image', isKnown: false }
@@ -98,16 +150,18 @@ export function estimateGenerationCost(
   if (!entry) {
     return { perUnit: 0, total: 0, unit: model.category === 'video' ? 'video' : 'image', isKnown: false }
   }
-  let perUnit = entry.price
+  const { price, tier } = basePrice(entry, model, options.resolution)
+  let perUnit = price
   if (entry.unit === 'sec') {
     const dur = options.durationSeconds || parseInt(model.defaultDuration || '5')
-    perUnit = entry.price * (Number.isFinite(dur) && dur > 0 ? dur : 5)
+    perUnit = price * (Number.isFinite(dur) && dur > 0 ? dur : 5)
   }
   return {
     perUnit,
     total: perUnit * Math.max(1, options.count),
     unit: entry.unit === 'sec' ? 'video' : entry.unit,
     isKnown: true,
+    tier,
   }
 }
 

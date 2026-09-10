@@ -74,6 +74,12 @@ export async function POST(request: NextRequest) {
   const costEstimate = estimateGenerationCost(model, {
     count: requestedUnits,
     durationSeconds,
+    // Tiered models (4K Nano Banana Pro, high-quality GPT Image 2, …) cost
+    // several times their base rate, so the gate has to price the tier the
+    // client actually asked for. Untrusted like every other field here — an
+    // unrecognised value falls back to the model's dearest tier, never a
+    // cheaper one.
+    resolution: typeof settings?.resolution === 'string' ? settings.resolution : undefined,
   })
   // Fail-closed on unknown cost: a model declared in lib/fal-models.ts but
   // missing from lib/fal-cost.ts would otherwise estimate $0 and bypass the

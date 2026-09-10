@@ -149,7 +149,10 @@ export default function FlowThread() {
         : rs[rs.length - 1] || '',
     )
   }, [model])
-  const cost = useMemo(() => estimateGenerationCost(model, { count }), [model, count])
+  const cost = useMemo(
+    () => estimateGenerationCost(model, { count, resolution }),
+    [model, count, resolution],
+  )
 
   // Dictation. Each finalized phrase is appended to whatever is already in
   // the box, so speaking and typing can be mixed freely.

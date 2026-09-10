@@ -885,22 +885,24 @@ function ImageNodeImpl({ id, data, selected }: NodeProps) {
   // intentionally blocking + unmissable — this is a money-loss safety
   // gate, not a delight feature.
   const costEstimate = useMemo(
-    () => estimateGenerationCost(currentModel, { count: numImages }),
-    [currentModel, numImages],
+    () => estimateGenerationCost(currentModel, { count: numImages, resolution }),
+    [currentModel, numImages, resolution],
   )
   const generateTooltip = useMemo(() => {
     if (!currentModel) return 'Generate image'
     const label = `Generate ${numImages} image${numImages === 1 ? '' : 's'}`
     if (!costEstimate.isKnown) return `${label}\n(price not estimated for this model)`
-    return `${label}\nEstimated cost: ~${formatUSD(costEstimate.total)} (${formatUSD(costEstimate.perUnit)} each).\nReal cost depends on resolution and model load.`
+    const at = costEstimate.tier ? ` at ${costEstimate.tier}` : ''
+    return `${label}\nEstimated cost: ~${formatUSD(costEstimate.total)} (${formatUSD(costEstimate.perUnit)} each${at}).\nReal cost depends on model load.`
   }, [currentModel, numImages, costEstimate])
   const requestGenerate = () => {
     if (costEstimate.isKnown && costEstimate.total >= COST_CONFIRM_THRESHOLD_USD) {
       const msg =
         `You're about to submit ${numImages} ${currentModel?.name || 'image'} generation${numImages === 1 ? '' : 's'} ` +
         `to fal.ai.\n\n` +
-        `Estimated cost: ~${formatUSD(costEstimate.total)} (${formatUSD(costEstimate.perUnit)} each).\n` +
-        `Real cost depends on resolution and model load.\n\n` +
+        `Estimated cost: ~${formatUSD(costEstimate.total)} (${formatUSD(costEstimate.perUnit)} each` +
+        `${costEstimate.tier ? ` at ${costEstimate.tier}` : ''}).\n` +
+        `Real cost depends on model load.\n\n` +
         `Press OK to confirm and spend this, or Cancel to back out.`
       if (!window.confirm(msg)) return
     }
