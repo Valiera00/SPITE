@@ -963,6 +963,9 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
     }),
     [currentModel, numVideos, duration, resolution],
   )
+  // Which vertical slot the audio handle takes. See the handle block below.
+  const audioHandleTop = currentModel?.inputTypes.includes('video') ? 360 : 310
+
   const generateTooltip = useMemo(() => {
     if (!currentModel) return 'Generate video'
     if (blockedNoFirstFrame) {
@@ -1070,7 +1073,17 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
         )}
       </div>
 
-      {/* Handles - dynamic based on model inputTypes */}
+      {/* Handles - dynamic based on model inputTypes.
+          Handle `top` is the icon's CENTRE, and the card bottoms out at about
+          333px (the 220px min-height preview plus the prompt and control
+          rows), so a handle has to sit at <= ~320 to stay inside the card.
+          The audio dot was hard-coded to 360 and hung below the bottom edge.
+          Slot 310 belongs to video-in, which neither audio-capable model uses
+          (Wan 3.0 and Kling 2.6 are both text+image), so audio takes it.
+          A model declaring BOTH video and audio input has no sixth slot that
+          fits and would need this whole stack re-spaced to ~48px steps — it
+          falls back to 360 and will visibly hang, which is the right kind of
+          failure: obvious, rather than a handle that silently disappears. */}
       
       {/* Text input - always shown.
           NOTE on zIndex: handles are positioned absolutely as siblings of
@@ -1115,11 +1128,13 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
           converted server-side into a voice_id. Until this handle existed
           there was no way to attach audio at all: the edge-collection code
           below looked for 'audio-in', but nothing ever rendered it. */}
+      {/* Audio input (violet). See audioHandleTop above for why it isn't at
+          360 any more. */}
       {(currentModel?.audioParam || currentModel?.id === 'kling-2.6') && (
         <>
-          <Handle type="target" id="audio-in" title="Audio" position={Position.Left} style={{ top: 360, left: -12, opacity: 0, width: 24, height: 24, zIndex: 5 }} />
-          <HandleIcon icon={Waveform} color="rgba(167,139,250,0.9)" position="left" top={360} visible />
-          <ConnectedInputs nodeId={id} handleId="audio-in" side="left" top={360} label="Audio" />
+          <Handle type="target" id="audio-in" title="Audio" position={Position.Left} style={{ top: audioHandleTop, left: -12, opacity: 0, width: 24, height: 24, zIndex: 5 }} />
+          <HandleIcon icon={Waveform} color="rgba(167,139,250,0.9)" position="left" top={audioHandleTop} visible />
+          <ConnectedInputs nodeId={id} handleId="audio-in" side="left" top={audioHandleTop} label="Audio" />
         </>
       )}
 
