@@ -572,6 +572,7 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
     let connectedReferenceUrls: string[] = []
     let connectedVideoUrl: string | null = null
     let connectedAudioUrl: string | null = null
+    const connectedAudioUrls: string[] = []
 
     // Every media input resolves through the shared helper so no field a node
     // might store its URL under is missed. A cord that resolves to nothing is
@@ -660,12 +661,17 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
         )
       )
       if (incomingAudioEdges.length > 0) {
-        const audioEdge = incomingAudioEdges[0]
-        const sourceNode = nodes.find(n => n.id === audioEdge.source)
-        const sourceAudioUrl = (sourceNode?.data?.thumbnail || sourceNode?.data?.outputUrl) as string | undefined
-        if (sourceAudioUrl) {
-          connectedAudioUrl = sourceAudioUrl
+        // Collect EVERY connected clip, not just the first. Wan 3.0 takes up
+        // to 5 reference audio URLs; Kling 2.6's voice path still uses one,
+        // and reads it off the front of the same list.
+        for (const audioEdge of incomingAudioEdges) {
+          const sourceNode = nodes.find(n => n.id === audioEdge.source)
+          const sourceAudioUrl = (sourceNode?.data?.thumbnail || sourceNode?.data?.outputUrl) as string | undefined
+          if (sourceAudioUrl && !connectedAudioUrls.includes(sourceAudioUrl)) {
+            connectedAudioUrls.push(sourceAudioUrl)
+          }
         }
+        connectedAudioUrl = connectedAudioUrls[0]
       }
       
       // Sort by the order edges were created (which is their index in the array)
@@ -759,6 +765,23 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
       return
     }
 
+    // Same collision, reached via audio: audio only exists on the reference
+    // endpoint, which has no first/end frame fields. Without this the server
+    // would route to that endpoint and drop the wired frame silently.
+    if (
+      currentModel.audioParam &&
+      currentModel.referenceModel &&
+      connectedAudioUrls.length > 0 &&
+      (connectedImageUrl || connectedEndImageUrl)
+    ) {
+      setError(
+        `${currentModel.name} can't use audio and a first/end frame at the same time — audio only exists on its reference mode, ` +
+        `which takes reference images instead of exact frames. Disconnect the audio, or move that image to the pink Reference handle.`,
+      )
+      setStatus('idle')
+      return
+    }
+
     try {
       // Topaz upscaler never takes a prompt — its API uses a `model`
       // parameter (Proteus vs Starlight HQ) to pick the variant. Force
@@ -783,6 +806,9 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
           // and caches a fal voice_id for this audio, appends it to the
           // voice_ids array, runs the generation.
           audioUrl: connectedAudioUrl || undefined,
+          // Audio as a real model input (Wan 3.0 reference audio). Distinct
+          // from audioUrl above, which Kling 2.6 turns into a voice_id.
+          audioUrls: connectedAudioUrls.length ? connectedAudioUrls : undefined,
           // Upscaler mode picks the Topaz model variant server-side.
           upscaleMode,
           // Depth-map colouring (Depth Anything Video).
@@ -1081,6 +1107,19 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
           <Handle type="target" id="reference-in" title="Reference image(s)" position={Position.Left} style={{ top: 250, left: -12, opacity: 0, width: 24, height: 24, zIndex: 5 }} />
           <HandleIcon icon={ImageIcon} color="rgba(236,72,153,0.9)" position="left" top={250} visible />
           <ConnectedInputs nodeId={id} handleId="reference-in" side="left" top={250} label="References" />
+        </>
+      )}
+
+      {/* Audio input (violet) — models that take audio as a real input
+          (Wan 3.0 reference audio), plus Kling 2.6, whose connected clip is
+          converted server-side into a voice_id. Until this handle existed
+          there was no way to attach audio at all: the edge-collection code
+          below looked for 'audio-in', but nothing ever rendered it. */}
+      {(currentModel?.audioParam || currentModel?.id === 'kling-2.6') && (
+        <>
+          <Handle type="target" id="audio-in" title="Audio" position={Position.Left} style={{ top: 360, left: -12, opacity: 0, width: 24, height: 24, zIndex: 5 }} />
+          <HandleIcon icon={Waveform} color="rgba(167,139,250,0.9)" position="left" top={360} visible />
+          <ConnectedInputs nodeId={id} handleId="audio-in" side="left" top={360} label="Audio" />
         </>
       )}
 

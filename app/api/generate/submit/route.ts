@@ -180,7 +180,24 @@ export async function POST(request: NextRequest) {
   const hasRefsViaRefParam = hasFolderRefs && !!model.referenceParam
   const hasRefsViaImageParam =
     hasFolderRefs && !model.referenceParam && !!model.imageParam
-  const usesSeparateRefEndpoint = hasRefsViaRefParam && !!model.referenceModel
+  // Audio inputs (Wan 3.0's reference audio). The canvas hands us proxy URLs;
+  // fal has to fetch them itself, so each one is resolved to a presigned URL
+  // the same way reference images are.
+  const audioUrlsRaw: string[] = Array.isArray(settings?.audioUrls)
+    ? (settings.audioUrls as unknown[]).filter((u): u is string => typeof u === 'string' && !!u)
+    : []
+  const audioSigned = model.audioParam
+    ? (await Promise.all(audioUrlsRaw.slice(0, 5).map((u) => toFalFetchableUrl(u))))
+        .filter((u): u is string => !!u)
+    : []
+  const hasAudioInput = audioSigned.length > 0
+
+  // Wan 3.0 exposes audio ONLY on its reference-to-video endpoint, so audio
+  // has to force that endpoint just as reference images do — otherwise the
+  // field is silently dropped by text/image-to-video and the user gets a
+  // silent video back with no indication why.
+  const usesSeparateRefEndpoint =
+    (hasRefsViaRefParam || hasAudioInput) && !!model.referenceModel
   const hasFrame = !!(referenceImageUrl || endImageUrl) && model.inputTypes.includes('image')
 
   // fal only uses references the prompt cites (@Image1 / @Element1). Auto-append
@@ -210,6 +227,8 @@ export async function POST(request: NextRequest) {
     // right Topaz model variant (Proteus vs Starlight HQ).
     upscaleMode: settings?.upscaleMode,
     colormap: settings?.colormap,
+    // Audio inputs for models that declare audioParam (Wan 3.0).
+    audioUrls: hasAudioInput ? audioSigned : undefined,
     // Kling 2.6 voice IDs (comma-separated string). buildModelInput
     // parses, dedupes, and caps at 2 per fal's documented max.
     voiceIds: settings?.voiceIds,
@@ -287,7 +306,7 @@ export async function POST(request: NextRequest) {
       `hasFrame=${hasFrame} ` +
       // Voice-cloning diagnostics: did an audio clip reach the server, and how
       // many voice_ids ended up in the final request to fal.
-      `hasAudio=${!!settings?.audioUrl} ` +
+      `hasAudio=${!!settings?.audioUrl} audioInputs=${audioSigned.length} ` +
       `voices=${Array.isArray((input as Record<string, unknown>).voice_ids) ? (input as { voice_ids: string[] }).voice_ids.length : 0} ` +
       `promptHasVoiceToken=${typeof finalPrompt === 'string' && finalPrompt.includes('<<<voice')}`,
   )

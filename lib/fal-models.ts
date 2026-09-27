@@ -14,6 +14,12 @@ export interface ModelConfig {
   referenceParam?: 'image_urls' | 'elements' | 'input_image_urls' | 'subject_reference_image_url' | 'reference_image_urls'
   referenceModel?: string       // separate endpoint for references (omit if refs ride the editModel, e.g. Kling v3 elements)
   referenceCite?: '@Image' | '@Element'  // prompt citation token the model needs (auto-appended)
+  // Models that take AUDIO as a real input (a file fal fetches), as opposed to
+  // `supportsAudio`, which only says the model can GENERATE sound. Naming the
+  // field here is what makes the video node draw an audio handle at all.
+  // Kling 2.6 is deliberately not listed: its audio path converts a clip into
+  // a fal voice_id rather than sending the file as an input field.
+  audioParam?: 'reference_audio_urls'
   category: ModelCategory
   inputTypes: InputType[]
   aspectRatios: string[]
@@ -505,6 +511,11 @@ export const FAL_MODELS: ModelConfig[] = [
     imageParam: 'start_image_url',
     referenceModel: 'alibaba/wan-3.0/reference-to-video',
     referenceParam: 'reference_image_urls',
+    // Audio rides the reference-to-video endpoint only — the text- and
+    // image-to-video endpoints have no audio input field at all, so
+    // connecting audio forces the reference endpoint (see submit/route.ts).
+    // fal caps this at 5 URLs totalling 15 seconds.
+    audioParam: 'reference_audio_urls',
     // No @Image syntax: Wan reads refs positionally ("the woman in Image 1").
     category: 'video',
     inputTypes: ['text', 'image'],
@@ -769,6 +780,8 @@ export function buildModelInput(
     // to send. Doesn't affect any other model.
     upscaleMode?: 'standard' | 'creative'
     colormap?: string
+    /** Fal-fetchable audio URLs for models declaring `audioParam`. */
+    audioUrls?: string[]
     // Kling 2.6 voice IDs — comma-separated string of fal-issued voice
     // IDs from the create-voice endpoint. Server splits into array;
     // max 2 used by fal even if more supplied.
@@ -1322,6 +1335,13 @@ export function buildModelInput(
       input.resolution = model.defaultResolution
     }
     input.audio = !!options.enableAudio
+    // Reference audio conditions the generated voice/sound. Only the
+    // reference-to-video endpoint accepts it; fal's cap is 5 URLs totalling
+    // 15 seconds, and it rejects the whole request if that is exceeded, so
+    // trim to 5 here rather than letting the submit fail.
+    if (options.audioUrls?.length) {
+      input.reference_audio_urls = options.audioUrls.slice(0, 5)
+    }
     return input
   }
 

@@ -1380,10 +1380,13 @@ export function LeftToolbar({
                   <UploadSimple size={16} />
                   Upload media
                 </button>
+                {/* Audio belongs in `accept` too: dropping an audio file on
+                    the canvas has always worked, but this picker filtered it
+                    out, so the button and the drop target disagreed. */}
                 <input
                   ref={expandedUploadRef}
                   type="file"
-                  accept="image/*,video/*"
+                  accept="image/*,video/*,audio/*"
                   className="hidden"
                   onChange={async (e) => {
                     const file = e.target.files?.[0]
