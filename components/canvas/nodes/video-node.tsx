@@ -636,8 +636,24 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
         if (url) connectedEndImageUrl = url
       }
 
-      // Collect all connected reference image URLs
+      // Collect all connected reference IMAGE URLs.
+      //
+      // Audio is excluded deliberately. The reference handle accepts any node,
+      // so dropping a sound clip on it used to send the audio URL in
+      // reference_image_urls — fal then either rejects the request or treats a
+      // .wav as a picture. Filtering it here also makes that drop DO the right
+      // thing rather than nothing: the audio collector below matches on
+      // sourceHandle === 'audio-out', so the same clip is still picked up as
+      // audio whichever of the two handles it landed on.
+      const isAudioSource = (edge: { source: string }) => {
+        const n = nodes.find(x => x.id === edge.source)
+        const d = (n?.data || {}) as Record<string, unknown>
+        if (d.mediaType === 'audio') return true
+        const url = resolveNodeMediaUrl(d) || ''
+        return /\.(mp3|wav|m4a|ogg|aac|flac)(\?|$)/i.test(url)
+      }
       connectedReferenceUrls = incomingReferenceEdges
+        .filter(e => !isAudioSource(e))
         .map(e => urlOfSource(e))
         .filter((u): u is string => !!u)
 
@@ -760,6 +776,21 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
       setError(
         `${currentModel.name} can't use a first/end frame and reference images at the same time — they're separate modes. ` +
         `Remove the @mention / wired references to keep your exact first frame, or remove the first frame to use the references.`,
+      )
+      setStatus('idle')
+      return
+    }
+
+    // Sound off + audio wired = a guaranteed silent render. `audio: false`
+    // tells the model to emit no track at all, so the reference audio still
+    // reaches fal and still conditions the voice — that voice just never gets
+    // rendered. The result looks like "the audio input did nothing", which is
+    // a miserable thing to pay for and to debug. The toggle defaults to off,
+    // so this is easy to hit.
+    if (currentModel.supportsAudio && connectedAudioUrls.length > 0 && !enableAudio) {
+      setError(
+        `Sound is off, so this would render silent — the speaker button in the controls below turns it on. ` +
+        `Your audio does reach ${currentModel.name} either way, but with sound off the model is told not to output any audio track.`,
       )
       setStatus('idle')
       return
