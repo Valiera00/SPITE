@@ -13,6 +13,11 @@
 //
 // The GitHub release is left as a DRAFT on purpose: publishing is outward-facing,
 // so you review the notes and hit Publish yourself.
+//
+// EVERY shipped change gets a version: the number in the app's corner is how
+// you tell which build is live, so it has to move whenever the code does. To
+// keep that from burying GitHub in drafts, a PATCH bumps and tags but opens no
+// draft release; minor and major do. `pnpm release patch --draft` forces one.
 // ============================================================================
 
 import { execSync } from 'node:child_process'
@@ -82,6 +87,13 @@ if (current === WORK_BRANCH) {
   loud(`git push origin ${WORK_BRANCH}`)
 }
 loud(`git push origin ${MAIN_BRANCH} --follow-tags`)
+
+// Patches are tagged but not drafted (see the header); stop here for those.
+const wantsDraft = arg !== 'patch' || process.argv.includes('--draft')
+if (!wantsDraft) {
+  console.log(`\nv${next} tagged and pushed. (Patch: no draft release — pass --draft to open one.)`)
+  process.exit(0)
+}
 
 // Draft release with the commit log since the previous tag as a starting point.
 let notes = ''

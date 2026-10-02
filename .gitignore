@@ -22,6 +22,8 @@ node_modules
 # username, and the private deployment URL; must NOT be published)
 .claude/settings.local.json
 .claude/settings.json
+# Local dev-server launch config for the Claude Code preview pane.
+.claude/launch.json
 
 # Local pre-edit backups (security review)
 .security-backup-*/
