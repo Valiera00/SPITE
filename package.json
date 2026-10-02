@@ -2,6 +2,7 @@
   "name": "spite",
   "version": "0.3.0",
   "private": true,
+  "packageManager": "pnpm@10.34.6",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
