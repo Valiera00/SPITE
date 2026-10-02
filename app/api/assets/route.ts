@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getR2Client } from '@/lib/r2-upload'
+import { getR2Client, deleteThumbFor } from '@/lib/r2-upload'
 import { getDb } from '@/lib/db'
 import { v4 as uuidv4 } from 'uuid'
 import { DeleteObjectCommand } from '@aws-sdk/client-s3'
@@ -16,6 +16,8 @@ async function deleteFromR2(key: string) {
   } catch (error) {
     console.error('[assets] R2 delete error:', error)
   }
+  // The derived thumbnail goes with its original.
+  await deleteThumbFor(key)
 }
 
 // Schema setup runs ONCE per serverless instance, not on every request. The

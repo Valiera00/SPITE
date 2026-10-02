@@ -1,4 +1,4 @@
-import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3'
+import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { getDb } from './db'
 import { assetExpiresAt } from './retention'
@@ -30,6 +30,49 @@ export function getR2Client(): S3Client {
     requestChecksumCalculation: 'WHEN_REQUIRED',
     responseChecksumValidation: 'WHEN_REQUIRED',
   })
+}
+
+// ---------------------------------------------------------------------------
+// Thumbnails
+//
+// Grid tiles used to load the full-resolution original (a 2K/4K render is
+// several MB) just to paint a ~200px square. The r2-image proxy now serves a
+// small WebP instead, generated lazily on first request and stored next to
+// the original under this prefix. One width only: a single cached variant
+// per asset beats several rarely-hit ones.
+//
+// The thumbnail key is derived from the original's key, so every code path
+// that deletes an original can (and must) delete its thumbnail too — a
+// deleted image whose thumbnail lingers is still a retrievable copy.
+// ---------------------------------------------------------------------------
+export const THUMB_WIDTH = 384
+
+export function thumbKeyFor(key: string): string {
+  return `thumbs/${THUMB_WIDTH}/${key}.webp`
+}
+
+/** Only still images get a generated thumbnail (not gif: it may be animated). */
+export function isThumbnailable(key: string): boolean {
+  return /\.(png|jpe?g|webp)$/i.test(key) && !key.startsWith('thumbs/')
+}
+
+/**
+ * Delete the thumbnail belonging to `key`. Call alongside every delete of an
+ * original. Deleting a key that doesn't exist is a no-op on S3/R2, so this is
+ * safe to call unconditionally; it never throws.
+ */
+export async function deleteThumbFor(key: string): Promise<void> {
+  if (!isThumbnailable(key)) return
+  try {
+    await getR2Client().send(
+      new DeleteObjectCommand({
+        Bucket: process.env.R2_BUCKET_NAME!,
+        Key: thumbKeyFor(key),
+      }),
+    )
+  } catch (err) {
+    console.error('[r2] thumbnail delete failed for', key, err)
+  }
 }
 
 export async function uploadToR2(

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getR2Client } from '@/lib/r2-upload'
+import { getR2Client, deleteThumbFor } from '@/lib/r2-upload'
 import { getDb } from '@/lib/db'
 import { DeleteObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3'
 import { timingSafeEqual } from 'crypto'
@@ -19,6 +19,8 @@ async function deleteFromR2(key: string) {
   } catch (error) {
     console.error('[cleanup] R2 delete error:', error)
   }
+  // The derived thumbnail goes with its original.
+  await deleteThumbFor(key)
 }
 
 // Reclaim reference images (the refs/ prefix) older than the configured

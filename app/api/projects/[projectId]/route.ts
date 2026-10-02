@@ -1,5 +1,5 @@
 import { getDb } from '@/lib/db'
-import { getR2Client } from '@/lib/r2-upload'
+import { getR2Client, deleteThumbFor } from '@/lib/r2-upload'
 import { NextRequest, NextResponse } from 'next/server'
 import { DeleteObjectCommand } from '@aws-sdk/client-s3'
 
@@ -23,6 +23,8 @@ async function deleteR2Key(key: string) {
   } catch (err) {
     console.error('[projects] R2 delete failed for', key, err)
   }
+  // The derived thumbnail goes with its original.
+  await deleteThumbFor(key)
 }
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ projectId: string }> }) {

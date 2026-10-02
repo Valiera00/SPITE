@@ -1,5 +1,5 @@
 import { PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3'
-import { getR2Client } from '@/lib/r2-upload'
+import { getR2Client, deleteThumbFor } from '@/lib/r2-upload'
 import { getDb } from '@/lib/db'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -68,6 +68,8 @@ export async function DELETE(
         Key: filename,
       })
     )
+    // The derived thumbnail goes with its original.
+    if (typeof filename === 'string') await deleteThumbFor(filename)
 
     // Delete from database
     await sql`DELETE FROM assets WHERE id = ${assetId} AND projectId = ${projectId}`

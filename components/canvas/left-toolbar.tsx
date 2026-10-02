@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import useSWR from 'swr'
 import { AddToFolderModal } from './add-to-folder-modal'
 import { AssetThumb } from './asset-thumb'
+import { thumbUrl, downloadUrl, assetDownloadName } from '@/lib/asset-url'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -221,7 +222,11 @@ export function LeftToolbar({
   const { data: generatedAssets = [], isLoading: loadingHistory, mutate: mutateAssets } = useSWR<GeneratedAsset[]>(
     historyOpen ? `/api/assets?projectId=${projectId}` : null,
     fetcher,
-    { refreshInterval: 3000, revalidateOnFocus: true }
+    // 10s, not 3s: anything that changes the library (a finished generation,
+    // an upload, a delete, a folder move) already fires 'asset-status-changed'
+    // and revalidates immediately, so the poll is only a safety net for
+    // changes made elsewhere — it doesn't need to hit the database 20x a minute.
+    { refreshInterval: 10000, revalidateOnFocus: true }
   )
 
   // Fetch folders for THIS project. Always-on (no historyOpen gate) so a
@@ -237,21 +242,16 @@ export function LeftToolbar({
     assets: { id: string; r2_url: string; type: 'image' | 'video' | 'audio'; prompt: string }[]
   }[]>(
     foldersKey,
-    (url: string) => {
-      console.log('[folders] sidebar fetching', url)
-      return fetcher(url).then(d => {
-        console.log('[folders] sidebar got', d?.length ?? 0, 'folders for', projectId)
-        return d
-      })
-    },
-    { refreshInterval: 5000, revalidateOnFocus: true }
+    fetcher,
+    // Folder edits fire 'folders-changed' and revalidate at once; this poll
+    // is only a backstop.
+    { refreshInterval: 15000, revalidateOnFocus: true }
   )
 
   // Listen for folder changes — force network revalidate so we don't show
   // a stale cached list.
   useEffect(() => {
     const handleFoldersChanged = () => {
-      console.log('[folders] folders-changed event received, revalidating', foldersKey)
       mutateFolders(undefined, { revalidate: true })
     }
     window.addEventListener('folders-changed', handleFoldersChanged)
@@ -689,7 +689,7 @@ export function LeftToolbar({
                                   <div className="w-7 h-7 rounded overflow-hidden bg-card border border-border/30 shrink-0 flex items-center justify-center">
                                     {f.assets[0]?.r2_url ? (
                                       <img
-                                        src={f.assets[0].r2_url}
+                                        src={thumbUrl(f.assets[0].r2_url)}
                                         alt=""
                                         className="w-full h-full object-cover"
                                         loading="lazy"
@@ -879,7 +879,7 @@ export function LeftToolbar({
                         <div className="aspect-video bg-[#0D0F12] relative overflow-hidden">
                           {f.assets[0]?.r2_url ? (
                             <img
-                              src={f.assets[0].r2_url}
+                              src={thumbUrl(f.assets[0].r2_url)}
                               alt=""
                               className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-300"
                               loading="lazy"
@@ -1279,7 +1279,7 @@ export function LeftToolbar({
                     Copy link
                   </button>
                   <a
-                    href={selectedGenAsset.r2_url}
+                    href={downloadUrl(selectedGenAsset.r2_url, assetDownloadName(selectedGenAsset))}
                     download
                     className="flex-1 px-4 py-2 rounded-lg bg-foreground text-background text-sm font-medium hover:bg-foreground/90 transition-colors text-center"
                   >
@@ -1534,7 +1534,7 @@ export function LeftToolbar({
                               <div className="flex gap-1 mb-1.5">
                                 {folder.assets.slice(0, 2).map((asset, i) => (
                                   <div key={i} className="w-8 h-8 rounded bg-white/5 overflow-hidden">
-                                    <img src={asset.r2_url} alt="" className="w-full h-full object-cover" />
+                                    <img src={thumbUrl(asset.r2_url)} alt="" className="w-full h-full object-cover" loading="lazy" decoding="async" />
                                   </div>
                                 ))}
                                 {folder.assets.length === 0 && (
@@ -1575,7 +1575,7 @@ export function LeftToolbar({
                               <div className="flex gap-1 mb-1.5">
                                 {folder.assets.slice(0, 2).map((asset, i) => (
                                   <div key={i} className="w-8 h-8 rounded bg-white/5 overflow-hidden">
-                                    <img src={asset.r2_url} alt="" className="w-full h-full object-cover" />
+                                    <img src={thumbUrl(asset.r2_url)} alt="" className="w-full h-full object-cover" loading="lazy" decoding="async" />
                                   </div>
                                 ))}
                                 {folder.assets.length === 0 && (
@@ -1616,7 +1616,7 @@ export function LeftToolbar({
                               <div className="flex gap-1 mb-1.5">
                                 {folder.assets.slice(0, 2).map((asset, i) => (
                                   <div key={i} className="w-8 h-8 rounded bg-white/5 overflow-hidden">
-                                    <img src={asset.r2_url} alt="" className="w-full h-full object-cover" />
+                                    <img src={thumbUrl(asset.r2_url)} alt="" className="w-full h-full object-cover" loading="lazy" decoding="async" />
                                   </div>
                                 ))}
                                 {folder.assets.length === 0 && (
@@ -1767,7 +1767,7 @@ export function LeftToolbar({
 
               <div className="flex gap-2">
                 <a
-                  href={selectedGenAsset.r2_url}
+                  href={downloadUrl(selectedGenAsset.r2_url, assetDownloadName(selectedGenAsset))}
                   download
                   className="flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-accent text-background text-xs font-mono hover:bg-accent/90 transition-colors"
                 >
@@ -2122,7 +2122,7 @@ export function LeftToolbar({
                           </button>
                           <div className="w-10 h-10 rounded overflow-hidden shrink-0 bg-card border border-border/30">
                             {folder.assets[0]?.r2_url ? (
-                              <img src={folder.assets[0].r2_url} alt="" className="w-full h-full object-cover" loading="lazy" decoding="async" />
+                              <img src={thumbUrl(folder.assets[0].r2_url)} alt="" className="w-full h-full object-cover" loading="lazy" decoding="async" />
                             ) : (
                               <div className="w-full h-full flex items-center justify-center">
                                 <cat.icon size={14} className="text-muted-foreground/30" />

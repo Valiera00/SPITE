@@ -416,6 +416,8 @@ function ImageNodeImpl({ id, data, selected }: NodeProps) {
 
       if (result.status === 'COMPLETED') {
         setStatus('completed')
+        // New asset exists server-side now — refresh the assets panel immediately.
+        window.dispatchEvent(new CustomEvent('asset-status-changed'))
         setProgress(undefined)
         clearPending()
         // API returns { output: { images: [...], url: '...' } }
@@ -551,6 +553,8 @@ function ImageNodeImpl({ id, data, selected }: NodeProps) {
           result.result?.image?.url
         if (imageUrl) setOutputUrl(imageUrl)
         setStatus('completed')
+        // New asset exists server-side now — refresh the assets panel immediately.
+        window.dispatchEvent(new CustomEvent('asset-status-changed'))
         setProgress(undefined)
         clearPending()
         toast.success('Result is ready — saved to your library.', { id: toastId })

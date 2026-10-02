@@ -431,6 +431,8 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
 
       if (result.status === 'COMPLETED') {
         setStatus('completed')
+        // New asset exists server-side now — refresh the assets panel immediately.
+        window.dispatchEvent(new CustomEvent('asset-status-changed'))
         setProgress(undefined)
         clearPending()
         // API returns { output: { videos: [...], url: '...' } }
@@ -532,6 +534,8 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
           result.result?.video_url
         if (videoUrl) setOutputUrl(videoUrl)
         setStatus('completed')
+        // New asset exists server-side now — refresh the assets panel immediately.
+        window.dispatchEvent(new CustomEvent('asset-status-changed'))
         setProgress(undefined)
         clearPending()
         toast.success('Result is ready — saved to your library.', { id: toastId })

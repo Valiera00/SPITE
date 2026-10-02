@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getR2Client } from '@/lib/r2-upload'
+import { getR2Client, deleteThumbFor } from '@/lib/r2-upload'
 import { getDb } from '@/lib/db'
 import { DeleteObjectCommand } from '@aws-sdk/client-s3'
 
@@ -136,6 +136,8 @@ export async function DELETE(
           Bucket: process.env.R2_BUCKET_NAME!,
           Key: key,
         }))
+        // The derived thumbnail goes with its original.
+        await deleteThumbFor(key)
       } catch (r2Error) {
         console.error('[assets] R2 deletion failed:', r2Error)
         // DB row is gone already; leftover R2 object is acceptable.
