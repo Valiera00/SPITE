@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useEffect, useRef, useState } from 'react'
 import { FilmSlate, ClockCounterClockwise, DotsThreeVertical, CopySimple, Trash } from '@phosphor-icons/react'
 import { toast } from 'sonner'
+import { thumbUrl } from '@/lib/asset-url'
 import {
   AlertDialog,
   AlertDialogContent,
@@ -158,8 +159,10 @@ export function ProjectCard({ id, name, thumbnail, lastModified, genre, href, on
                 />
               ) : (
                 <img
-                  src={thumbnail}
+                  src={thumbUrl(thumbnail)}
                   alt={`${name} thumbnail`}
+                  loading="lazy"
+                  decoding="async"
                   className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity duration-300"
                 />
               )

@@ -15,6 +15,7 @@ import { VersionBadge } from '@/components/version-badge'
 import { startTour } from '@/lib/onboarding'
 import { MicButton } from '@/components/mic-button'
 import { useSpeechInput, appendDictated } from '@/lib/use-speech-input'
+import { thumbUrl } from '@/lib/asset-url'
 
 type Asset = {
   id: string
@@ -337,7 +338,7 @@ export default function FlowThread() {
               {(a.refs?.length ?? 0) > 0 && (
                 <div className="flex items-center gap-1.5 flex-wrap">
                   {a.refs!.slice(0, 4).map((u, i) => (
-                    <img key={i} src={u} alt="" onError={(e) => { e.currentTarget.style.display = 'none' }}
+                    <img key={i} src={thumbUrl(u)} alt="" loading="lazy" decoding="async" onError={(e) => { e.currentTarget.style.display = 'none' }}
                       className="w-11 h-11 rounded-lg object-cover border border-white/15 bg-black/40" />
                   ))}
                   {a.refs!.length > 4 && <span className="text-[10px] font-mono text-muted-foreground/60">+{a.refs!.length - 4}</span>}

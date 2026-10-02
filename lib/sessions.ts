@@ -102,6 +102,21 @@ export async function createSession(): Promise<string> {
 // True if the token exists and hasn't expired. Fail-closed on any
 // error (DB unreachable, schema missing, etc.) — transient infra
 // trouble must not accidentally open the gate.
+// Recently-validated tokens, per warm instance. Every request passes through
+// isSessionValid — the proxy checks it, and the media route checks it again
+// for each image and video — so opening a canvas with 30 media nodes used to
+// cost dozens of identical Postgres round-trips. A token that was valid a
+// moment ago is remembered for SESSION_CACHE_MS instead.
+//
+// Only POSITIVE results are cached: a failed lookup is always re-checked, so
+// logging in takes effect immediately. The price is on revocation: logout
+// clears this instance's entry at once (see revokeSession), but another warm
+// instance can keep honouring the token until its own entry lapses — at most
+// SESSION_CACHE_MS. Kept short for that reason.
+const SESSION_CACHE_MS = 60_000
+const SESSION_CACHE_MAX = 500
+const validUntil = new Map<string, number>()
+
 export async function isSessionValid(token: string | undefined | null): Promise<boolean> {
   if (!token || typeof token !== 'string' || token.length !== SESSION_TOKEN_HEX_LENGTH) {
     return false
@@ -109,12 +124,25 @@ export async function isSessionValid(token: string | undefined | null): Promise<
   // Sanity: only hex chars. Keeps obviously-malformed tokens out of the
   // SQL parameter (already safe via the driver, but no reason to query).
   if (!/^[a-f0-9]+$/i.test(token)) return false
+  const cachedUntil = validUntil.get(token)
+  if (cachedUntil !== undefined) {
+    if (cachedUntil > Date.now()) return true
+    validUntil.delete(token)
+  }
   try {
     const sql = getDb()
     await ensureSchema(sql)
     const rows = (await sql`
       SELECT 1 FROM sessions WHERE token = ${token} AND expires_at > now() LIMIT 1
     `) as unknown[]
+    if (rows.length > 0) {
+      // Bounded: drop the oldest entry rather than grow without limit.
+      if (validUntil.size >= SESSION_CACHE_MAX) {
+        const oldest = validUntil.keys().next().value
+        if (oldest !== undefined) validUntil.delete(oldest)
+      }
+      validUntil.set(token, Date.now() + SESSION_CACHE_MS)
+    }
     return rows.length > 0
   } catch (err) {
     console.error('[sessions] isSessionValid failed:', err)
@@ -124,6 +152,9 @@ export async function isSessionValid(token: string | undefined | null): Promise<
 
 export async function revokeSession(token: string | undefined | null): Promise<void> {
   if (!token) return
+  // Forget it locally first, so this instance stops honouring it even if the
+  // database delete below fails.
+  validUntil.delete(token)
   try {
     const sql = getDb()
     await ensureSchema(sql)
