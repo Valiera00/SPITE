@@ -65,6 +65,10 @@ export interface Asset {
   metadata?: any
 }
 
+// Tiles the assets grid mounts per page. 48 = eight rows in the side panel
+// (6 columns) and about seven in the expanded view (7 columns).
+const ASSET_PAGE_SIZE = 48
+
 const TOOLS = [
   { id: 'select', icon: Cursor, label: 'Select' },
   { id: 'add', icon: Plus, label: 'Add node' },
@@ -292,16 +296,53 @@ export function LeftToolbar({
     })
   }, [generatedAssets, historySearch, historyFilter])
 
+  // Paging. The grid mounts only the newest ASSET_PAGE_SIZE tiles; "Show
+  // more" reveals the next page. A library of several hundred assets used to
+  // mount (and start loading) every tile on open, which is what made the
+  // panel crawl even with small thumbnails. Search and the type filter still
+  // run over the WHOLE library — only what gets rendered is capped.
+  const [visibleCount, setVisibleCount] = useState(ASSET_PAGE_SIZE)
+  // A new search/filter/project is a new list: start again from the top.
+  useEffect(() => {
+    setVisibleCount(ASSET_PAGE_SIZE)
+  }, [historySearch, historyFilter, projectId])
+  const visibleGenAssets = useMemo(
+    () => filteredGenAssets.slice(0, visibleCount),
+    [filteredGenAssets, visibleCount],
+  )
+  const hiddenCount = filteredGenAssets.length - visibleGenAssets.length
+
   const groupedGenAssets = useMemo(() => {
     const groups: Record<string, GeneratedAsset[]> = {}
-    filteredGenAssets.forEach(asset => {
+    visibleGenAssets.forEach(asset => {
       const date = new Date(asset.created_at)
       const key = date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
       if (!groups[key]) groups[key] = []
       groups[key].push(asset)
     })
     return groups
-  }, [filteredGenAssets])
+  }, [visibleGenAssets])
+
+  const showMoreAssets = hiddenCount > 0 ? (
+    <div className="flex items-center justify-center gap-2 pt-1 pb-6">
+      <button
+        onClick={() => setVisibleCount(c => c + ASSET_PAGE_SIZE)}
+        className="flex items-center gap-1.5 px-4 py-2 rounded-lg border border-border/30 text-xs font-mono text-foreground/80 hover:bg-white/5 hover:border-accent/40 transition-colors"
+      >
+        <CaretDown size={12} />
+        Show {Math.min(ASSET_PAGE_SIZE, hiddenCount)} more
+        <span className="text-muted-foreground/50">· {hiddenCount} hidden</span>
+      </button>
+      {hiddenCount > ASSET_PAGE_SIZE && (
+        <button
+          onClick={() => setVisibleCount(filteredGenAssets.length)}
+          className="px-3 py-2 rounded-lg text-xs font-mono text-muted-foreground/60 hover:text-foreground hover:bg-white/5 transition-colors"
+        >
+          Show all
+        </button>
+      )}
+    </div>
+  ) : null
 
   const copyPrompt = (prompt: string) => {
     navigator.clipboard.writeText(prompt)
@@ -407,7 +448,7 @@ export function LeftToolbar({
     })
   }
   const selectAllVisible = () => {
-    setSelectedAssetIds(new Set(filteredGenAssets.map(a => a.id)))
+    setSelectedAssetIds(new Set(visibleGenAssets.map(a => a.id)))
   }
   const exitSelectMode = () => {
     setSelectMode(false)
@@ -1129,7 +1170,8 @@ export function LeftToolbar({
                   <span className="text-sm font-mono text-muted-foreground/50">No generations yet</span>
                 </div>
               ) : (
-                Object.entries(groupedGenAssets).map(([monthYear, monthAssets]) => (
+                <>
+                {Object.entries(groupedGenAssets).map(([monthYear, monthAssets]) => (
                   <div key={monthYear} className="mb-6">
                     <h3 className="text-sm text-muted-foreground/60 mb-3">
                       {monthYear}
@@ -1191,7 +1233,9 @@ export function LeftToolbar({
                       })}
                     </div>
                   </div>
-                ))
+                ))}
+                {showMoreAssets}
+                </>
               )}
             </div>
           </div>
@@ -1647,7 +1691,8 @@ export function LeftToolbar({
                   <span className="text-xs font-mono text-muted-foreground/50">No generations yet</span>
                 </div>
               ) : (
-                Object.entries(groupedGenAssets).map(([monthYear, monthAssets]) => (
+                <>
+                {Object.entries(groupedGenAssets).map(([monthYear, monthAssets]) => (
                   <div key={monthYear} className="mb-4">
                     <h3 className="text-xs text-muted-foreground/50 uppercase tracking-wider px-2 mb-2">
                       {monthYear}
@@ -1708,7 +1753,9 @@ export function LeftToolbar({
                       })}
                     </div>
                   </div>
-                ))
+                ))}
+                {showMoreAssets}
+                </>
               )}
             </div>
           ) : (
