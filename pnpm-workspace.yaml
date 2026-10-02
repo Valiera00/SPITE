@@ -7,11 +7,14 @@ overrides:
   # Security overrides for transitive deps we don't control directly.
   # postcss/nanoid: path-traversal + infinite-loop advisories.
   # browserslist: prototype-write via custom stats + unbounded cache growth.
-  # sharp: libvips CVEs. Next only declares it as an OPTIONAL dep pinned to
-  # ^0.34.5, and this app sets images.unoptimized, so sharp is never actually
-  # invoked — but pinning forward keeps the advisory closed rather than relying
-  # on that mitigation holding forever.
+  # sharp: libvips/libheif CVEs (fixed in 0.35.4). Next declares it as an
+  # optional dep on ^0.34.5, which would keep a vulnerable copy in the tree, and
+  # the thumbnailer in api/r2-image now calls sharp directly — so it is pinned
+  # forward here.
+  # KEEP THIS RANGE IDENTICAL to "sharp" in package.json. pnpm 10 (Vercel) and
+  # pnpm 11 (local) disagree on which of two differing ranges goes in the
+  # lockfile, and a mismatch fails Vercel's frozen install.
   postcss@<8.5.23: '>=8.5.23'
   nanoid@<3.3.17: '>=3.3.17'
   browserslist@<4.28.7: '>=4.28.7'
-  sharp: '>=0.35.0'
+  sharp: '>=0.35.4'
