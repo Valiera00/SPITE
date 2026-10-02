@@ -1335,10 +1335,11 @@ export function buildModelInput(
       input.resolution = model.defaultResolution
     }
     input.audio = !!options.enableAudio
-    // Reference audio conditions the generated voice/sound. Only the
-    // reference-to-video endpoint accepts it; fal's cap is 5 URLs totalling
-    // 15 seconds, and it rejects the whole request if that is exceeded, so
-    // trim to 5 here rather than letting the submit fail.
+    // Reference audio: in practice Wan uses the supplied clip itself as the
+    // shot's audio and lip-syncs to it. Only the reference-to-video endpoint
+    // accepts it; fal's cap is 5 URLs totalling 15 seconds, and it rejects the
+    // whole request if that is exceeded, so trim to 5 here rather than letting
+    // the submit fail.
     if (options.audioUrls?.length) {
       input.reference_audio_urls = options.audioUrls.slice(0, 5)
     }

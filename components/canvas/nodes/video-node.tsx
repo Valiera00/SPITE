@@ -787,8 +787,8 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
 
     // Sound off + audio wired = a guaranteed silent render. `audio: false`
     // tells the model to emit no track at all, so the reference audio still
-    // reaches fal and still conditions the voice — that voice just never gets
-    // rendered. The result looks like "the audio input did nothing", which is
+    // reaches fal but nothing audible comes back.
+    // The result looks like "the audio input did nothing", which is
     // a miserable thing to pay for and to debug. The toggle defaults to off,
     // so this is easy to hit.
     if (currentModel.supportsAudio && connectedAudioUrls.length > 0 && !enableAudio) {
@@ -995,8 +995,10 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
       count: numVideos,
       durationSeconds: duration ? parseInt(duration) : undefined,
       resolution,
+      audio: enableAudio,
+      autoDuration: duration === 'auto',
     }),
-    [currentModel, numVideos, duration, resolution],
+    [currentModel, numVideos, duration, resolution, enableAudio],
   )
   // Which vertical slot the audio handle takes. See the handle block below.
   const audioHandleTop = currentModel?.inputTypes.includes('video') ? 360 : 310
@@ -1008,15 +1010,17 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
     }
     const label = `Generate ${numVideos} video${numVideos === 1 ? '' : 's'}`
     if (!costEstimate.isKnown) return `${label}\n(price not estimated for this model)`
-    return `${label}\nEstimated cost: ~${formatUSD(costEstimate.total)} (${formatUSD(costEstimate.perUnit)} each).\nReal cost depends on resolution, duration and model load.`
+    const at = costEstimate.tier ? ` at ${costEstimate.tier}` : ''
+    return `${label}\nEstimated cost: ~${formatUSD(costEstimate.total)} (${formatUSD(costEstimate.perUnit)} each${at}).\nReal cost depends on model load.`
   }, [currentModel, numVideos, costEstimate, blockedNoFirstFrame])
   const requestGenerate = () => {
     if (costEstimate.isKnown && costEstimate.total >= COST_CONFIRM_THRESHOLD_USD) {
       const msg =
         `You're about to submit ${numVideos} ${currentModel?.name || 'video'} generation${numVideos === 1 ? '' : 's'} ` +
         `to fal.ai.\n\n` +
-        `Estimated cost: ~${formatUSD(costEstimate.total)} (${formatUSD(costEstimate.perUnit)} each).\n` +
-        `Real cost depends on resolution, duration and model load.\n\n` +
+        `Estimated cost: ~${formatUSD(costEstimate.total)} (${formatUSD(costEstimate.perUnit)} each` +
+        `${costEstimate.tier ? ` at ${costEstimate.tier}` : ''}).\n` +
+        `Real cost depends on model load.\n\n` +
         `Press OK to confirm and spend this, or Cancel to back out.`
       if (!window.confirm(msg)) return
     }

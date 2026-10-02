@@ -24,6 +24,10 @@ interface CostEntry {
   unit: Unit
   price: number
   byTier?: Record<string, number>
+  // Same tiers for when the model also GENERATES sound and fal bills that at
+  // a higher rate (Veo doubles; PixVerse adds ~30%). Used when the sound
+  // toggle is on — or unknown, since the gate must assume the dearer case.
+  byTierAudio?: Record<string, number>
 }
 
 const COST_TABLE: Record<string, CostEntry> = {
@@ -56,18 +60,32 @@ const COST_TABLE: Record<string, CostEntry> = {
   'ideogram-v4':         { unit: 'image', price: 0.038,
                            byTier: { TURBO: 0.012, BALANCED: 0.023, QUALITY: 0.038 } },
   // Video models
-  'seedance-1.5':        { unit: 'video', price: 4.50 },  // ~5sec 720p — same tier as 2.0
-  'seedance-2.0':        { unit: 'video', price: 4.50 },  // ~5sec 720p Seedance
-  // Seedance 2.5 is billed per second: $0.2205/s at 480p, $0.473/s at
-  // 720p, $1.164/s at 1080p (fal, Sept 2026). Clips run up to 30s, so a
-  // flat per-video number would be wildly wrong at either end. $0.50/s is
-  // the 720p default rounded up; 1080p runs will be under-estimated.
-  'seedance-2.5':        { unit: 'sec',   price: 0.50 },
+  // All per-second rates below are from fal's model pages (Oct 2026) and are
+  // priced by the resolution actually selected.
+  //
+  // Seedance 1.5 Pro bills video tokens — (h x w x 24fps x seconds) / 1024 —
+  // at $2.40 per million WITH audio, half that without. This app sends no
+  // generate_audio flag for 1.5, so fal's default (audio on) applies and the
+  // with-audio rate is the one charged. fal's own example: 720p, 5s = $0.26.
+  'seedance-1.5':        { unit: 'sec',   price: 0.117,
+                           byTier: { '480p': 0.024, '720p': 0.052, '1080p': 0.117 } },
+  // Seedance 2.0: $0.3034/s at 720p, $0.682/s at 1080p; 480p comes off the
+  // token formula ($0.014 per 1000 tokens) at about $0.135/s. Audio is
+  // generated in the same pass and does not change the price.
+  'seedance-2.0':        { unit: 'sec',   price: 0.69,
+                           byTier: { '480p': 0.14, '720p': 0.31, '1080p': 0.69 } },
+  // Seedance 2.5: $0.2205/s 480p, $0.473/s 720p, $1.164/s 1080p. Clips run to
+  // 30s, so a 1080p maximum-length render is about $35.
+  'seedance-2.5':        { unit: 'sec',   price: 1.164,
+                           byTier: { '480p': 0.221, '720p': 0.473, '1080p': 1.164 } },
   // Sept 2026 arena leaders. All billed per second on fal.
   // Wan 3.0: $0.05/s 480p, $0.10/s 720p, $0.20/s 1080p (the default).
-  'wan-3.0':             { unit: 'sec',   price: 0.20 },
-  // H3 Max: $0.0125/s 480P, $0.02/s 768P (default), 1080P is 2x. Rounded up.
-  'minimax-h3-max':      { unit: 'sec',   price: 0.05 },
+  'wan-3.0':             { unit: 'sec',   price: 0.20,
+                           byTier: { '480p': 0.05, '720p': 0.10, '1080p': 0.20 } },
+  // H3 Max: $0.05/s 480P, $0.08/s 768P (default), $0.16/s 1080P. These are
+  // the regular rates — the half-price launch promo ended 30 Sept 2026.
+  'minimax-h3-max':      { unit: 'sec',   price: 0.16,
+                           byTier: { '480P': 0.05, '768P': 0.08, '1080P': 0.16 } },
   // Gemini Omni Flash: fal lists $0.13/s. Rounded up.
   'gemini-omni-flash':   { unit: 'sec',   price: 0.15 },
   'kling-1.0':           { unit: 'video', price: 0.50 },
@@ -87,25 +105,45 @@ const COST_TABLE: Record<string, CostEntry> = {
   'minimax-hailuo-2.3':  { unit: 'video', price: 0.65 },  // 2.3 is slightly pricier than original
   // Kling o1 first-frame-last-frame: docs say $0.112 per second.
   'kling-o1-video':      { unit: 'sec',   price: 0.112 },
-  'luma-ray2':           { unit: 'video', price: 1.50 },
+  // Luma Ray 2: $0.50 per 5s clip at 540p, 2x at 720p, 4x at 1080p; a 9s clip
+  // costs double a 5s one. Expressed per second at the 9s rate, so a 9s clip
+  // estimates exactly and a 5s clip ~10% high rather than low.
+  'luma-ray2':           { unit: 'sec',   price: 0.445,
+                           byTier: { '540p': 0.112, '720p': 0.223, '1080p': 0.445 } },
   // 2026 video additions.
-  // Veo 3.1: docs say $0.20/s base, $0.40/s with audio at 720p/1080p.
-  // Splitting the difference at $0.30/s as a conservative blended rate.
-  'veo-3.1':             { unit: 'sec',   price: 0.30 },
-  // Veo 3.1 Fast: $0.10/s base, $0.15/s with audio. ~$0.12/s blended.
-  'veo-3.1-fast':        { unit: 'sec',   price: 0.12 },
-  'happy-horse':         { unit: 'video', price: 0.40 },  // unknown; 1080p i2v
-  'ltx-video-13b':       { unit: 'video', price: 0.10 },  // open source, cheap
-  'pixverse-v6':         { unit: 'video', price: 0.30 },  // unknown; estimate
-  // Upscalers — flat-rate estimate covering up to ~10sec at 4x.
+  // Veo 3.1: 720p and 1080p cost the same — $0.20/s silent, $0.40/s with
+  // sound; 4K is $0.40/s silent, $0.60/s with sound.
+  'veo-3.1':             { unit: 'sec',   price: 0.60,
+                           byTier:      { '720p': 0.20, '1080p': 0.20, '4K': 0.40 },
+                           byTierAudio: { '720p': 0.40, '1080p': 0.40, '4K': 0.60 } },
+  // Veo 3.1 Fast: $0.10/s silent, $0.15/s with sound; 4K $0.30 / $0.35.
+  'veo-3.1-fast':        { unit: 'sec',   price: 0.35,
+                           byTier:      { '720p': 0.10, '1080p': 0.10, '4K': 0.30 },
+                           byTierAudio: { '720p': 0.15, '1080p': 0.15, '4K': 0.35 } },
+  // Happy Horse: $0.14/s at 720p, $0.28/s at 1080p.
+  'happy-horse':         { unit: 'sec',   price: 0.28,
+                           byTier: { '720p': 0.14, '1080p': 0.28 } },
+  // LTX-Video 13b: $0.04/s whatever the resolution ($0.08 with the detail
+  // pass, which this app never enables).
+  'ltx-video-13b':       { unit: 'sec',   price: 0.04 },
+  // PixVerse V6: per second by resolution, with a surcharge for sound.
+  'pixverse-v6':         { unit: 'sec',   price: 0.115,
+                           byTier:      { '360p': 0.025, '540p': 0.035, '720p': 0.045, '1080p': 0.09 },
+                           byTierAudio: { '360p': 0.035, '540p': 0.045, '720p': 0.06,  '1080p': 0.115 } },
+  // Topaz video upscale bills per second of the SOURCE clip by output size:
+  // $0.01 up to 720p, $0.02 up to 1080p, $0.08 above (60fps doubles it). The
+  // source clip's length isn't known here, so this stays one flat figure: a
+  // little over 10 seconds at the top rate.
   'topaz-video-upscale': { unit: 'video', price: 1.00 },
-  // Depth chain — fal publishes no price on either model page, and the submit
-  // route fails closed on unknown cost, so these are deliberately HIGH
-  // placeholders: the gate stays conservative until a real bill lands. Depth
-  // estimation is pure inference (cheap); VACE is a 14B generative pass.
-  // Correct both from fal's billing page after the first run.
-  'depth-anything-video': { unit: 'video', price: 0.30 },
-  'wan-vace-depth':       { unit: 'video', price: 1.00 },
+  // Depth Anything Video: $0.04 per second of the SOURCE clip. Its length
+  // isn't known here either, so the flat figure covers a 30s clip — the
+  // longest this app can generate.
+  'depth-anything-video': { unit: 'video', price: 1.20 },
+  // Wan VACE Depth: $0.04/s at 480p, $0.06/s at 580p, $0.08/s at 720p. fal
+  // lists no rate for 'auto', 240p or 360p, so those fall back to the 720p
+  // rate rather than guess low.
+  'wan-vace-depth':       { unit: 'sec',  price: 0.08,
+                           byTier: { '480p': 0.04, '580p': 0.06, '720p': 0.08 } },
   // Image upscalers — per-image estimates (real cost is per-megapixel on fal,
   // so these are conservative gate ceilings, not exact billing).
   'topaz-image-upscale':   { unit: 'image', price: 0.08 },
@@ -130,18 +168,41 @@ function basePrice(
   entry: CostEntry,
   model: ModelConfig,
   resolution?: string,
+  audio?: boolean,
 ): { price: number; tier?: string } {
-  if (!entry.byTier) return { price: entry.price }
+  // The sound-on table applies only when the model can generate sound at all
+  // AND the toggle isn't explicitly off. An unknown toggle counts as on.
+  const soundOn = !!model.supportsAudio && audio !== false
+  const table = soundOn && entry.byTierAudio ? entry.byTierAudio : entry.byTier
+  if (!table) return { price: entry.price }
   const tier = resolution || model.defaultResolution
-  if (tier && entry.byTier[tier] !== undefined) {
-    return { price: entry.byTier[tier], tier }
+  if (tier && table[tier] !== undefined) {
+    return { price: table[tier], tier }
   }
   return { price: entry.price }
 }
 
+// Longest duration a model offers, in seconds. 'auto' lets the model choose
+// the length itself, so the only safe assumption for a spend gate is the
+// maximum — pricing it at the 5s default under-estimated a 30s render 6x.
+function longestDuration(model: ModelConfig): number | undefined {
+  const secs = (model.durations || [])
+    .map((d) => parseInt(d))
+    .filter((n) => Number.isFinite(n) && n > 0)
+  return secs.length ? Math.max(...secs) : undefined
+}
+
 export function estimateGenerationCost(
   model: ModelConfig | null | undefined,
-  options: { count: number; durationSeconds?: number; resolution?: string },
+  options: {
+    count: number
+    durationSeconds?: number
+    resolution?: string
+    /** Sound toggle. Omit when unknown — the dearer rate is then assumed. */
+    audio?: boolean
+    /** Duration is 'auto' (model decides): price the longest it can pick. */
+    autoDuration?: boolean
+  },
 ): CostEstimate {
   if (!model) {
     return { perUnit: 0, total: 0, unit: 'image', isKnown: false }
@@ -150,10 +211,13 @@ export function estimateGenerationCost(
   if (!entry) {
     return { perUnit: 0, total: 0, unit: model.category === 'video' ? 'video' : 'image', isKnown: false }
   }
-  const { price, tier } = basePrice(entry, model, options.resolution)
+  const { price, tier } = basePrice(entry, model, options.resolution, options.audio)
   let perUnit = price
   if (entry.unit === 'sec') {
-    const dur = options.durationSeconds || parseInt(model.defaultDuration || '5')
+    const dur =
+      (options.autoDuration ? longestDuration(model) : undefined) ||
+      options.durationSeconds ||
+      parseInt(model.defaultDuration || '5')
     perUnit = price * (Number.isFinite(dur) && dur > 0 ? dur : 5)
   }
   return {

@@ -80,6 +80,11 @@ export async function POST(request: NextRequest) {
     // unrecognised value falls back to the model's dearest tier, never a
     // cheaper one.
     resolution: typeof settings?.resolution === 'string' ? settings.resolution : undefined,
+    // Sound and 'auto' duration both move the price. These are the same
+    // settings fields buildModelInput reads below, so the gate prices exactly
+    // what gets submitted.
+    audio: typeof settings?.enableAudio === 'boolean' ? settings.enableAudio : undefined,
+    autoDuration: settings?.duration === 'auto',
   })
   // Fail-closed on unknown cost: a model declared in lib/fal-models.ts but
   // missing from lib/fal-cost.ts would otherwise estimate $0 and bypass the
