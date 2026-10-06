@@ -344,6 +344,18 @@ export function LeftToolbar({
     </div>
   ) : null
 
+  // Drag a library tile onto the canvas to place it as a reference node.
+  // Same 'asset' payload the folder tiles already send; canvas-workspace's
+  // handleDrop turns it into a node and protects the asset. Disabled in
+  // select mode so a drag can't fight the selection click.
+  const startAssetDrag = (e: React.DragEvent, asset: GeneratedAsset) => {
+    if (selectMode) { e.preventDefault(); return }
+    e.dataTransfer.setData('asset', JSON.stringify({
+      id: asset.id, r2_url: asset.r2_url, type: asset.type, prompt: asset.prompt,
+    }))
+    e.dataTransfer.effectAllowed = 'copy'
+  }
+
   const copyPrompt = (prompt: string) => {
     navigator.clipboard.writeText(prompt)
   }
@@ -1180,17 +1192,29 @@ export function LeftToolbar({
                       {monthAssets.map(asset => {
                         const isSel = selectedAssetIds.has(asset.id)
                         return (
-                          <button
+                          <div
                             key={asset.id}
+                            role="button"
+                            tabIndex={0}
                             onClick={() => {
                               if (selectMode) toggleAssetSelected(asset.id)
                               else setSelectedGenAsset(asset)
                             }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault()
+                                if (selectMode) toggleAssetSelected(asset.id)
+                                else setSelectedGenAsset(asset)
+                              }
+                            }}
+                            draggable={!selectMode}
+                            onDragStart={(e) => startAssetDrag(e, asset)}
+                            title={selectMode ? 'Click to toggle selection' : 'Click to view · drag onto the canvas'}
                             className={`relative aspect-square rounded-lg overflow-hidden bg-card border transition-all group ${
                               isSel
                                 ? 'border-accent ring-2 ring-accent/60'
                                 : 'border-border/30 hover:border-accent/50 hover:scale-[1.02]'
-                            }`}
+                            }${selectMode ? ' cursor-pointer' : ' cursor-grab active:cursor-grabbing'}`}
                           >
                             <AssetThumb url={asset.r2_url} type={asset.type} />
                             <div className="absolute top-2 left-2 flex gap-1">
@@ -1228,7 +1252,7 @@ export function LeftToolbar({
                                 <Check size={14} weight="bold" />
                               </div>
                             )}
-                          </button>
+                          </div>
                         )
                       })}
                     </div>
@@ -1701,17 +1725,29 @@ export function LeftToolbar({
                       {monthAssets.map(asset => {
                         const isSel = selectedAssetIds.has(asset.id)
                         return (
-                          <button
+                          <div
                             key={asset.id}
+                            role="button"
+                            tabIndex={0}
                             onClick={() => {
                               if (selectMode) toggleAssetSelected(asset.id)
                               else setSelectedGenAsset(asset)
                             }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault()
+                                if (selectMode) toggleAssetSelected(asset.id)
+                                else setSelectedGenAsset(asset)
+                              }
+                            }}
+                            draggable={!selectMode}
+                            onDragStart={(e) => startAssetDrag(e, asset)}
+                            title={selectMode ? 'Click to toggle selection' : 'Click to view · drag onto the canvas'}
                             className={`relative aspect-square rounded-lg overflow-hidden bg-card border transition-colors group ${
                               isSel
                                 ? 'border-accent ring-2 ring-accent/60'
                                 : 'border-border/30 hover:border-accent/50'
-                            }`}
+                            }${selectMode ? ' cursor-pointer' : ' cursor-grab active:cursor-grabbing'}`}
                           >
                             <AssetThumb url={asset.r2_url} type={asset.type} audioIconSize={24} />
                             <div className="absolute top-1 left-1 flex gap-0.5">
@@ -1748,7 +1784,7 @@ export function LeftToolbar({
                                 <Check size={11} weight="bold" />
                               </div>
                             )}
-                          </button>
+                          </div>
                         )
                       })}
                     </div>

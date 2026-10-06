@@ -623,7 +623,7 @@ function CanvasInner({ projectId }: { projectId: string }) {
               assetId: asset.id,
               thumbnail: asset.r2_url,
               label: payload.folderName || asset.prompt || 'Reference',
-              mediaType: asset.type === 'video' ? 'video' : 'image',
+              mediaType: asset.type === 'audio' ? 'audio' : asset.type === 'video' ? 'video' : 'image',
               // Tag with the currently-active scene so the node shows on
               // the scene the user actually dropped it into, instead of
               // being filtered out everywhere (no sceneId = no scene
@@ -667,7 +667,7 @@ function CanvasInner({ projectId }: { projectId: string }) {
           assetId: asset.id,
           thumbnail: asset.r2_url,
           label: asset.prompt || 'Reference',
-          mediaType: asset.type === 'video' ? 'video' : 'image',
+          mediaType: asset.type === 'audio' ? 'audio' : asset.type === 'video' ? 'video' : 'image',
           sceneId: activeSceneId,
         },
       }
