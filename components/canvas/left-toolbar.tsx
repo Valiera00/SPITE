@@ -6,6 +6,7 @@ import useSWR from 'swr'
 import { AddToFolderModal } from './add-to-folder-modal'
 import { AssetThumb } from './asset-thumb'
 import { thumbUrl, downloadUrl, assetDownloadName } from '@/lib/asset-url'
+import { PhotoEditor } from './photo-editor'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -177,6 +178,8 @@ export function LeftToolbar({
   const [selectedAssetIds, setSelectedAssetIds] = useState<Set<string>>(new Set())
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
   const [bulkDownloading, setBulkDownloading] = useState(false)
+  // Library asset currently open in the photo editor (images only).
+  const [editingAsset, setEditingAsset] = useState<GeneratedAsset | null>(null)
   // Live progress for the bulk download. Without this the button text
   // stays "Zipping…" forever and the user can't tell a 69-video pack
   // from a stuck request. `phase` distinguishes "fetching from R2" from
@@ -1346,6 +1349,14 @@ export function LeftToolbar({
                   >
                     Copy link
                   </button>
+                  {selectedGenAsset.type === 'image' && (
+                    <button
+                      onClick={() => setEditingAsset(selectedGenAsset)}
+                      className="flex-1 px-4 py-2 rounded-lg border border-border/30 text-sm text-foreground hover:bg-white/5 transition-colors"
+                    >
+                      Edit photo
+                    </button>
+                  )}
                   <a
                     href={downloadUrl(selectedGenAsset.r2_url, assetDownloadName(selectedGenAsset))}
                     download
@@ -1849,6 +1860,15 @@ export function LeftToolbar({
               </div>
 
               <div className="flex gap-2">
+                {selectedGenAsset.type === 'image' && (
+                  <button
+                    onClick={() => setEditingAsset(selectedGenAsset)}
+                    className="flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-border/30 text-xs font-mono text-foreground hover:bg-white/5 transition-colors"
+                    title="Edit photo"
+                  >
+                    <PencilSimple size={12} /> Edit
+                  </button>
+                )}
                 <a
                   href={downloadUrl(selectedGenAsset.r2_url, assetDownloadName(selectedGenAsset))}
                   download
@@ -2300,6 +2320,15 @@ export function LeftToolbar({
         className="hidden"
       />
 
+      {/* Photo editor for a library image. Saves a NEW asset; the library
+          refreshes through the asset-status-changed event it fires. */}
+      <PhotoEditor
+        open={!!editingAsset}
+        url={editingAsset?.r2_url}
+        label={editingAsset?.prompt?.slice(0, 60) || 'Image'}
+        onClose={() => setEditingAsset(null)}
+        onSaved={() => mutateAssets()}
+      />
       {/* Edit folder modal */}
       {editingFolder && (
         <AddToFolderModal

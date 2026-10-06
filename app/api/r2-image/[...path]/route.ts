@@ -141,6 +141,27 @@ export async function GET(
         }
       }
 
+      // Raw bytes (?bytes=1), same-origin. The photo editor has to draw the
+      // image on a canvas and read its pixels back; an image that arrived via
+      // the cross-origin redirect taints the canvas and getImageData throws.
+      // Streaming it from here keeps it same-origin. Full-size bytes do cross
+      // Vercel on this path, but only when someone opens the editor — never
+      // for display.
+      if (searchParams.has('bytes')) {
+        const obj = await getR2Client().send(
+          new GetObjectCommand({ Bucket: process.env.R2_BUCKET_NAME!, Key: key }),
+        )
+        const bytes = await obj.Body?.transformToByteArray()
+        if (!bytes) return NextResponse.json({ error: 'File not found' }, { status: 404 })
+        return new NextResponse(new Uint8Array(bytes), {
+          headers: {
+            'Content-Type': obj.ContentType || 'application/octet-stream',
+            'X-Content-Type-Options': 'nosniff',
+            'Cache-Control': 'private, no-store',
+          },
+        })
+      }
+
       // Download (?download=<filename>). `<a download>` is ignored once the
       // request redirects cross-origin to R2, so the browser used to navigate
       // to the file instead of saving it. Asking R2 to answer with

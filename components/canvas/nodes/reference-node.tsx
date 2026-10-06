@@ -1,6 +1,6 @@
 'use client'
 
-import { Position, NodeProps, Handle, useReactFlow } from '@xyflow/react'
+import { Position, NodeProps, Handle, useReactFlow, type Node } from '@xyflow/react'
 import { useParams } from 'next/navigation'
 import { Image as ImageIcon, UploadSimple, CircleNotch, VideoCamera, SpeakerHigh } from '@phosphor-icons/react'
 import { memo, useState, useEffect, useRef } from 'react'
@@ -9,11 +9,13 @@ import { ShotSelector } from './shot-selector'
 import { useSceneShots } from './use-scene-shots'
 import { AddToFolderModal } from '../add-to-folder-modal'
 import { Lightbox } from '../lightbox'
+import { PhotoEditor, type SavedEdit } from '../photo-editor'
 
 function ReferenceNodeImpl({ id, data, selected }: NodeProps) {
   const params = useParams()
   const projectId = (params?.id as string) || ''
-  const { setNodes } = useReactFlow()
+  const { setNodes, getNodes } = useReactFlow()
+  const [editorOpen, setEditorOpen] = useState(false)
   const [imageWidth, setImageWidth] = useState<number>((data.width as number) || 320)
   const [thumbnail, setThumbnail] = useState<string | null>((data.thumbnail as string) || null)
   const widthRef = useRef(imageWidth)
@@ -159,6 +161,27 @@ function ReferenceNodeImpl({ id, data, selected }: NodeProps) {
         assetType={isAudio ? 'image' : isVideo ? 'video' : 'image'}
         onAddToFolder={handleAddToFolder}
         onViewFullscreen={thumbnail && !isAudio ? () => setLightboxOpen(true) : undefined}
+        onEdit={thumbnail && !isAudio && !isVideo ? () => setEditorOpen(true) : undefined}
+      />
+
+      <PhotoEditor
+        open={editorOpen}
+        url={thumbnail}
+        label={(data.label as string) || 'Reference'}
+        onClose={() => setEditorOpen(false)}
+        onSaved={(a: SavedEdit) => {
+          // New asset goes just right of this node, on the same scene.
+          const me = getNodes().find((n) => n.id === id)
+          const w = (me?.measured?.width ?? imageWidth)
+          const position = me ? { x: me.position.x + w + 60, y: me.position.y } : { x: 0, y: 0 }
+          const node: Node = {
+            id: `ref-${Date.now()}`,
+            type: 'reference',
+            position,
+            data: { assetId: a.id, thumbnail: a.r2_url, label: a.label, mediaType: 'image', sceneId: data.sceneId },
+          }
+          setNodes((ns) => [...ns, node])
+        }}
       />
 
       {!isAudio && (

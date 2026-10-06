@@ -2,13 +2,14 @@
 
 import { memo, useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useParams } from 'next/navigation'
-import { Handle, Position, NodeProps, useReactFlow, useUpdateNodeInternals } from '@xyflow/react'
+import { Handle, Position, NodeProps, useReactFlow, useUpdateNodeInternals, type Node as FlowNode } from '@xyflow/react'
 import { Play, CaretDown, Minus, Plus, TextT, Image as ImageIcon, CircleNotch, X, Check, ArrowsClockwise } from '@phosphor-icons/react'
 import { toast } from 'sonner'
 import { NodeActionToolbar } from './node-toolbar'
 import { ShotSelector, type ShotOption } from './shot-selector'
 import { useSceneShots } from './use-scene-shots'
 import { Lightbox } from '../lightbox'
+import { PhotoEditor, type SavedEdit } from '../photo-editor'
 import { MentionTextarea, type Mention } from '../mention-textarea'
 import { useProjectFolders } from '@/hooks/use-project-folders'
 import { labelFromPrompt, DEFAULT_IMAGE_LABEL } from '@/lib/auto-name'
@@ -167,6 +168,7 @@ function ImageNodeImpl({ id, data, selected }: NodeProps) {
   const [isResizing, setIsResizing] = useState(false)
   const [showResizeHandle, setShowResizeHandle] = useState(false)
   const [lightboxOpen, setLightboxOpen] = useState(false)
+  const [editorOpen, setEditorOpen] = useState(false)
   const [isRenaming, setIsRenaming] = useState(false)
   const [labelDraft, setLabelDraft] = useState('')
   
@@ -176,6 +178,21 @@ function ImageNodeImpl({ id, data, selected }: NodeProps) {
   const stopRef = useRef(false)
   const resizeStartRef = useRef<{ x: number; width: number } | null>(null)
   const { setNodes, getEdges, getNodes } = useReactFlow()
+
+  // The editor saves a NEW asset; drop it on the canvas just right of this
+  // node, on the same scene, so the edit is immediately usable as a reference.
+  const placeEditedBeside = useCallback((a: SavedEdit) => {
+    const me = getNodes().find((n) => n.id === id)
+    const w = (me?.measured?.width ?? (me?.width as number | undefined) ?? 420)
+    const position = me ? { x: me.position.x + w + 60, y: me.position.y } : { x: 0, y: 0 }
+    const node: FlowNode = {
+      id: `ref-${Date.now()}`,
+      type: 'reference',
+      position,
+      data: { assetId: a.id, thumbnail: a.r2_url, label: a.label, mediaType: 'image', sceneId: data.sceneId },
+    }
+    setNodes((ns) => [...ns, node])
+  }, [getNodes, setNodes, id, data.sceneId])
   const updateNodeInternals = useUpdateNodeInternals()
   
   // Check if there are any connected prompt nodes - compute fresh on each render
@@ -961,6 +978,15 @@ function ImageNodeImpl({ id, data, selected }: NodeProps) {
         assetType="image"
         onRename={handleRename}
         onViewFullscreen={outputUrl ? () => setLightboxOpen(true) : undefined}
+        onEdit={outputUrl ? () => setEditorOpen(true) : undefined}
+      />
+
+      <PhotoEditor
+        open={editorOpen}
+        url={outputUrl}
+        label={(data.label as string) || 'Image'}
+        onClose={() => setEditorOpen(false)}
+        onSaved={placeEditedBeside}
       />
 
       <Lightbox

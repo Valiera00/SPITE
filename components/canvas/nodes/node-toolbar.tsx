@@ -40,6 +40,8 @@ interface NodeActionToolbarProps {
   onAddToFolder?: (type: 'character' | 'prop' | 'location') => void
   onRename?: () => void
   onViewFullscreen?: () => void
+  /** Opens the photo editor on this node's image. Images only. */
+  onEdit?: () => void
   assetId?: string
   assetUrl?: string
   assetType?: 'image' | 'video'
@@ -87,6 +89,7 @@ export function NodeActionToolbar({
   onAddToFolder,
   onRename,
   onViewFullscreen,
+  onEdit,
   assetId,
   assetUrl,
   assetType,
@@ -444,6 +447,13 @@ export function NodeActionToolbar({
                   label="View fullscreen"
                   icon={ArrowsOutSimple}
                   onClick={() => { onViewFullscreen(); setMoreMenuOpen(false) }}
+                />
+              )}
+              {assetUrl && assetType === 'image' && onEdit && (
+                <MenuItem
+                  label="Edit photo"
+                  icon={PencilSimple}
+                  onClick={() => { onEdit(); setMoreMenuOpen(false) }}
                 />
               )}
               {assetUrl && (

@@ -32,6 +32,17 @@ export function downloadUrl(url: string, filename?: string): string {
   return `${url}${url.includes('?') ? '&' : '?'}download=${name}`
 }
 
+/**
+ * Same-origin bytes for an image the browser needs to READ, not just show —
+ * the photo editor draws it onto a canvas and inspects pixels. The normal
+ * proxy URL redirects to R2, and a cross-origin image taints the canvas, so
+ * this asks the proxy to stream the bytes itself instead.
+ */
+export function bytesUrl(url: string): string {
+  if (!isProxyUrl(url)) return url
+  return `${url}${url.includes('?') ? '&' : '?'}bytes=1`
+}
+
 /** A readable filename stem for a downloaded asset. Extension is added server-side. */
 export function assetDownloadName(asset: { id: string; type: string; model?: string | null }): string {
   const model = (asset.model || '').replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '')
