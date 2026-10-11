@@ -40,6 +40,70 @@ async function ensureSettings(sql: ReturnType<typeof getDb>) {
   settingsReady = true
 }
 
+// Per-project override of the asset window. NULL = use the global value;
+// 0 = never delete anything from this project. Self-healing ALTER so older
+// installs pick the column up on first use.
+let projectColumnReady = false
+export async function ensureProjectRetentionColumn(sql: ReturnType<typeof getDb>) {
+  if (projectColumnReady) return
+  await sql`ALTER TABLE projects ADD COLUMN IF NOT EXISTS asset_retention_days integer`
+  projectColumnReady = true
+}
+
+/** The project's own asset window if set, else null (= inherits the global one). */
+export async function getProjectAssetRetentionOverride(projectId: string): Promise<number | null> {
+  try {
+    const sql = getDb()
+    await ensureProjectRetentionColumn(sql)
+    const rows = await sql`SELECT asset_retention_days FROM projects WHERE id::text = ${projectId} LIMIT 1`
+    const v = rows[0]?.asset_retention_days
+    return v === null || v === undefined ? null : Math.max(0, Math.floor(Number(v)))
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Effective asset window for a project: its override, else the global value.
+ * Always 0 (never) for a Flow project — it has no canvas, so its results can
+ * never be "placed on one" to earn protection; they are the project.
+ */
+export async function getProjectAssetRetentionDays(projectId: string): Promise<number> {
+  try {
+    const sql = getDb()
+    const rows = await sql`SELECT COALESCE(origin, 'canvas') AS origin FROM projects WHERE id::text = ${projectId} LIMIT 1`
+    if (rows[0] && rows[0].origin !== 'canvas') return 0
+  } catch {
+    // No origin column on a very old install — treat as canvas.
+  }
+  const override = await getProjectAssetRetentionOverride(projectId)
+  return override ?? (await getAssetRetentionDays())
+}
+
+/**
+ * Set (or clear, with null) a project's asset window, then bring its existing
+ * unprotected results in line — but only ever in the SAFE direction:
+ *   0 (never)  → every timer in the project is cleared right away.
+ *   N days     → timers are extended to at least now + N; none is shortened,
+ *                and results with no timer keep having none.
+ *   null       → timers are left exactly as they are.
+ * Nothing here can make anything eligible for deletion sooner than it was.
+ */
+export async function setProjectAssetRetentionDays(projectId: string, days: number | null): Promise<void> {
+  const sql = getDb()
+  await ensureProjectRetentionColumn(sql)
+  const value = days === null ? null : Math.max(0, Math.min(3650, Math.floor(Number(days) || 0)))
+  await sql`UPDATE projects SET asset_retention_days = ${value} WHERE id::text = ${projectId}`
+  if (value === 0) {
+    await sql`UPDATE generation_history SET expires_at = NULL
+              WHERE project_id = ${projectId} AND used_in_canvas = false AND expires_at IS NOT NULL`
+  } else if (value !== null && value > 0) {
+    const floor = new Date(Date.now() + value * 24 * 60 * 60 * 1000).toISOString()
+    await sql`UPDATE generation_history SET expires_at = GREATEST(expires_at, ${floor}::timestamptz)
+              WHERE project_id = ${projectId} AND used_in_canvas = false AND expires_at IS NOT NULL`
+  }
+}
+
 // Read a saved override from the DB; null if unset or the table can't be read.
 async function readSaved(key: string): Promise<number | null> {
   try {
@@ -80,10 +144,11 @@ export async function setRetentionDays(assetDays: number, referenceDays: number)
 
 /**
  * Expiry timestamp to stamp on a freshly-recorded, not-yet-on-canvas result.
- * Returns null when asset retention is disabled (0) — i.e. it never expires.
+ * Uses the project's own window when it has one. Returns null when the
+ * effective window is 0 — i.e. it never expires.
  */
-export async function assetExpiresAt(): Promise<Date | null> {
-  const days = await getAssetRetentionDays()
+export async function assetExpiresAt(projectId?: string): Promise<Date | null> {
+  const days = projectId ? await getProjectAssetRetentionDays(projectId) : await getAssetRetentionDays()
   if (days <= 0) return null
   return new Date(Date.now() + days * 24 * 60 * 60 * 1000)
 }

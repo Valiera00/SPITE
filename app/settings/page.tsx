@@ -57,6 +57,33 @@ export default function SettingsPage() {
   const [refDaysDraft, setRefDaysDraft] = useState('')
   const [savingRetention, setSavingRetention] = useState(false)
   const [retentionSaved, setRetentionSaved] = useState(false)
+  // Per-project windows. Listed under the global one; each row saves on change.
+  const [projects, setProjects] = useState<
+    { id: string; name: string; origin: string; asset_retention_days: number | null }[]
+  >([])
+  const [projectSaving, setProjectSaving] = useState<string | null>(null)
+  useEffect(() => {
+    fetch('/api/projects')
+      .then((r) => (r.ok ? r.json() : []))
+      .then((list) => Array.isArray(list) && setProjects(list))
+      .catch(() => {})
+  }, [])
+  const saveProjectRetention = async (id: string, raw: string) => {
+    setProjectSaving(id)
+    try {
+      const res = await fetch(`/api/projects/${id}/retention`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ days: raw === '' ? null : Number(raw) }),
+      })
+      if (res.ok) {
+        const d = await res.json()
+        setProjects((ps) => ps.map((p) => (p.id === id ? { ...p, asset_retention_days: d.overrideDays } : p)))
+      }
+    } finally {
+      setProjectSaving(null)
+    }
+  }
 
   // Check API key + load preferences on mount
   useEffect(() => {
@@ -492,6 +519,44 @@ export default function SettingsPage() {
                 dropped onto a canvas it becomes permanent and this no longer applies.{' '}
                 <span className="text-foreground/80">0 = keep forever.</span>
               </p>
+            </div>
+
+            {/* Per-project windows for unused results */}
+            <div className="space-y-2 pt-3 border-t border-border/50">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm text-foreground">Per project</p>
+                <span className="text-[11px] text-muted-foreground/60">Overrides the window above for that project</span>
+              </div>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Changing a window never makes anything deletable sooner: a longer window extends the
+                timers already running, and <span className="text-foreground/80">Never</span> clears
+                them for that project right away. Flow projects aren&apos;t listed — their results are
+                the project and are never auto-deleted.
+              </p>
+              <div className="divide-y divide-border/40 rounded-md border border-border/40">
+                {projects.filter((p) => p.origin === 'canvas').map((p) => (
+                  <div key={p.id} className="flex items-center justify-between gap-3 px-3 py-1.5">
+                    <span className="text-xs text-foreground/90 truncate">{p.name}</span>
+                    <select
+                      value={p.asset_retention_days === null || p.asset_retention_days === undefined ? '' : String(p.asset_retention_days)}
+                      onChange={(e) => saveProjectRetention(p.id, e.target.value)}
+                      disabled={projectSaving === p.id || retention === null}
+                      className="shrink-0 px-2 py-1 text-xs font-mono rounded-md bg-background/60 border border-border/50 focus:border-accent/50 outline-none disabled:opacity-50"
+                    >
+                      <option value="">
+                        Use global ({retention?.assetRetentionDays === 0 ? 'never' : `${retention?.assetRetentionDays ?? '…'} days`})
+                      </option>
+                      <option value="0">Never</option>
+                      {[7, 14, 30, 60, 90, 180, 365].map((d) => (
+                        <option key={d} value={d}>{d} days</option>
+                      ))}
+                    </select>
+                  </div>
+                ))}
+                {projects.length === 0 && (
+                  <div className="px-3 py-2 text-xs text-muted-foreground/50">Loading projects…</div>
+                )}
+              </div>
             </div>
 
             {/* Reference inputs */}

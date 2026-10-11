@@ -5,7 +5,8 @@ import { DeleteObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3'
 import { timingSafeEqual } from 'crypto'
 import { purgeExpiredSessions } from '@/lib/sessions'
 import { purgeOldSpendLedger } from '@/lib/spend-gate'
-import { getReferenceRetentionDays } from '@/lib/retention'
+import { getReferenceRetentionDays, getAssetRetentionDays, ensureProjectRetentionColumn } from '@/lib/retention'
+import { logEvent } from '@/lib/events'
 
 async function deleteFromR2(key: string) {
   try {
@@ -99,11 +100,29 @@ async function runCleanup(request: NextRequest) {
     //   expires_at < CURRENT_TIMESTAMP → only assets whose retention window has
     //                                  actually elapsed.
     // Do NOT relax any of these.
+    //
+    // A FOURTH condition, added with per-project windows: the project's
+    // effective window must be > 0. A project set to "never" (0) — or every
+    // project, when the global window is 0 — is skipped even if a row still
+    // carries an old expires_at from before the setting changed. The timer is
+    // never trusted on its own.
+    //
+    // And a FIFTH: only canvas projects. A Flow project has no canvas, so by
+    // the letter of "not on a canvas" every result it ever made is unused —
+    // when in fact those results ARE the project. They are never auto-deleted.
+    await ensureProjectRetentionColumn(sql)
+    await sql`ALTER TABLE projects ADD COLUMN IF NOT EXISTS origin text NOT NULL DEFAULT 'canvas'`
+    const globalDays = await getAssetRetentionDays()
     const expiredAssets = await sql`
-      SELECT id, r2_url FROM generation_history
-      WHERE used_in_canvas = false
-        AND expires_at IS NOT NULL
-        AND expires_at < CURRENT_TIMESTAMP
+      SELECT gh.id, gh.r2_url, gh.type, gh.project_id,
+             COALESCE(p.name, 'an unknown project') AS project_name
+      FROM generation_history gh
+      LEFT JOIN projects p ON p.id::text = gh.project_id::text
+      WHERE gh.used_in_canvas = false
+        AND gh.expires_at IS NOT NULL
+        AND gh.expires_at < CURRENT_TIMESTAMP
+        AND COALESCE(p.asset_retention_days, ${globalDays}) > 0
+        AND COALESCE(p.origin, 'canvas') = 'canvas'
     `
 
     // Delete from R2 first
@@ -116,17 +135,42 @@ async function runCleanup(request: NextRequest) {
       }
     }
 
-    // Then delete from database — identical guard to the SELECT above. Keep these
-    // two WHERE clauses in lock-step; both must only match unprotected, expired rows.
-    const result = await sql`
-      DELETE FROM generation_history
-      WHERE used_in_canvas = false
-        AND expires_at IS NOT NULL
-        AND expires_at < CURRENT_TIMESTAMP
-      RETURNING id
-    `
+    // Then delete from database — ONLY the rows the SELECT above returned (by
+    // id), and only if they still satisfy the same three guards at this
+    // moment. Nothing that wasn't listed can be deleted here.
+    const expiredIds = expiredAssets.map((a) => a.id as string)
+    const result = expiredIds.length
+      ? await sql`
+          DELETE FROM generation_history
+          WHERE id = ANY(${expiredIds}::text[])
+            AND used_in_canvas = false
+            AND expires_at IS NOT NULL
+            AND expires_at < CURRENT_TIMESTAMP
+          RETURNING id
+        `
+      : []
 
     console.log(`[cleanup] Deleted ${result.length} expired assets from R2 and database`)
+
+    // Tell the user, per project: "Deleted 3 assets from Valko". Logged, not
+    // toasted — nobody is watching at 04:00. The next page load shows it.
+    const deletedIds = new Set(result.map((r) => r.id as string))
+    const perProject = new Map<string, { name: string; images: number; videos: number }>()
+    for (const a of expiredAssets) {
+      if (!deletedIds.has(a.id as string)) continue
+      const key = (a.project_id as string) || 'unknown'
+      const e = perProject.get(key) || { name: a.project_name as string, images: 0, videos: 0 }
+      if (a.type === 'video') e.videos++; else e.images++
+      perProject.set(key, e)
+    }
+    for (const [projectId, e] of perProject) {
+      const n = e.images + e.videos
+      const what = e.videos && e.images ? `${n} assets` : e.videos ? `${n} video${n === 1 ? '' : 's'}` : `${n} image${n === 1 ? '' : 's'}`
+      await logEvent('cleanup', `Deleted ${what} from ${e.name}`, {
+        projectId,
+        detail: { images: e.images, videos: e.videos, windowDays: globalDays },
+      })
+    }
 
     // Sweep auth/spend tables too — they grow forever otherwise and the
     // rate-limit lookups get slower over time. Errors here don't fail
@@ -147,7 +191,10 @@ async function runCleanup(request: NextRequest) {
     let referencesDeleted = 0
     try {
       referencesDeleted = await sweepOldReferences()
-      if (referencesDeleted) console.log(`[cleanup] Reclaimed ${referencesDeleted} aged reference images`)
+      if (referencesDeleted) {
+        console.log(`[cleanup] Reclaimed ${referencesDeleted} aged reference images`)
+        await logEvent('cleanup', `Reclaimed ${referencesDeleted} reference image${referencesDeleted === 1 ? '' : 's'} older than ${await getReferenceRetentionDays()} days`)
+      }
     } catch (err) {
       console.error('[cleanup] reference sweep failed:', err)
     }

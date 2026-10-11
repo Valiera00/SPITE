@@ -168,6 +168,23 @@ CREATE TABLE IF NOT EXISTS app_settings (
     updated_at  timestamptz NOT NULL DEFAULT now()
 );
 
+-- Per-project auto-delete window for unused results. NULL = use the global
+-- asset_retention_days setting; 0 = never delete anything from this project.
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS asset_retention_days integer;
+
+-- Event log: things that happened with no browser open (nightly cleanup
+-- deletions, version changes). Surfaced by the notifications bell.
+CREATE TABLE IF NOT EXISTS app_events (
+    id          bigserial PRIMARY KEY,
+    kind        text NOT NULL,
+    title       text NOT NULL,
+    detail      jsonb,
+    project_id  text,
+    created_at  timestamptz NOT NULL DEFAULT now(),
+    seen        boolean NOT NULL DEFAULT false
+);
+CREATE INDEX IF NOT EXISTS idx_app_events_created ON app_events (created_at DESC);
+
 -- Voice ID cache: maps an audio asset's SPITE proxy URL to the
 -- fal-issued voice_id created from it (Kling 2.6 voice cloning).
 -- Each unique audio file costs one fal create-voice call; everything

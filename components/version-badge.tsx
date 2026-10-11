@@ -1,9 +1,9 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { toast } from 'sonner'
-import { ArrowSquareOut, X } from '@phosphor-icons/react'
+import { ArrowSquareOut, Bell, X } from '@phosphor-icons/react'
 
 // Faint "which build am I on?" marker. Shows the app version plus a build stamp
 // (e.g. `v0.2.0 · 30 Jul 21:47`) rather than the commit SHA: a hash is random to
@@ -173,6 +173,154 @@ function useUpdateInfo(onOpenNotes: (info: UpdateInfo) => void): UpdateInfo | nu
   return info
 }
 
+// ---------------------------------------------------------------------------
+// Notifications. Things that happen with no browser open — the nightly
+// cleanup's "Deleted 3 assets from Valko", a version change — are logged
+// server-side (lib/events.ts). On the next page load the unseen ones are
+// toasted once, and the bell keeps the full history so they can be found
+// again later. Lives next to the version so update notices and deletion
+// notices share one place.
+
+interface AppEvent {
+  id: number
+  kind: string
+  title: string
+  created_at: string
+  seen: boolean
+}
+
+// One request per page load no matter how many badges are mounted.
+let eventsPromise: Promise<{ events: AppEvent[]; unseen: number } | null> | null = null
+let eventsAnnounced = false
+
+function fetchEvents() {
+  eventsPromise ??= (async () => {
+    // Report the running build first, so an update that just landed is
+    // already in the list we fetch next.
+    await fetch('/api/events', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'version', version: process.env.NEXT_PUBLIC_APP_VERSION || '0.0.0' }),
+    }).catch(() => null)
+    const r = await fetch('/api/events').catch(() => null)
+    return r && r.ok ? (r.json() as Promise<{ events: AppEvent[]; unseen: number }>) : null
+  })()
+  return eventsPromise
+}
+
+function timeAgo(iso: string): string {
+  const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000)
+  if (s < 60) return 'just now'
+  const m = s / 60
+  if (m < 60) return `${Math.floor(m)} min ago`
+  const h = m / 60
+  if (h < 24) return `${Math.floor(h)} h ago`
+  const d = h / 24
+  if (d < 7) return `${Math.floor(d)} d ago`
+  return new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
+}
+
+function NotificationsBell() {
+  const [data, setData] = useState<{ events: AppEvent[]; unseen: number } | null>(null)
+  // Dot on the bell until the list is opened once this page load.
+  const [fresh, setFresh] = useState(0)
+  const [open, setOpen] = useState<{ top: number; right: number } | null>(null)
+  const btnRef = useRef<HTMLButtonElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    fetchEvents().then((d) => {
+      if (cancelled || !d) return
+      setData(d)
+      setFresh(d.unseen)
+      if (!eventsAnnounced && d.unseen > 0) {
+        eventsAnnounced = true
+        const unseen = d.events.filter((e) => !e.seen).slice(0, 5)
+        for (const e of unseen) {
+          toast(e.title, {
+            description: `${e.kind === 'cleanup' ? 'Auto-delete' : e.kind === 'update' ? 'Update' : 'Notice'} · ${timeAgo(e.created_at)}`,
+            duration: 12000,
+          })
+        }
+        if (d.unseen > unseen.length) toast(`${d.unseen - unseen.length} more in notifications`, { duration: 8000 })
+        fetch('/api/events', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'seen' }),
+        }).catch(() => null)
+      }
+    })
+    return () => { cancelled = true }
+  }, [])
+
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Node
+      if (panelRef.current?.contains(t) || btnRef.current?.contains(t)) return
+      setOpen(null)
+    }
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(null) }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey) }
+  }, [open])
+
+  const toggle = () => {
+    setFresh(0)
+    if (open) { setOpen(null); return }
+    const r = btnRef.current?.getBoundingClientRect()
+    if (!r) return
+    // Portal + fixed position, so a toolbar's overflow can't clip the list.
+    setOpen({ top: r.bottom + 6, right: Math.max(8, window.innerWidth - r.right) })
+  }
+
+  const events = data?.events ?? []
+  return (
+    <>
+      <button
+        ref={btnRef}
+        onClick={toggle}
+        aria-label="Notifications"
+        title="Notifications — auto-delete runs and updates"
+        className="relative flex items-center justify-center w-5 h-5 rounded text-muted-foreground/40 hover:text-muted-foreground/80 transition-colors"
+      >
+        <Bell size={11} weight={fresh ? 'fill' : 'regular'} />
+        {fresh > 0 && <span className="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-accent" />}
+      </button>
+      {open && typeof document !== 'undefined' && createPortal(
+        <div
+          ref={panelRef}
+          style={{ position: 'fixed', top: open.top, right: open.right }}
+          className="w-80 max-h-96 overflow-y-auto rounded-lg border border-white/10 bg-[#0E1014]/[0.98] shadow-2xl z-[120] py-1 text-left"
+          onWheel={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <div className="px-3 py-1.5 text-[10px] uppercase tracking-wider text-muted-foreground/50">Notifications</div>
+          {events.length === 0 ? (
+            <div className="px-3 py-3 text-[11px] leading-relaxed text-muted-foreground/50">
+              Nothing yet. Auto-delete runs and SPITE updates will show up here.
+            </div>
+          ) : (
+            events.map((e) => (
+              <div key={e.id} className="px-3 py-2 border-t border-white/5">
+                <div className={`text-[11px] leading-snug ${e.kind === 'cleanup' ? 'text-rose-200/90' : 'text-foreground/80'}`}>
+                  {e.title}
+                </div>
+                <div className="text-[10px] text-muted-foreground/40">
+                  {e.kind === 'cleanup' ? 'Auto-delete' : e.kind === 'update' ? 'Update' : 'Notice'} · {timeAgo(e.created_at)}
+                </div>
+              </div>
+            ))
+          )}
+        </div>,
+        document.body,
+      )}
+    </>
+  )
+}
+
 export function VersionBadge({ className = '' }: { className?: string }) {
   const version = process.env.NEXT_PUBLIC_APP_VERSION || '0.0.0'
   const stamp = process.env.NEXT_PUBLIC_BUILD_STAMP || ''
@@ -191,12 +339,15 @@ export function VersionBadge({ className = '' }: { className?: string }) {
           Update v{update.latest} ↑
         </button>
       )}
-      <span
-        title={`v${version}${stamp ? ` · built ${stamp} UTC` : ''} · ${sha}`}
-        className="select-none text-[10px] font-mono text-muted-foreground/40 hover:text-muted-foreground/70 transition-colors whitespace-nowrap"
-      >
-        v{version}
-        {stamp && <span className="hidden sm:inline"> · {stamp}</span>}
+      <span className="flex items-center gap-1">
+        <NotificationsBell />
+        <span
+          title={`v${version}${stamp ? ` · built ${stamp} UTC` : ''} · ${sha}`}
+          className="select-none text-[10px] font-mono text-muted-foreground/40 hover:text-muted-foreground/70 transition-colors whitespace-nowrap"
+        >
+          v{version}
+          {stamp && <span className="hidden sm:inline"> · {stamp}</span>}
+        </span>
       </span>
       {notesFor && <WhatsNewDialog info={notesFor} onClose={() => setNotesFor(null)} />}
     </span>

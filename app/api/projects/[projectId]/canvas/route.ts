@@ -1,5 +1,6 @@
 import { getDb, CANVAS_SAVE_LOCK_NS } from '@/lib/db'
 import { NextRequest, NextResponse } from 'next/server'
+import { getProjectAssetRetentionDays } from '@/lib/retention'
 
 // A save of a 500-node canvas is one transaction of ~1000 statements, a
 // snapshot insert and three reconcile updates. Vercel's default 10s function
@@ -231,8 +232,14 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           )
       `
 
-      const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
-      // Demote assets no longer on the canvas back to a 30-day temp life
+      // The window is the PROJECT's (its own setting, else the global one).
+      // This used to be a hard-coded 30 days regardless of any setting. With
+      // a window of 0 the demoted result gets no timer at all: it's simply
+      // no longer protected by the canvas, and nothing will ever delete it.
+      const retentionDays = await getProjectAssetRetentionDays(projectId)
+      const expiresAt =
+        retentionDays > 0 ? new Date(Date.now() + retentionDays * 24 * 60 * 60 * 1000).toISOString() : null
+      // Demote assets no longer on the canvas back to a temp life
       // — UNLESS they're also a member of a folder. Folder membership is
       // a separate, sticky protection: the user explicitly filed them
       // under Characters/Props/Locations/General and expects them to

@@ -1,6 +1,7 @@
 import { getDb } from '@/lib/db'
 import { NextRequest, NextResponse } from 'next/server'
 import { v4 as uuidv4 } from 'uuid'
+import { ensureProjectRetentionColumn } from '@/lib/retention'
 
 // Default user ID for now (no auth)
 const DEFAULT_USER_ID = '00000000-0000-0000-0000-000000000001'
@@ -16,6 +17,7 @@ let projectsOriginReady = false
 async function ensureProjectsOrigin(sql: ReturnType<typeof getDb>) {
   if (projectsOriginReady) return
   await sql`ALTER TABLE projects ADD COLUMN IF NOT EXISTS origin text NOT NULL DEFAULT 'canvas'`
+  await ensureProjectRetentionColumn(sql)
   projectsOriginReady = true
 }
 
@@ -58,6 +60,7 @@ export async function GET() {
         p.description,
         COALESCE(shot1.thumb, p.thumbnail) AS thumbnail,
         COALESCE(p.origin, 'canvas') AS origin,
+        p.asset_retention_days,
         p.createdat,
         p.updatedat
       FROM projects p
