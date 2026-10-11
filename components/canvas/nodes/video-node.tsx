@@ -18,6 +18,7 @@ import { estimateGenerationCost, formatUSD, COST_CONFIRM_THRESHOLD_USD } from '@
 import { resolveNodeMediaUrl } from '@/lib/node-media'
 import { ConnectedInputs } from '../connected-inputs'
 import { captureVideoThumbnail } from '@/lib/video-thumbnail'
+import { uploadPoster, dataUrlToBlob } from '@/lib/poster-upload'
 
 const VIDEO_MODELS = getVideoModels()
 
@@ -347,21 +348,36 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
     setNodes(ns => ns.map(n => n.id === id ? { ...n, data: { ...n.data, label: next } } : n))
   }
 
-  // Capture a freeze-frame from the rendered video so the scene-shot bar
-  // can show a thumbnail (an <img> can't render an mp4). Re-captures when
-  // outputUrl changes (new generation); skips when the stored thumbnail
-  // already matches the current outputUrl (after reload).
+  // Poster frame for the scene-shot bar (an <img> can't render an mp4). The
+  // frame is captured once per output, uploaded to R2, and the node stores
+  // the URL. It used to store the frame itself as base64, which put the full
+  // image of every video on the board into every canvas save — see
+  // lib/canvas-payload.ts. A node still carrying that legacy inline form is
+  // migrated here on sight: its existing frame is uploaded and swapped for
+  // the URL, so no re-capture is needed and the next save is already small.
   useEffect(() => {
     if (!outputUrl) return
-    if (data.videoThumbnailFor === outputUrl && data.videoThumbnail) return
+    const current = typeof data.videoThumbnail === 'string' ? data.videoThumbnail : ''
+    const isInline = current.startsWith('data:') || current.startsWith('blob:')
+    const forThisOutput = data.videoThumbnailFor === outputUrl
+    if (forThisOutput && current && !isInline) return
     let cancelled = false
-    captureVideoThumbnail(outputUrl).then(thumb => {
-      if (cancelled || !thumb) return
+    ;(async () => {
+      const blob = forThisOutput && current.startsWith('data:')
+        ? await dataUrlToBlob(current)
+        : await captureVideoThumbnail(outputUrl)
+      if (cancelled || !blob) return
+      const stored = await uploadPoster(blob, id)
+      if (cancelled) return
+      // If the upload failed, keep the frame for this session only (a blob:
+      // URL, which the save payload drops) so the shot bar still shows it.
+      const next = stored || (current.startsWith('blob:') ? current : URL.createObjectURL(blob))
+      if (next === current) return
       setNodes(ns => ns.map(n => n.id === id ? {
         ...n,
-        data: { ...n.data, videoThumbnail: thumb, videoThumbnailFor: outputUrl }
+        data: { ...n.data, videoThumbnail: next, videoThumbnailFor: outputUrl }
       } : n))
-    })
+    })()
     return () => { cancelled = true }
   }, [outputUrl, data.videoThumbnail, data.videoThumbnailFor, id, setNodes])
 

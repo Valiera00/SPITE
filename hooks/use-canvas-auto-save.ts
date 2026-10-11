@@ -1,5 +1,7 @@
 import { useCallback, useRef, useEffect, useState, useMemo } from 'react'
 import type { Node, Edge } from '@xyflow/react'
+import { toast } from 'sonner'
+import { canvasPayload } from '@/lib/canvas-payload'
 
 // Minimal shape of what we persist per scene. Shots are derived from
 // nodes by canvas-workspace's scenesWithShots memo and don't belong
@@ -16,6 +18,16 @@ export function useCanvasAutoSave(
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const lastSavedRef = useRef<string>('')
   const isSavingRef = useRef(false)
+  // A save was requested while one was in flight. The old behaviour was to
+  // drop that request on the floor and hope the 30s heartbeat caught the
+  // change — on a big canvas, where a save takes several seconds, that left a
+  // window in which edits were simply never written. Now the request is
+  // remembered and runs as soon as the in-flight save finishes.
+  const pendingRef = useRef(false)
+  // Latest saveCanvas, for the heartbeat and the queued re-run above.
+  const saveCanvasRef = useRef<(force?: boolean) => Promise<void>>(async () => {})
+  // One toast per failure streak, not one per retry.
+  const failToastedRef = useRef(false)
   const [saveStatus, setSaveStatus] = useState<'saved' | 'unsaved' | 'saving'>('saved')
 
   // Always send the bare-bones scene shape, dropping any shots[] that
@@ -30,10 +42,16 @@ export function useCanvasAutoSave(
   )
 
   const saveCanvas = useCallback(async (force = false) => {
-    if (!projectId || isSavingRef.current) return
+    if (!projectId) return
+    if (isSavingRef.current) {
+      pendingRef.current = true
+      return
+    }
 
-    // Check if anything has changed
-    const currentState = JSON.stringify({ nodes, edges, scenes: persistedScenes, activeSceneId })
+    // Check if anything has changed. Inline media is dropped from the body
+    // (see lib/canvas-payload.ts) so a poster frame arriving in memory
+    // doesn't count as a change worth a save.
+    const currentState = canvasPayload({ nodes, edges, scenes: persistedScenes, activeSceneId })
 
     if (!force && currentState === lastSavedRef.current) {
       return // No changes, don't save
@@ -66,21 +84,36 @@ export function useCanvasAutoSave(
       const response = await fetch(`/api/projects/${projectId}/canvas`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nodes, edges, scenes: persistedScenes, activeSceneId }),
+        body: currentState,
       })
 
       if (response.ok) {
         lastSavedRef.current = currentState
         setSaveStatus('saved')
+        failToastedRef.current = false
       } else {
-        console.error('[Canvas] Failed to save')
+        // Say WHY. A bare "Failed to save" hid a week of 413s and 504s.
+        const detail = await response.text().catch(() => '')
+        console.error(`[Canvas] Save failed: HTTP ${response.status}`, detail.slice(0, 300))
         setSaveStatus('unsaved')
+        if (!failToastedRef.current) {
+          failToastedRef.current = true
+          toast.error(`Canvas not saved (HTTP ${response.status}). Retrying in the background — don't close the tab yet.`)
+        }
       }
     } catch (error) {
       console.error('[Canvas] Error saving:', error)
       setSaveStatus('unsaved')
+      if (!failToastedRef.current) {
+        failToastedRef.current = true
+        toast.error('Canvas not saved (network error). Retrying in the background — don\'t close the tab yet.')
+      }
     } finally {
       isSavingRef.current = false
+      if (pendingRef.current) {
+        pendingRef.current = false
+        void saveCanvasRef.current()
+      }
     }
   }, [projectId, nodes, edges, persistedScenes, activeSceneId])
 
@@ -129,7 +162,6 @@ export function useCanvasAutoSave(
   // and the interval effect itself only depends on `projectId`. The 30s
   // tick actually elapses; saveCanvas's own "nothing changed since last
   // save" guard keeps it from generating noise when there's nothing new.
-  const saveCanvasRef = useRef(saveCanvas)
   useEffect(() => {
     saveCanvasRef.current = saveCanvas
   }, [saveCanvas])
@@ -141,17 +173,36 @@ export function useCanvasAutoSave(
 
   // Save on unmount — including scenes/activeSceneId so a tab close
   // mid-edit doesn't lose a freshly-added or freshly-deleted scene.
+  //
+  // sendBeacon refuses anything over ~64 KB, and returns false rather than
+  // throwing, so for a large canvas this save never happened and nothing
+  // said so. The beforeunload guard below is what actually protects a big
+  // board: it makes the browser ask before closing while a save is pending.
   useEffect(() => {
     return () => {
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current)
       if (projectId && nodes.length > 0) {
-        navigator.sendBeacon?.(
+        const sent = navigator.sendBeacon?.(
           `/api/projects/${projectId}/canvas`,
-          JSON.stringify({ nodes, edges, scenes: persistedScenes, activeSceneId }),
+          canvasPayload({ nodes, edges, scenes: persistedScenes, activeSceneId }),
         )
+        if (sent === false) console.warn('[Canvas] unload save too large for sendBeacon; relying on the last autosave')
       }
     }
   }, [projectId, nodes, edges, persistedScenes, activeSceneId])
+
+  // Ask before the tab closes with unsaved changes. The browser shows its own
+  // "Leave site?" dialog; a quick Cancel, a couple of seconds, and the
+  // pending autosave lands.
+  useEffect(() => {
+    if (saveStatus === 'saved') return
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault()
+      e.returnValue = ''
+    }
+    window.addEventListener('beforeunload', onBeforeUnload)
+    return () => window.removeEventListener('beforeunload', onBeforeUnload)
+  }, [saveStatus])
 
   return { saveCanvas, saveStatus }
 }

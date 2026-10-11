@@ -1,4 +1,6 @@
-// Capture a still frame from a video URL and return it as a JPEG data URL.
+// Capture a still frame from a video URL and return it as a JPEG Blob. The
+// caller uploads it (lib/poster-upload.ts) and stores the resulting URL —
+// never the bytes — on the node.
 // Used to populate the scene-shot bar's thumbnail for tagged video nodes —
 // an <img> tag can't render an mp4, so we extract a freeze-frame instead.
 //
@@ -9,7 +11,7 @@ export async function captureVideoThumbnail(
   url: string,
   timeSec = 0.1,
   maxWidth = 480,
-): Promise<string | null> {
+): Promise<Blob | null> {
   if (typeof document === 'undefined') return null
 
   return new Promise((resolve) => {
@@ -20,7 +22,7 @@ export async function captureVideoThumbnail(
     video.playsInline = true
 
     let settled = false
-    const finish = (result: string | null) => {
+    const finish = (result: Blob | null) => {
       if (settled) return
       settled = true
       clearTimeout(timeout)
@@ -48,7 +50,7 @@ export async function captureVideoThumbnail(
         const ctx = canvas.getContext('2d')
         if (!ctx) return finish(null)
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
-        finish(canvas.toDataURL('image/jpeg', 0.7))
+        canvas.toBlob((blob) => finish(blob), 'image/jpeg', 0.7)
       } catch {
         finish(null)
       }

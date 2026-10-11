@@ -1,6 +1,13 @@
 import { getDb, CANVAS_SAVE_LOCK_NS } from '@/lib/db'
 import { NextRequest, NextResponse } from 'next/server'
 
+// A save of a 500-node canvas is one transaction of ~1000 statements, a
+// snapshot insert and three reconcile updates. Vercel's default 10s function
+// limit could cut that off after the transaction had already committed, so
+// the client saw a failure for a save that had in fact landed and kept
+// re-sending it.
+export const maxDuration = 60
+
 // Self-bootstraps the rolling-backup table. Snapshots are tiny insurance
 // against an autosave race or accidental wipe: the last ~50 minutes of
 // canvas history are recoverable via the snapshots endpoint.
