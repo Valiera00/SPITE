@@ -233,7 +233,7 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
   // React Flow measures a freshly mounted node's handles on its own; this
   // explicit re-measure forces a synchronous layout, and with
   // onlyRenderVisibleElements a node mounts every time it scrolls into view.
-  // On a 545-node board that put 48% of a 26-second freeze in this one call.
+  // On a large board this one call dominated a multi-second freeze.
   const measuredForModelRef = useRef<string | undefined>(undefined)
   useEffect(() => {
     const modelKey = currentModel?.id
@@ -1244,8 +1244,8 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
               // preload="none" + the poster: nothing of the mp4 is fetched
               // until Play. "metadata" sounds cheap but browsers keep
               // range-requesting an mp4 until they find its index, which is
-              // often most of the file — a profile of a 79-video board showed
-              // 118 MB of video pulled in under a minute just by rendering.
+              // often most of the file — a profile of a large board showed
+              // tens of megabytes of video pulled in under a minute just by rendering.
               preload={posterUrl ? 'none' : 'metadata'}
               poster={posterUrl}
               controlsList="nofullscreen"

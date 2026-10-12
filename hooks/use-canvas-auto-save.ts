@@ -183,7 +183,7 @@ export function useCanvasAutoSave(
   // It used to list nodes/edges as dependencies — and React runs an effect's
   // cleanup before re-running it, so this "unmount" save fired on EVERY state
   // change: a full-canvas POST per drag tick. A 57-second profile of a
-  // 545-node board showed 254 of them in flight at once, drowning the real
+  // large board showed hundreds of them in flight at once, drowning the real
   // autosave (one completed) and the thumbnail downloads alongside it.
   const latestRef = useRef({ nodes, edges, persistedScenes, activeSceneId })
   latestRef.current = { nodes, edges, persistedScenes, activeSceneId }

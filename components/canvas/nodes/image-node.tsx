@@ -295,7 +295,7 @@ function ImageNodeImpl({ id, data, selected }: NodeProps) {
   // React Flow measures a freshly mounted node's handles on its own; this
   // explicit re-measure forces a synchronous layout, and with
   // onlyRenderVisibleElements a node mounts every time it scrolls into view.
-  // On a 545-node board that put 48% of a 26-second freeze in this one call.
+  // On a large board this one call dominated a multi-second freeze.
   const measuredForModelRef = useRef<string | undefined>(undefined)
   useEffect(() => {
     const modelKey = currentModel?.id

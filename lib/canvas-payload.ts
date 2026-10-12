@@ -1,8 +1,8 @@
 // Shapes the canvas state before it is sent to /api/projects/<id>/canvas.
 //
 // Node data must never carry inline media. A base64 `data:` poster frame is
-// 25-46 KB per video node, so a project with ~80 video nodes was shipping a
-// 2.4 MB JSON body on EVERY autosave: slow enough that edits made mid-save
+// 25-46 KB per video node, so a project with many video nodes was shipping a
+// multi-megabyte JSON body on EVERY autosave: slow enough that edits made mid-save
 // were dropped, far past the 64 KB that `sendBeacon` will send on tab close
 // (so the closing save silently never happened), and on course for Vercel's
 // 4.5 MB request limit, past which every save fails. A `blob:` URL is worse
