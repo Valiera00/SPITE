@@ -228,16 +228,20 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
   // sometimes added to state but not drawn: React Flow had no position
   // for the new handle yet. Tell it to re-measure whenever the handle set
   // shape changes.
+  //
+  // Runs only when the model CHANGES after mount — never on mount itself.
+  // React Flow measures a freshly mounted node's handles on its own; this
+  // explicit re-measure forces a synchronous layout, and with
+  // onlyRenderVisibleElements a node mounts every time it scrolls into view.
+  // On a 545-node board that put 48% of a 26-second freeze in this one call.
+  const measuredForModelRef = useRef<string | undefined>(undefined)
   useEffect(() => {
+    const modelKey = currentModel?.id
+    if (measuredForModelRef.current === undefined) { measuredForModelRef.current = modelKey; return }
+    if (measuredForModelRef.current === modelKey) return
+    measuredForModelRef.current = modelKey
     updateNodeInternals(id)
-  }, [
-    id,
-    updateNodeInternals,
-    currentModel?.id,
-    currentModel?.inputTypes,
-    currentModel?.referenceParam,
-    currentModel?.category,
-  ])
+  }, [id, updateNodeInternals, currentModel?.id])
 
   // Kling v3 references ride the image-to-video endpoint, which requires a
   // first frame. Block generation (with a clear message) when refs are
@@ -347,6 +351,10 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
     if (!next) return
     setNodes(ns => ns.map(n => n.id === id ? { ...n, data: { ...n.data, label: next } } : n))
   }
+
+  // Poster shown in the preview instead of fetching the mp4 (see the <video>
+  // below). Any URL form works here, including a session-only blob:.
+  const posterUrl = typeof data.videoThumbnail === 'string' && data.videoThumbnail ? data.videoThumbnail : undefined
 
   // Poster frame for the scene-shot bar (an <img> can't render an mp4). The
   // frame is captured once per output, uploaded to R2, and the node stores
@@ -1233,7 +1241,13 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
               controls
               loop={enableLoop}
               muted={muted}
-              preload="metadata"
+              // preload="none" + the poster: nothing of the mp4 is fetched
+              // until Play. "metadata" sounds cheap but browsers keep
+              // range-requesting an mp4 until they find its index, which is
+              // often most of the file — a profile of a 79-video board showed
+              // 118 MB of video pulled in under a minute just by rendering.
+              preload={posterUrl ? 'none' : 'metadata'}
+              poster={posterUrl}
               controlsList="nofullscreen"
               onDoubleClick={(e) => {
                 // The browser's built-in video controls trigger native

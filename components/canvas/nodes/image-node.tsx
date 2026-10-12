@@ -290,9 +290,20 @@ function ImageNodeImpl({ id, data, selected }: NodeProps) {
   // handle's position stays stale until something else re-measures
   // (e.g. page reload) — edges drawn to those handles were saved to
   // state but their SVG path couldn't resolve and nothing was drawn.
+  //
+  // Runs only when the model CHANGES after mount — never on mount itself.
+  // React Flow measures a freshly mounted node's handles on its own; this
+  // explicit re-measure forces a synchronous layout, and with
+  // onlyRenderVisibleElements a node mounts every time it scrolls into view.
+  // On a 545-node board that put 48% of a 26-second freeze in this one call.
+  const measuredForModelRef = useRef<string | undefined>(undefined)
   useEffect(() => {
+    const modelKey = currentModel?.id
+    if (measuredForModelRef.current === undefined) { measuredForModelRef.current = modelKey; return }
+    if (measuredForModelRef.current === modelKey) return
+    measuredForModelRef.current = modelKey
     updateNodeInternals(id)
-  }, [id, updateNodeInternals, currentModel?.id, currentModel?.inputTypes])
+  }, [id, updateNodeInternals, currentModel?.id])
 
   // When the USER picks a new model, carry aspect/resolution across wherever
   // the new model offers the same option (2K stays 2K, 16:9 stays 16:9) and
