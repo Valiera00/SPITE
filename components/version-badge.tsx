@@ -175,7 +175,7 @@ function useUpdateInfo(onOpenNotes: (info: UpdateInfo) => void): UpdateInfo | nu
 
 // ---------------------------------------------------------------------------
 // Notifications. Things that happen with no browser open — the nightly
-// cleanup's "Deleted 3 assets from Valko", a version change — are logged
+// cleanup's "Deleted 3 assets from Project X", a version change — are logged
 // server-side (lib/events.ts). On the next page load the unseen ones are
 // toasted once, and the bell keeps the full history so they can be found
 // again later. Lives next to the version so update notices and deletion

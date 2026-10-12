@@ -152,7 +152,7 @@ async function runCleanup(request: NextRequest) {
 
     console.log(`[cleanup] Deleted ${result.length} expired assets from R2 and database`)
 
-    // Tell the user, per project: "Deleted 3 assets from Valko". Logged, not
+    // Tell the user, per project: "Deleted 3 assets from Project X". Logged, not
     // toasted — nobody is watching at 04:00. The next page load shows it.
     const deletedIds = new Set(result.map((r) => r.id as string))
     const perProject = new Map<string, { name: string; images: number; videos: number }>()

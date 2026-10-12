@@ -1,7 +1,7 @@
 // App event log: things that happened while nobody was looking.
 //
 // The nightly cleanup runs server-side with no browser open, so "Deleted 3
-// assets from Valko" can't be a toast at the moment it happens. Instead the
+// assets from Project X" can't be a toast at the moment it happens. Instead the
 // cleanup writes a row here, and the next page load toasts whatever is still
 // unseen and lists everything in the notifications bell (components/
 // version-badge.tsx). Version changes land here too, so "when was SPITE
