@@ -30,9 +30,16 @@ async function ensureSnapshotsSchema(sql: any) {
 // they don't exist yet. Older installs ship the projects table without
 // them; lazy-creating on first canvas save means no manual migration
 // step is needed for existing users.
+// Cached per instance: this ran two ALTER TABLE statements on EVERY canvas
+// load and save. DDL takes a table lock and a round-trip each, for a column
+// that has existed since the first request — a 3.5 s canvas load in a
+// profile had this in front of the actual read.
+let sceneColumnsReady = false
 async function ensureSceneColumns(sql: any) {
+  if (sceneColumnsReady) return
   await sql`ALTER TABLE projects ADD COLUMN IF NOT EXISTS scenes jsonb`
   await sql`ALTER TABLE projects ADD COLUMN IF NOT EXISTS active_scene_id text`
+  sceneColumnsReady = true
 }
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ projectId: string }> }) {
