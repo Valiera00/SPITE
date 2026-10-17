@@ -3,6 +3,7 @@
 import { memo, useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useParams } from 'next/navigation'
 import { Handle, Position, NodeProps, useReactFlow, useUpdateNodeInternals, type Node as FlowNode } from '@xyflow/react'
+import { useCanvasNodes } from '../canvas-nodes-context'
 import { Play, CaretDown, Minus, Plus, TextT, Image as ImageIcon, CircleNotch, X, Check, ArrowsClockwise } from '@phosphor-icons/react'
 import { toast } from 'sonner'
 import { NodeActionToolbar } from './node-toolbar'
@@ -177,7 +178,8 @@ function ImageNodeImpl({ id, data, selected }: NodeProps) {
   // status check can't reschedule itself or apply a late result.
   const stopRef = useRef(false)
   const resizeStartRef = useRef<{ x: number; width: number } | null>(null)
-  const { setNodes, getEdges, getNodes } = useReactFlow()
+  const { getEdges } = useReactFlow()
+  const { setNodes, getNodes } = useCanvasNodes()
 
   // The editor saves a NEW asset; drop it on the canvas just right of this
   // node, on the same scene, so the edit is immediately usable as a reference.

@@ -2,6 +2,7 @@
 
 import { memo, useState, useRef, useEffect } from 'react'
 import { NodeProps, useReactFlow } from '@xyflow/react'
+import { useCanvasNodes } from '../canvas-nodes-context'
 import { X } from '@phosphor-icons/react'
 
 function CommentNodeImpl({ id, data, selected }: NodeProps) {
@@ -9,7 +10,8 @@ function CommentNodeImpl({ id, data, selected }: NodeProps) {
   const [isEditing, setIsEditing] = useState(!data.text)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const measureRef = useRef<HTMLSpanElement>(null)
-  const { setNodes, deleteElements } = useReactFlow()
+  const { deleteElements } = useReactFlow()
+  const { setNodes } = useCanvasNodes()
 
   // Focus on mount if editing
   useEffect(() => {

@@ -36,6 +36,7 @@ import { JobsPanel } from './jobs-panel'
 import { LeftToolbar, type Asset, type AssetCategory } from './left-toolbar'
 import { BottomBar } from './bottom-bar'
 import { SceneTimeline, type Scene, type Shot } from './scene-timeline'
+import { CanvasNodesContext, type CanvasNodesApi } from './canvas-nodes-context'
 import { AlignmentGuides, computeAlignmentGuides } from './alignment-guides'
 import { MapTrifold, X } from '@phosphor-icons/react'
 import { AddNodeMenu } from './add-node-menu'
@@ -261,6 +262,14 @@ function StickerGhost({ containerRef }: { containerRef: React.RefObject<HTMLDivE
 function CanvasInner({ projectId }: { projectId: string }) {
   const [projectName, setProjectName] = useState('Untitled Project')
   const [nodes, setNodes, onNodesChange] = useNodesState([] as Node[])
+  // Nodes write through this rather than React Flow's setNodes, which only
+  // sees the scene on screen — see canvas-nodes-context.tsx.
+  const nodesRef = useRef(nodes)
+  nodesRef.current = nodes
+  const canvasNodesApi = useMemo(
+    () => ({ setNodes: setNodes as CanvasNodesApi['setNodes'], getNodes: () => nodesRef.current as Node[] }),
+    [setNodes],
+  )
   const [edges, setEdges, onEdgesChange] = useEdgesState([] as Edge[])
   // Connector-animation preference (Settings → Performance). Read on mount and
   // kept live via the broadcast event so toggling it reflects without reload.
@@ -1131,6 +1140,7 @@ function CanvasInner({ projectId }: { projectId: string }) {
   }, [fitView])
 
   return (
+    <CanvasNodesContext.Provider value={canvasNodesApi}>
     <div className="flex flex-col h-screen bg-[#080A0C] overflow-hidden">
       <OnboardingTour surface="canvas" />
       {/* Scene Timeline */}
@@ -1347,6 +1357,7 @@ function CanvasInner({ projectId }: { projectId: string }) {
         </>
       )}
     </div>
+    </CanvasNodesContext.Provider>
   )
 }
 

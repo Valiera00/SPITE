@@ -1,6 +1,7 @@
 'use client'
 
 import { Position, NodeProps, Handle, useReactFlow, useUpdateNodeInternals } from '@xyflow/react'
+import { useCanvasNodes } from '../canvas-nodes-context'
 import { useParams } from 'next/navigation'
 import { Play, CaretDown, SpeakerHigh, SpeakerSlash, Waveform, TextT, Image as ImageIcon, FilmStrip, CircleNotch, X, Check, ArrowsClockwise, Minus, Plus } from '@phosphor-icons/react'
 import { memo, useState, useEffect, useRef, useCallback, useMemo } from 'react'
@@ -193,7 +194,8 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
   const pollingRef = useRef<NodeJS.Timeout | null>(null)
   // Set true to immediately stop polling (cancel / unmount).
   const stopRef = useRef(false)
-  const { setNodes, getEdges, getNodes } = useReactFlow()
+  const { getEdges } = useReactFlow()
+  const { setNodes, getNodes } = useCanvasNodes()
   const updateNodeInternals = useUpdateNodeInternals()
   
   // Check connection states fresh on each render

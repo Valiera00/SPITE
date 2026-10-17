@@ -1,6 +1,7 @@
 'use client'
 
-import { Position, NodeProps, Handle, useReactFlow, useStore } from '@xyflow/react'
+import { Position, NodeProps, Handle, useStore } from '@xyflow/react'
+import { useCanvasNodes } from '../canvas-nodes-context'
 import { useParams } from 'next/navigation'
 import { ArrowsInSimple, Image as ImageIcon, CircleNotch, CheckCircle, UploadSimple } from '@phosphor-icons/react'
 import { memo, useState, useEffect, useRef, useCallback } from 'react'
@@ -10,7 +11,7 @@ import { encodeScaled, autoFitUnderBytes, formatBytes, KLING_MAX_BYTES } from '@
 function CompressNodeImpl({ id, data, selected }: NodeProps) {
   const params = useParams()
   const projectId = (params?.id as string) || ''
-  const { setNodes, getNodes } = useReactFlow()
+  const { setNodes, getNodes } = useCanvasNodes()
 
   // Resolve the upstream image whenever the edges change.
   const edges = useStore((s) => s.edges)

@@ -1,6 +1,7 @@
 'use client'
 
-import { Position, NodeProps, Handle, useReactFlow, type Node } from '@xyflow/react'
+import { Position, NodeProps, Handle, type Node } from '@xyflow/react'
+import { useCanvasNodes } from '../canvas-nodes-context'
 import { useParams } from 'next/navigation'
 import { Image as ImageIcon, UploadSimple, CircleNotch, VideoCamera, SpeakerHigh } from '@phosphor-icons/react'
 import { memo, useState, useEffect, useRef } from 'react'
@@ -14,7 +15,7 @@ import { PhotoEditor, type SavedEdit } from '../photo-editor'
 function ReferenceNodeImpl({ id, data, selected }: NodeProps) {
   const params = useParams()
   const projectId = (params?.id as string) || ''
-  const { setNodes, getNodes } = useReactFlow()
+  const { setNodes, getNodes } = useCanvasNodes()
   const [editorOpen, setEditorOpen] = useState(false)
   const [imageWidth, setImageWidth] = useState<number>((data.width as number) || 320)
   const [thumbnail, setThumbnail] = useState<string | null>((data.thumbnail as string) || null)

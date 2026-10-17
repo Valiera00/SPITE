@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { NodeToolbar, Position, useReactFlow } from '@xyflow/react'
+import { useCanvasNodes } from '../canvas-nodes-context'
 import { toast } from 'sonner'
 import {
   Play,
@@ -101,7 +102,8 @@ export function NodeActionToolbar({
   const [sortMenuOpen, setSortMenuOpen] = useState(false)
   const [moreMenuOpen, setMoreMenuOpen] = useState(false)
   const [addToMenuOpen, setAddToMenuOpen] = useState(false)
-  const { deleteElements, getNodes, setNodes, addNodes, addEdges } = useReactFlow()
+  const { deleteElements, addNodes, addEdges } = useReactFlow()
+  const { getNodes, setNodes } = useCanvasNodes()
 
   const handleDelete = () => {
     deleteElements({ nodes: [{ id: nodeId }] })

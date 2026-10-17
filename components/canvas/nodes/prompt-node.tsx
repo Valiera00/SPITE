@@ -2,7 +2,8 @@
 
 import { memo, useState, useEffect, useRef } from 'react'
 import { useParams } from 'next/navigation'
-import { Position, NodeProps, Handle, useReactFlow } from '@xyflow/react'
+import { Position, NodeProps, Handle } from '@xyflow/react'
+import { useCanvasNodes } from '../canvas-nodes-context'
 import { TextT } from '@phosphor-icons/react'
 import { NodeActionToolbar } from './node-toolbar'
 import { MentionTextarea, type Mention, type MentionTextareaRef } from '../mention-textarea'
@@ -35,7 +36,7 @@ function PromptNodeImpl({ id, data, selected }: NodeProps) {
   const [text, setText] = useState((data.text as string) || '')
   const [mentions, setMentions] = useState<Mention[]>((data.mentions as Mention[]) || [])
   const { folders } = useProjectFolders(projectId)
-  const { setNodes } = useReactFlow()
+  const { setNodes } = useCanvasNodes()
   // Drag-by-default UX: when `editing` is false, an invisible overlay
   // sits on top of the text and absorbs single-clicks so React Flow
   // treats them as a node drag. Double-click anywhere on the overlay
