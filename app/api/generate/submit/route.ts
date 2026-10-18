@@ -4,7 +4,8 @@ import { toFalFetchableUrl } from '@/lib/r2-upload'
 import { estimateGenerationCost } from '@/lib/fal-cost'
 import { reserveSpend, rollbackSpend, tagSpendRequestId, getPerRequestLimitUsd } from '@/lib/spend-gate'
 import { getOrCreateVoiceId } from '@/lib/fal-voices'
-import { byteplusModelFor, buildByteplusBody, createByteplusTask, ByteplusError, BYTEPLUS_PREFIX } from '@/lib/byteplus'
+import { byteplusModelFor, buildByteplusBody, createByteplusTask, ByteplusError, BYTEPLUS_PREFIX, describeUnavailable } from '@/lib/byteplus'
+import { logEvent } from '@/lib/events'
 
 export async function POST(request: NextRequest) {
   // KILL SWITCH — set GENERATION_DISABLED=1 in Vercel env vars to halt
@@ -72,7 +73,10 @@ export async function POST(request: NextRequest) {
   const durationSeconds = settings?.duration
     ? Number.parseInt(String(settings.duration), 10) || undefined
     : undefined
-  const costEstimate = estimateGenerationCost(model, {
+  // Seedance 2.0 / 2.5 run on BytePlus when a key is set (lib/byteplus.ts);
+  // price them at the rate they will actually be billed at.
+  const bpModel = byteplusModelFor(model.id)
+  const estimateOptions = {
     count: requestedUnits,
     durationSeconds,
     // Tiered models (4K Nano Banana Pro, high-quality GPT Image 2, …) cost
@@ -86,6 +90,10 @@ export async function POST(request: NextRequest) {
     // what gets submitted.
     audio: typeof settings?.enableAudio === 'boolean' ? settings.enableAudio : undefined,
     autoDuration: settings?.duration === 'auto',
+  }
+  const costEstimate = estimateGenerationCost(model, {
+    ...estimateOptions,
+    provider: bpModel ? 'byteplus' : 'fal',
   })
   // Fail-closed on unknown cost: a model declared in lib/fal-models.ts but
   // missing from lib/fal-cost.ts would otherwise estimate $0 and bypass the
@@ -124,7 +132,7 @@ export async function POST(request: NextRequest) {
   // Atomic reserve — advisory-locked check-and-insert so concurrent submits
   // serialize and can't both pass the same pre-spend total (see reserveSpend).
   // ledgerId is returned for rollback if fal rejects below.
-  const reservation = await reserveSpend(model.id, costEstimate.total)
+  let reservation = await reserveSpend(model.id, costEstimate.total)
   if (!reservation.allowed) {
     return NextResponse.json(
       {
@@ -294,7 +302,9 @@ export async function POST(request: NextRequest) {
   // the same model at roughly half fal's price (see lib/byteplus.ts). The
   // values come from the fal `input` buildModelInput just produced, so every
   // setting is validated the same way on both routes.
-  const bpModel = byteplusModelFor(model.id)
+  // Set when a job meant for BytePlus has to run on fal instead.
+  let fallbackReason: string | undefined
+  let fallbackCostUsd: number | undefined
   if (bpModel) {
     const i = input as Record<string, unknown>
     const body = buildByteplusBody(bpModel, {
@@ -320,12 +330,37 @@ export async function POST(request: NextRequest) {
         model: BYTEPLUS_PREFIX + bpModel,
         modelId: model.id,
         category: model.category,
+        provider: 'byteplus',
+        estimatedUsd: costEstimate.total,
       })
     } catch (err) {
       if (err instanceof ByteplusError && err.routeUnavailable) {
         // Unreachable, bad key, or the model isn't activated on the BytePlus
         // account: nothing was created there, so fal can take the job.
         console.warn(`[byteplus] route unavailable (${err.status} ${err.code || ''}), falling back to fal`)
+        fallbackReason = describeUnavailable(err)
+        // The reservation was made at BytePlus's price; fal charges more, so
+        // re-check this job against the caps at fal's price before sending it.
+        await rollbackSpend(reservation.ledgerId)
+        const falEstimate = estimateGenerationCost(model, { ...estimateOptions, provider: 'fal' })
+        if (perRequestLimit > 0 && falEstimate.total > perRequestLimit) {
+          return NextResponse.json(
+            { error: `BytePlus is unavailable (${fallbackReason}), and on fal this costs ~$${falEstimate.total.toFixed(2)}, over your per-request ceiling. Not submitted.` },
+            { status: 429 },
+          )
+        }
+        const again = await reserveSpend(model.id, falEstimate.total)
+        if (!again.allowed) {
+          return NextResponse.json(
+            { error: `BytePlus is unavailable (${fallbackReason}), and at fal's price this would exceed the $${again.limitUsd}/hour ceiling. Not submitted.` },
+            { status: 429 },
+          )
+        }
+        reservation = again
+        fallbackCostUsd = falEstimate.total
+        await logEvent('info', `${model.name} ran on fal instead of BytePlus: ${fallbackReason}`, {
+          detail: { modelId: model.id, falCostUsd: falEstimate.total, byteplusCostUsd: costEstimate.total, status: err.status, code: err.code ?? null },
+        })
       } else {
         // A real rejection (bad parameter, filtered input). fal would refuse
         // it too, so surface BytePlus's reason, minus any URLs.
@@ -409,6 +444,10 @@ export async function POST(request: NextRequest) {
       model: pollModel,
       modelId: model.id,
       category: model.category,
+      provider: 'fal',
+      estimatedUsd: fallbackCostUsd ?? costEstimate.total,
+      // Present only when a BytePlus-routed job had to run here instead.
+      ...(fallbackReason ? { fallbackReason, byteplusEstimatedUsd: costEstimate.total } : {}),
     })
   } catch (error: any) {
     console.error('[fal.ai] Submit error:', error)

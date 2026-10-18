@@ -45,6 +45,20 @@ export function byteplusModelFor(spiteId: string): string | null {
   return envOverride(spiteId) || base
 }
 
+/** SPITE model ids currently routed to BytePlus (empty without a key). */
+export function byteplusRoutedModelIds(): string[] {
+  return Object.keys(DEFAULT_MODELS).filter((id) => byteplusModelFor(id) !== null)
+}
+
+/** Plain-language reason a routed job had to go to fal instead. */
+export function describeUnavailable(err: ByteplusError): string {
+  const code = err.code ? ` (${err.code})` : ''
+  if (err.status === 0) return 'BytePlus was unreachable'
+  if (err.status === 401 || err.status === 403) return `BytePlus rejected the API key${code}`
+  if (err.status === 404) return `the model isn't activated on your BytePlus account, or its id changed${code}`
+  return `BytePlus had a server error (${err.status})${code}`
+}
+
 export function isByteplusEndpoint(endpoint: unknown): endpoint is string {
   return typeof endpoint === 'string' && endpoint.startsWith(BYTEPLUS_PREFIX)
 }

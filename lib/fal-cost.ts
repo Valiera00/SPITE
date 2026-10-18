@@ -151,6 +151,25 @@ const COST_TABLE: Record<string, CostEntry> = {
   'esrgan-image-upscale':  { unit: 'image', price: 0.02 },
 }
 
+export type Provider = 'fal' | 'byteplus'
+
+// The same models bought directly from ByteDance's BytePlus ModelArk, which
+// the submit route uses when BYTEPLUS_API_KEY is set (lib/byteplus.ts).
+// ModelArk bills tokens = width x height x 24 fps x seconds / 1024, at a
+// per-million-token list price; converted to per-second here at each tier's
+// pixel count (480p = 854x480, 720p = 1280x720, 1080p = 1920x1080), without
+// video input — SPITE never sends reference video. Sound is generated in the
+// same pass and doesn't change the price.
+//   Seedance 2.5: $10.70 / M tokens (480p, 720p), $11.70 / M (1080p)
+//   Seedance 2.0: $7.00 / M tokens (480p, 720p), $7.70 / M (1080p)
+// Each entry's flat `price` is its dearest tier, as in COST_TABLE.
+const BYTEPLUS_COST_TABLE: Record<string, CostEntry> = {
+  'seedance-2.5': { unit: 'sec', price: 0.5686,
+                    byTier: { '480p': 0.1028, '720p': 0.2311, '1080p': 0.5686 } },
+  'seedance-2.0': { unit: 'sec', price: 0.3742,
+                    byTier: { '480p': 0.0672, '720p': 0.1512, '1080p': 0.3742 } },
+}
+
 export interface CostEstimate {
   perUnit: number   // estimated $ per generated output
   total: number     // estimated total $ for this batch
@@ -158,6 +177,8 @@ export interface CostEstimate {
   isKnown: boolean  // false when we don't have pricing data for this model
   /** Tier the price came from, when the model has tiered pricing. For display. */
   tier?: string
+  /** Whose price this is. */
+  provider?: Provider
 }
 
 // Resolve the per-output base price for a tiered model. Falls back to the
@@ -202,12 +223,16 @@ export function estimateGenerationCost(
     audio?: boolean
     /** Duration is 'auto' (model decides): price the longest it can pick. */
     autoDuration?: boolean
+    /** Where the job will run. Defaults to fal. */
+    provider?: Provider
   },
 ): CostEstimate {
   if (!model) {
     return { perUnit: 0, total: 0, unit: 'image', isKnown: false }
   }
-  const entry = COST_TABLE[model.id]
+  const direct = options.provider === 'byteplus' ? BYTEPLUS_COST_TABLE[model.id] : undefined
+  const provider: Provider = direct ? 'byteplus' : 'fal'
+  const entry = direct || COST_TABLE[model.id]
   if (!entry) {
     return { perUnit: 0, total: 0, unit: model.category === 'video' ? 'video' : 'image', isKnown: false }
   }
@@ -226,6 +251,7 @@ export function estimateGenerationCost(
     unit: entry.unit === 'sec' ? 'video' : entry.unit,
     isKnown: true,
     tier,
+    provider,
   }
 }
 
