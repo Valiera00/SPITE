@@ -4,6 +4,7 @@ import { toFalFetchableUrl } from '@/lib/r2-upload'
 import { estimateGenerationCost } from '@/lib/fal-cost'
 import { reserveSpend, rollbackSpend, tagSpendRequestId, getPerRequestLimitUsd } from '@/lib/spend-gate'
 import { getOrCreateVoiceId } from '@/lib/fal-voices'
+import { byteplusModelFor, buildByteplusBody, createByteplusTask, ByteplusError, BYTEPLUS_PREFIX } from '@/lib/byteplus'
 
 export async function POST(request: NextRequest) {
   // KILL SWITCH — set GENERATION_DISABLED=1 in Vercel env vars to halt
@@ -286,6 +287,53 @@ export async function POST(request: NextRequest) {
         },
         { status: 500 },
       )
+    }
+  }
+
+  // Seedance 2.0 / 2.5 go straight to BytePlus when BYTEPLUS_API_KEY is set:
+  // the same model at roughly half fal's price (see lib/byteplus.ts). The
+  // values come from the fal `input` buildModelInput just produced, so every
+  // setting is validated the same way on both routes.
+  const bpModel = byteplusModelFor(model.id)
+  if (bpModel) {
+    const i = input as Record<string, unknown>
+    const body = buildByteplusBody(bpModel, {
+      prompt: finalPrompt,
+      firstFrameUrl: usesSeparateRefEndpoint ? undefined : (referenceImageSigned || undefined),
+      lastFrameUrl: usesSeparateRefEndpoint ? undefined : (endImageSigned || undefined),
+      referenceImageUrls: hasRefsViaRefParam ? refsSigned : undefined,
+      referenceAudioUrls: hasAudioInput ? audioSigned : undefined,
+      aspectRatio: typeof i.aspect_ratio === 'string' ? i.aspect_ratio : undefined,
+      duration: i.duration === undefined || i.duration === null ? undefined : String(i.duration),
+      resolution: typeof i.resolution === 'string' ? i.resolution : undefined,
+      generateAudio: i.generate_audio === true,
+    })
+    try {
+      const taskId = await createByteplusTask(body)
+      console.log(
+        `[byteplus] Submitted: model=${bpModel} task=${taskId} ` +
+          `frames=${referenceImageSigned ? 1 : 0}+${endImageSigned ? 1 : 0} refs=${refsSigned.length} audio=${audioSigned.length}`,
+      )
+      await tagSpendRequestId(reservation.ledgerId, taskId)
+      return NextResponse.json({
+        request_id: taskId,
+        model: BYTEPLUS_PREFIX + bpModel,
+        modelId: model.id,
+        category: model.category,
+      })
+    } catch (err) {
+      if (err instanceof ByteplusError && err.routeUnavailable) {
+        // Unreachable, bad key, or the model isn't activated on the BytePlus
+        // account: nothing was created there, so fal can take the job.
+        console.warn(`[byteplus] route unavailable (${err.status} ${err.code || ''}), falling back to fal`)
+      } else {
+        // A real rejection (bad parameter, filtered input). fal would refuse
+        // it too, so surface BytePlus's reason, minus any URLs.
+        await rollbackSpend(reservation.ledgerId)
+        const raw = err instanceof Error ? err.message : 'BytePlus rejected the request'
+        const status = err instanceof ByteplusError && err.status >= 400 && err.status < 600 ? err.status : 500
+        return NextResponse.json({ error: raw.replace(/https?:\/\/[^\s"')]+/g, '[url]').slice(0, 400) }, { status })
+      }
     }
   }
 

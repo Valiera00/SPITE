@@ -127,10 +127,11 @@ const REHOST_ALLOWED_HOSTS = [
   /^v[0-9]+\.fal\.media$/i,
 ]
 
-function isAllowedRehostSource(rawUrl: string): boolean {
+function isAllowedRehostSource(rawUrl: string, extraHosts: string[] = []): boolean {
   try {
     const u = new URL(rawUrl)
     if (u.protocol !== 'https:') return false
+    if (extraHosts.includes(u.hostname.toLowerCase())) return true
     return REHOST_ALLOWED_HOSTS.some(re => re.test(u.hostname))
   } catch {
     return false
@@ -148,11 +149,12 @@ function isAllowedRehostSource(rawUrl: string): boolean {
 // Location against the allowlist before continuing.
 async function fetchAllowedFollowingRedirects(
   startUrl: string,
+  extraHosts: string[] = [],
   maxHops = 5,
 ): Promise<Response> {
   let url = startUrl
   for (let hop = 0; hop <= maxHops; hop++) {
-    if (!isAllowedRehostSource(url)) {
+    if (!isAllowedRehostSource(url, extraHosts)) {
       throw new Error('rehostToR2: source host not allowed')
     }
     const res = await fetch(url, { redirect: 'manual' })
@@ -168,11 +170,17 @@ async function fetchAllowedFollowingRedirects(
   throw new Error('rehostToR2: too many redirects')
 }
 
-export async function rehostToR2(sourceUrl: string): Promise<string> {
-  if (!isAllowedRehostSource(sourceUrl)) {
+/**
+ * @param extraHosts Exact hostnames to accept on top of the fal allowlist —
+ *   only ever a host taken from a provider API response fetched with our own
+ *   key (the BytePlus path), never from client input. Every redirect hop is
+ *   still checked against the combined list.
+ */
+export async function rehostToR2(sourceUrl: string, extraHosts: string[] = []): Promise<string> {
+  if (!isAllowedRehostSource(sourceUrl, extraHosts)) {
     throw new Error('rehostToR2: source host not allowed')
   }
-  const res = await fetchAllowedFollowingRedirects(sourceUrl)
+  const res = await fetchAllowedFollowingRedirects(sourceUrl, extraHosts)
   if (!res.ok) {
     throw new Error(`Failed to fetch source for re-host: ${res.status}`)
   }

@@ -2,8 +2,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import { recordAsset, rehostToR2 } from '@/lib/r2-upload'
 import { isValidFalModel, isValidFalRequestId } from '@/lib/fal-validate'
 import { rollbackSpendByRequestId } from '@/lib/spend-gate'
+import { isByteplusEndpoint, isValidByteplusEndpoint, isValidByteplusTaskId, getByteplusTask, ByteplusError } from '@/lib/byteplus'
 
 export async function GET(request: NextRequest) {
+  {
+    const { searchParams } = new URL(request.url)
+    if (isByteplusEndpoint(searchParams.get('model'))) return byteplusStatus(searchParams)
+  }
   const falKey = process.env.FAL_KEY
   if (!falKey) {
     return NextResponse.json({ error: 'FAL_KEY not configured' }, { status: 500 })
@@ -178,4 +183,51 @@ function extractOutputUrls(result: any): { images?: string[], videos?: string[],
   }
 
   return output
+}
+
+// Same contract as the fal path above, for jobs submitted to BytePlus
+// directly (pseudo-endpoint "byteplus/<model>", see lib/byteplus.ts).
+async function byteplusStatus(searchParams: URLSearchParams) {
+  const requestId = searchParams.get('request_id')
+  const model = searchParams.get('model')
+  if (!isValidByteplusEndpoint(model) || !isValidByteplusTaskId(requestId)) {
+    return NextResponse.json({ error: 'Invalid model or request_id' }, { status: 400 })
+  }
+  try {
+    const task = await getByteplusTask(requestId)
+    if (task.status === 'FAILED') {
+      await rollbackSpendByRequestId(requestId)
+      return NextResponse.json({ status: 'FAILED', error: task.error || 'Generation failed', requestId })
+    }
+    if (task.status !== 'COMPLETED' || !task.videoUrl) {
+      return NextResponse.json({ status: task.status, requestId })
+    }
+    // BytePlus links expire after 24h: keep our own copy. The host comes from
+    // BytePlus's authenticated response, so it is allowed for this rehost.
+    let stored = task.videoUrl
+    try {
+      stored = await rehostToR2(task.videoUrl, [new URL(task.videoUrl).hostname.toLowerCase()])
+    } catch (err) {
+      console.error('[byteplus] Re-host failed, keeping BytePlus URL (expires in 24h):', err)
+    }
+    const projectId = searchParams.get('projectId')
+    if (projectId && projectId !== 'undefined' && projectId !== 'null') {
+      try {
+        await recordAsset('video', model, searchParams.get('prompt') || 'Generated asset', stored, projectId)
+      } catch (err) {
+        console.error('[r2] Failed to record asset:', err)
+      }
+    }
+    return NextResponse.json({ status: 'COMPLETED', output: { videos: [stored], url: stored }, requestId })
+  } catch (err) {
+    if (err instanceof ByteplusError && err.status === 404) {
+      await rollbackSpendByRequestId(requestId)
+      return NextResponse.json({ status: 'FAILED', error: 'BytePlus has no record of this task', requestId })
+    }
+    console.error('[byteplus] Status error:', err)
+    return NextResponse.json(
+      { error: 'Status check failed' },
+      { status: err instanceof ByteplusError && err.status ? err.status : 500 },
+    )
+  }
 }
