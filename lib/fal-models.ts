@@ -25,6 +25,10 @@ export interface ModelConfig {
   aspectRatios: string[]
   durations?: string[]          // Only for video models
   resolutions?: string[]        // Optional resolution control
+  // Optional quality control (GPT Image 2: low / medium / high). Price moves
+  // with it far more than with resolution — see lib/fal-cost.ts.
+  qualities?: string[]
+  defaultQuality?: string
   supportsAudio?: boolean       // For video models with sound generation
   supportsLoop?: boolean        // For video models with loop option
   // True when the model declares 'text' in inputTypes but a prompt is
@@ -144,8 +148,11 @@ export const FAL_MODELS: ModelConfig[] = [
     inputTypes: ['text', 'image'],
     aspectRatios: ['16:9', '4:3', '1:1', '3:4', '9:16'],
     // Real output resolution tiers (mapped to image_size {w,h} in buildModelInput,
-    // up to fal's 3840px / ~8.3MP ceiling). Quality is sent separately as 'high'.
+    // up to fal's 3840px / ~8.3MP ceiling).
     resolutions: ['1K', '2K', '4K'],
+    // OpenAI's quality levels. Medium costs about a quarter of high.
+    qualities: ['low', 'medium', 'high'],
+    defaultQuality: 'high',
     defaultAspectRatio: '4:3',
     defaultResolution: '2K',
     description: 'OpenAI\'s top image model — extreme detail, fine typography. Up to 4K.'
@@ -765,6 +772,7 @@ export function buildModelInput(
     aspectRatio?: string
     duration?: string
     resolution?: string
+    quality?: string
     enableAudio?: boolean
     enableLoop?: boolean
     imageUrl?: string
@@ -1154,7 +1162,10 @@ export function buildModelInput(
       '9:16-1K': { width: 720,  height: 1280 },  '9:16-2K': { width: 1152, height: 2048 }, '9:16-4K': { width: 2160, height: 3840 },
     }
     input.image_size = GPT_SIZES[`${ratio}-${tier}`] || GPT_SIZES['16:9-2K']
-    input.quality = 'high'
+    input.quality =
+      options.quality && model.qualities?.includes(options.quality)
+        ? options.quality
+        : model.defaultQuality || 'high'
     if (options.seed !== undefined) input.seed = options.seed
     return input
   }

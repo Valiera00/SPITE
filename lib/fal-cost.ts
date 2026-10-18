@@ -28,6 +28,9 @@ interface CostEntry {
   // a higher rate (Veo doubles; PixVerse adds ~30%). Used when the sound
   // toggle is on — or unknown, since the gate must assume the dearer case.
   byTierAudio?: Record<string, number>
+  // Per-quality tier tables, for models with a quality picker. Keyed by
+  // quality, then by tier like byTier. An unknown quality uses byTier.
+  byQuality?: Record<string, Record<string, number>>
 }
 
 const COST_TABLE: Record<string, CostEntry> = {
@@ -52,7 +55,16 @@ const COST_TABLE: Record<string, CostEntry> = {
   // each tier takes the CEILING of the published sizes it spans rather than an
   // interpolation. 4K is exact: 3840x2160 high = $0.401.
   'gpt-image-2':         { unit: 'image', price: 0.41,
-                           byTier: { '1K': 0.21, '2K': 0.25, '4K': 0.41 } },
+                           byTier: { '1K': 0.21, '2K': 0.25, '4K': 0.41 },
+                           // Same ceiling method per quality, from fal's
+                           // published table (e.g. 1024x1024: low $0.006,
+                           // medium $0.053, high $0.211; 3840x2160: low
+                           // $0.012, medium $0.101, high $0.401).
+                           byQuality: {
+                             low:    { '1K': 0.006, '2K': 0.01, '4K': 0.012 },
+                             medium: { '1K': 0.053, '2K': 0.07, '4K': 0.11 },
+                             high:   { '1K': 0.21,  '2K': 0.25, '4K': 0.41 },
+                           } },
   'flux-2-pro':          { unit: 'image', price: 0.05 },
   // Ideogram v4 bills per megapixel by rendering speed: TURBO $0.0075,
   // BALANCED $0.015, QUALITY $0.025. The largest frame this app can request
@@ -198,11 +210,15 @@ function basePrice(
   model: ModelConfig,
   resolution?: string,
   audio?: boolean,
+  quality?: string,
 ): { price: number; tier?: string } {
   // The sound-on table applies only when the model can generate sound at all
   // AND the toggle isn't explicitly off. An unknown toggle counts as on.
   const soundOn = !!model.supportsAudio && audio !== false
-  const table = soundOn && entry.byTierAudio ? entry.byTierAudio : entry.byTier
+  const q = quality || model.defaultQuality
+  const table =
+    (q && entry.byQuality?.[q]) ||
+    (soundOn && entry.byTierAudio ? entry.byTierAudio : entry.byTier)
   if (!table) return { price: entry.price }
   const tier = resolution || model.defaultResolution
   if (tier && table[tier] !== undefined) {
@@ -237,6 +253,8 @@ export function estimateGenerationCost(
     autoDuration?: boolean
     /** Where the job will run. Defaults to fal. */
     provider?: Provider
+    /** Quality level, for models with a quality picker. */
+    quality?: string
   },
 ): CostEstimate {
   if (!model) {
@@ -248,7 +266,7 @@ export function estimateGenerationCost(
   if (!entry) {
     return { perUnit: 0, total: 0, unit: model.category === 'video' ? 'video' : 'image', isKnown: false }
   }
-  const { price, tier } = basePrice(entry, model, options.resolution, options.audio)
+  const { price, tier } = basePrice(entry, model, options.resolution, options.audio, options.quality)
   let perUnit = price
   if (entry.unit === 'sec') {
     const dur =

@@ -90,6 +90,7 @@ export default function FlowThread() {
   const [aspect, setAspect] = useState('')
   const [count, setCount] = useState(1)
   const [resolution, setResolution] = useState('')
+  const [quality, setQuality] = useState('')
   const [refs, setRefs] = useState<Ref[]>([])
   const [pending, setPending] = useState(0)
   const [error, setError] = useState('')
@@ -151,8 +152,8 @@ export default function FlowThread() {
     )
   }, [model])
   const cost = useMemo(
-    () => estimateGenerationCost(model, { count, resolution }),
-    [model, count, resolution],
+    () => estimateGenerationCost(model, { count, resolution, quality: quality || undefined }),
+    [model, count, resolution, quality],
   )
 
   // Dictation. Each finalized phrase is appended to whatever is already in
@@ -187,7 +188,7 @@ export default function FlowThread() {
   const removeRef = (id: string) => setRefs((prev) => prev.filter((r) => r.id !== id))
 
   // One full submit→poll→append. Runs independently so count>1 fans out.
-  async function runOne(i: number, myPrompt: string, refUrls: string[], mId: string, asp: string, res: string) {
+  async function runOne(i: number, myPrompt: string, refUrls: string[], mId: string, asp: string, res: string, q: string) {
     try {
       if (i > 0) await new Promise((r) => setTimeout(r, i * 250))
       const m = getModelById(mId)
@@ -197,7 +198,7 @@ export default function FlowThread() {
           modelId: mId, prompt: myPrompt,
           referenceImageUrl: refUrls[0],
           referenceGroups: refUrls.length > 1 ? refUrls.slice(1).map((u) => ({ urls: [u] })) : undefined,
-          settings: { aspectRatio: asp || m?.defaultAspectRatio, resolution: res || m?.defaultResolution, numImages: 1 },
+          settings: { aspectRatio: asp || m?.defaultAspectRatio, resolution: res || m?.defaultResolution, quality: q || m?.defaultQuality, numImages: 1 },
         }),
       })
       const submitData = await submitRes.json().catch(() => ({}))
@@ -259,7 +260,7 @@ export default function FlowThread() {
     const refUrls = [...new Set(refs.map((r) => r.proxyUrl).filter((u): u is string => !!u))]
     const n = Math.max(1, Math.min(MAX_COUNT, count))
     setError(''); setPrompt(''); setRefs([]); setPending(n)
-    for (let i = 0; i < n; i++) runOne(i, myPrompt, refUrls, modelId, aspect, resolution)
+    for (let i = 0; i < n; i++) runOne(i, myPrompt, refUrls, modelId, aspect, resolution, quality)
   }
 
   // Real save: Web Share (iOS → Save to Photos) with a blob-download fallback.
@@ -444,6 +445,12 @@ export default function FlowThread() {
                 <select value={resolution} onChange={(e) => setResolution(e.target.value)} aria-label="Resolution"
                   className="appearance-none bg-white/[0.06] hover:bg-white/10 transition rounded-full px-2.5 h-8 text-[11px] font-mono text-foreground/90 focus:outline-none cursor-pointer">
                   {model.resolutions!.map((r) => <option key={r} value={r}>{r}</option>)}
+                </select>
+              )}
+              {model && (model.qualities?.length ?? 0) > 0 && (
+                <select value={quality || model.defaultQuality || ''} onChange={(e) => setQuality(e.target.value)} aria-label="Quality"
+                  className="appearance-none bg-white/[0.06] hover:bg-white/10 transition rounded-full px-2.5 h-8 text-[11px] font-mono text-foreground/90 focus:outline-none cursor-pointer">
+                  {model.qualities!.map((q) => <option key={q} value={q}>{q === 'medium' ? 'Medium' : q === 'low' ? 'Low' : 'High'} quality</option>)}
                 </select>
               )}
               <button data-tour="attach" onClick={() => fileRef.current?.click()} aria-label="Attach reference images"

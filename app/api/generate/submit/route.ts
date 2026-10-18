@@ -90,6 +90,7 @@ export async function POST(request: NextRequest) {
     // what gets submitted.
     audio: typeof settings?.enableAudio === 'boolean' ? settings.enableAudio : undefined,
     autoDuration: settings?.duration === 'auto',
+    quality: typeof settings?.quality === 'string' ? settings.quality : undefined,
   }
   const costEstimate = estimateGenerationCost(model, {
     ...estimateOptions,
@@ -230,6 +231,7 @@ export async function POST(request: NextRequest) {
     aspectRatio: settings?.aspectRatio,
     duration: settings?.duration,
     resolution: settings?.resolution,
+    quality: typeof settings?.quality === 'string' ? settings.quality : undefined,
     enableAudio: settings?.enableAudio,
     enableLoop: settings?.enableLoop,
     // Separate reference endpoints don't accept first/end frame inputs.

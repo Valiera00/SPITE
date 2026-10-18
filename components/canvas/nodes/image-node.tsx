@@ -132,6 +132,8 @@ function StatusBadge({ status, progress }: { status: GenerationStatus; progress?
   )
 }
 
+const QUALITY_LABEL: Record<string, string> = { low: 'Low quality', medium: 'Medium quality', high: 'High quality' }
+
 function ImageNodeImpl({ id, data, selected }: NodeProps) {
   const params = useParams()
   // Route segment is [id], so the param is `id` (not `projectId`).
@@ -142,6 +144,7 @@ function ImageNodeImpl({ id, data, selected }: NodeProps) {
   const [modelId, setModelId] = useState((data.modelId as string) || 'nano-banana-pro')
   const [aspectRatio, setAspectRatio] = useState((data.aspectRatio as string) || '')
   const [resolution, setResolution] = useState((data.resolution as string) || '')
+  const [quality, setQuality] = useState((data.quality as string) || '')
   // Batch count persists across reloads on image models — the user
   // commonly works in batches of 6 on Nano Banana / Flux for character
   // sheets, style sheets, etc., and re-clicking + every session is
@@ -382,9 +385,9 @@ function ImageNodeImpl({ id, data, selected }: NodeProps) {
   useEffect(() => {
     setNodes(ns => ns.map(n => n.id === id ? {
       ...n,
-      data: { ...n.data, prompt, modelId, aspectRatio, resolution, numImages, outputUrl, mentions, status, error, submittedAt }
+      data: { ...n.data, prompt, modelId, aspectRatio, resolution, quality, numImages, outputUrl, mentions, status, error, submittedAt }
     } : n))
-  }, [prompt, modelId, aspectRatio, resolution, numImages, outputUrl, mentions, status, error, submittedAt, id, setNodes])
+  }, [prompt, modelId, aspectRatio, resolution, quality, numImages, outputUrl, mentions, status, error, submittedAt, id, setNodes])
 
   // Auto-name: once a generation completes, replace the default
   // "Image Generator #N" label with the first few words of the prompt.
@@ -771,7 +774,7 @@ function ImageNodeImpl({ id, data, selected }: NodeProps) {
         prompt: compiled.prompt,
         referenceImageUrl: connectedImageUrl,
         referenceGroups: allRefGroups.length > 0 ? allRefGroups : undefined,
-        settings: { aspectRatio, resolution, numImages: 1 },
+        settings: { aspectRatio, resolution, quality: quality || undefined, numImages: 1 },
       })
       const count = Math.max(1, Math.min(12, numImages))
       // Submit the N jobs ONE AT A TIME — never overlapping. Firing them in
@@ -919,8 +922,8 @@ function ImageNodeImpl({ id, data, selected }: NodeProps) {
   // intentionally blocking + unmissable — this is a money-loss safety
   // gate, not a delight feature.
   const costEstimate = useMemo(
-    () => estimateGenerationCost(currentModel, { count: numImages, resolution }),
-    [currentModel, numImages, resolution],
+    () => estimateGenerationCost(currentModel, { count: numImages, resolution, quality: quality || undefined }),
+    [currentModel, numImages, resolution, quality],
   )
   const generateTooltip = useMemo(() => {
     if (!currentModel) return 'Generate image'
@@ -1186,6 +1189,17 @@ function ImageNodeImpl({ id, data, selected }: NodeProps) {
                 disabled={isGenerating}
               />
             )}
+
+            {/* Quality - only if model has one (GPT Image 2). Moves the
+                price far more than resolution does. */}
+            {currentModel?.qualities?.length ? (
+              <ControlSelect
+                value={QUALITY_LABEL[quality || currentModel.defaultQuality || 'high'] || 'High quality'}
+                options={currentModel.qualities.map((q) => ({ value: q, label: QUALITY_LABEL[q] || q }))}
+                onChange={setQuality}
+                disabled={isGenerating}
+              />
+            ) : null}
           </div>
           
           {/* Generate / Cancel / Re-check button. After a 10-min soft
