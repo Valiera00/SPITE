@@ -98,8 +98,16 @@ const COST_TABLE: Record<string, CostEntry> = {
   // Motion-control (Kling 2.6 Pro) — no duration param exposed; flat per-video
   // estimate for the spend gate.
   'kling-2.6-motion-control-pro': { unit: 'video', price: 0.80 },
-  'kling-3.0-standard':  { unit: 'sec',   price: 0.14 },
-  'kling-3.0-pro':       { unit: 'sec',   price: 0.30 },
+  // Kling 3.0 (fal, Oct 2026; identical to Kling's own developer rates):
+  // Standard $0.084/s silent, $0.126/s with sound; Pro $0.112/s silent,
+  // $0.168/s with sound. No resolution picker, so the sound toggle is the
+  // only thing that moves the price — keyed as 'default'. These were $0.14
+  // and $0.30 before, over-estimating Pro nearly threefold.
+  'kling-3.0-standard':  { unit: 'sec',   price: 0.126,
+                           byTier: { default: 0.084 }, byTierAudio: { default: 0.126 } },
+  'kling-3.0-pro':       { unit: 'sec',   price: 0.168,
+                           byTier: { default: 0.112 }, byTierAudio: { default: 0.168 } },
+  // 4K: fal publishes no price; Kling lists $0.42/s. Kept high until a bill confirms.
   'kling-3.0-4k':        { unit: 'sec',   price: 0.50 },
   'minimax-hailuo':      { unit: 'video', price: 0.50 },
   'minimax-hailuo-2.3':  { unit: 'video', price: 0.65 },  // 2.3 is slightly pricier than original
@@ -199,6 +207,10 @@ function basePrice(
   const tier = resolution || model.defaultResolution
   if (tier && table[tier] !== undefined) {
     return { price: table[tier], tier }
+  }
+  // A model with no resolution picker, priced by the sound toggle alone.
+  if (!model.resolutions?.length && table.default !== undefined) {
+    return { price: table.default }
   }
   return { price: entry.price }
 }
