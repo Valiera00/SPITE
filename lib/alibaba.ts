@@ -103,14 +103,16 @@ export function buildAlibabaBody(model: string, t: DirectTaskInput): Record<stri
 export const alibabaProvider: DirectProvider = {
   id: 'alibaba',
   label: LABEL,
-  prefix: 'alibaba/',
+  // Not 'alibaba/': that is fal's own namespace for Wan (alibaba/wan-3.0/…),
+  // and a fal job must never be mistaken for a direct one.
+  prefix: 'dashscope/',
   envVars: ['DASHSCOPE_API_KEY', 'DASHSCOPE_WORKSPACE_ID', 'DASHSCOPE_REGION'],
   configured: async () => !!(await getSetting('DASHSCOPE_API_KEY')),
   missingConfig: () => 'no Alibaba API key yet (Settings → Model providers)',
   modelFor: (spiteId) => (DEFAULT_MODELS[spiteId] ? modelOverride('DASHSCOPE_MODEL_', spiteId) || DEFAULT_MODELS[spiteId] : null),
   // Singapore is priced like fal; the other international regions are cheaper.
   pricingId: async (): Promise<PricingProvider> => ((await endpoint()).region === SINGAPORE ? 'alibaba-sg' : 'alibaba'),
-  isValidEndpoint: (e): e is string => typeof e === 'string' && /^alibaba\/[a-z0-9][a-z0-9.-]{2,80}$/.test(e),
+  isValidEndpoint: (e): e is string => typeof e === 'string' && /^dashscope\/[a-z0-9][a-z0-9.-]{2,80}$/.test(e),
   isValidTaskId: (id): id is string => typeof id === 'string' && /^[A-Za-z0-9-]{8,100}$/.test(id),
 
   async create(model, input) {

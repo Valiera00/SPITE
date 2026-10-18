@@ -77,7 +77,11 @@ export async function resolveRoute(modelId: string): Promise<Route> {
   return { kind: 'direct', provider, providerModel }
 }
 
-/** The direct provider a stored pseudo-endpoint belongs to, if any. */
+/**
+ * The direct provider a stored pseudo-endpoint belongs to, if any. Each
+ * prefix must stay clear of fal's own namespaces (fal-ai/, alibaba/,
+ * bytedance/, …): anything matched here is never polled on fal.
+ */
 export function providerForEndpoint(endpoint: unknown): DirectProvider | null {
   if (typeof endpoint !== 'string') return null
   return PROVIDERS.find((p) => endpoint.startsWith(p.prefix)) || null
