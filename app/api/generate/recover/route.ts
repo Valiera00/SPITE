@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/db'
 import { recordAsset, rehostToR2 } from '@/lib/r2-upload'
 import { isValidFalModel, isValidFalRequestId } from '@/lib/fal-validate'
-import { isByteplusEndpoint, isValidByteplusEndpoint, isValidByteplusTaskId, getByteplusTask, ByteplusError } from '@/lib/byteplus'
+import { providerForEndpoint } from '@/lib/model-routing'
+import { ProviderError, type DirectProvider } from '@/lib/direct-provider'
 
 // Recovery endpoint. fal keeps job results around for ~24h after completion,
 // so a generation that "disappeared" from SPITE — because polling failed,
@@ -83,7 +84,8 @@ function extractOutputUrl(result: any): { url: string | null; isVideo: boolean }
 }
 
 async function recoverOne(item: RecoveryItem, falKey: string): Promise<RecoveryResult> {
-  if (isByteplusEndpoint(item.modelEndpoint)) return recoverByteplus(item)
+  const direct = providerForEndpoint(item.modelEndpoint)
+  if (direct) return recoverDirect(direct, item)
   // Defence-in-depth: bulk-mode recovery reads modelEndpoint from the
   // canvas_nodes jsonb, which was written by an authenticated user. If
   // that data ever gets tampered with (via a future write bug or DB
@@ -355,32 +357,33 @@ export async function POST(request: NextRequest) {
     results,
   })
 }
-// Recovery for jobs submitted straight to BytePlus (lib/byteplus.ts).
-async function recoverByteplus(item: RecoveryItem): Promise<RecoveryResult> {
+// Recovery for jobs submitted straight to a model maker's API
+// (lib/model-routing.ts).
+async function recoverDirect(p: DirectProvider, item: RecoveryItem): Promise<RecoveryResult> {
   const base = { requestId: item.requestId, nodeId: item.nodeId }
-  if (!isValidByteplusEndpoint(item.modelEndpoint) || !isValidByteplusTaskId(item.requestId)) {
+  if (!p.isValidEndpoint(item.modelEndpoint) || !p.isValidTaskId(item.requestId)) {
     return { ...base, status: 'error', message: 'Invalid modelEndpoint or requestId — refusing to fetch.' }
   }
   let task
   try {
-    task = await getByteplusTask(item.requestId)
+    task = await p.get(item.requestId)
   } catch (err) {
-    if (err instanceof ByteplusError && err.status === 404) {
-      return { ...base, status: 'not_found', message: 'BytePlus has no record of this task (results expire after 24h).' }
+    if (err instanceof ProviderError && err.status === 404) {
+      return { ...base, status: 'not_found', message: `${p.label} has no record of this task (results expire after 24h).` }
     }
     return { ...base, status: 'error', message: `status check failed: ${err instanceof Error ? err.message : 'unknown'}` }
   }
   if (task.status === 'IN_QUEUE' || task.status === 'IN_PROGRESS') {
-    return { ...base, status: 'still_pending', message: `BytePlus says ${task.status}.` }
+    return { ...base, status: 'still_pending', message: `${p.label} says ${task.status}.` }
   }
   if (task.status === 'FAILED' || !task.videoUrl) {
-    return { ...base, status: 'failed', message: task.error || 'BytePlus reports the job failed.' }
+    return { ...base, status: 'failed', message: task.error || `${p.label} reports the job failed.` }
   }
   let storedUrl = task.videoUrl
   try {
     storedUrl = await rehostToR2(task.videoUrl, [new URL(task.videoUrl).hostname.toLowerCase()])
   } catch (err) {
-    console.error('[recover] rehost failed, keeping BytePlus URL:', err)
+    console.error(`[recover] rehost failed, keeping ${p.label} URL:`, err)
   }
   try {
     await recordAsset('video', item.modelEndpoint, item.prompt || 'Recovered generation', storedUrl, item.projectId, { recovered: true })

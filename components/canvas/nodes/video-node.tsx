@@ -2,7 +2,7 @@
 
 import { Position, NodeProps, Handle, useReactFlow, useUpdateNodeInternals } from '@xyflow/react'
 import { useCanvasNodes } from '../canvas-nodes-context'
-import { useRoutedProviders } from '@/lib/use-providers'
+import { useRoutedProviders, PROVIDER_LABEL } from '@/lib/use-providers'
 import { useParams } from 'next/navigation'
 import { Play, CaretDown, SpeakerHigh, SpeakerSlash, Waveform, TextT, Image as ImageIcon, FilmStrip, CircleNotch, X, Check, ArrowsClockwise, Minus, Plus } from '@phosphor-icons/react'
 import { memo, useState, useEffect, useRef, useCallback, useMemo } from 'react'
@@ -941,14 +941,17 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
         )
       }
 
-      // A job meant for BytePlus that had to run on fal (bad key, model not
-      // activated, BytePlus down). The server also logs it to the bell.
+      // A job meant for the maker's own API (Settings → Model providers)
+      // that had to run on fal: key not set, model not activated, provider
+      // down. Outages are also logged to the bell.
       const fellBack = ok.filter(r => typeof r.fallbackReason === 'string')
       if (fellBack.length > 0) {
         const falUsd = fellBack.reduce((s, r) => s + (Number(r.estimatedUsd) || 0), 0)
-        const bpUsd = fellBack.reduce((s, r) => s + (Number(r.byteplusEstimatedUsd) || 0), 0)
-        toast.warning(`${currentModel.name} ran on fal, not BytePlus`, {
-          description: `${fellBack[0].fallbackReason}. ~${formatUSD(falUsd)} instead of ~${formatUSD(bpUsd)}.`,
+        const directUsd = fellBack.reduce((s, r) => s + (Number(r.directEstimatedUsd) || 0), 0)
+        const from = typeof fellBack[0].fallbackFrom === 'string' ? fellBack[0].fallbackFrom : 'its own API'
+        const saving = directUsd > 0 && directUsd < falUsd ? ` ~${formatUSD(falUsd)} instead of ~${formatUSD(directUsd)}.` : ''
+        toast.warning(`${currentModel.name} ran on fal, not ${from}`, {
+          description: `${fellBack[0].fallbackReason}.${saving}`,
           duration: 15000,
         })
       }
@@ -1029,8 +1032,8 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
   // window.confirm() when the estimate crosses the safety threshold.
   // Native confirm is intentional: the goal is "you cannot click
   // through without seeing the dollar amount", not aesthetics.
-  // Seedance 2.0 / 2.5 are priced at BytePlus's rate when the server routes
-  // them there (lib/byteplus.ts).
+  // Seedance and Wan are priced at their makers' own rates when Settings →
+  // Model providers routes them there (lib/model-routing.ts).
   const routed = useRoutedProviders()
   const costEstimate = useMemo(
     () => estimateGenerationCost(currentModel, {
@@ -1039,7 +1042,7 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
       resolution,
       audio: enableAudio,
       autoDuration: duration === 'auto',
-      provider: currentModel && routed[currentModel.id] === 'byteplus' ? 'byteplus' : 'fal',
+      provider: (currentModel && routed[currentModel.id]) || 'fal',
     }),
     [currentModel, numVideos, duration, resolution, enableAudio, routed],
   )
@@ -1054,14 +1057,14 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
     const label = `Generate ${numVideos} video${numVideos === 1 ? '' : 's'}`
     if (!costEstimate.isKnown) return `${label}\n(price not estimated for this model)`
     const at = costEstimate.tier ? ` at ${costEstimate.tier}` : ''
-    const via = costEstimate.provider === 'byteplus' ? ' via BytePlus' : ''
+    const via = costEstimate.provider && costEstimate.provider !== 'fal' ? ` via ${PROVIDER_LABEL[costEstimate.provider]}` : ''
     return `${label}\nEstimated cost: ~${formatUSD(costEstimate.total)} (${formatUSD(costEstimate.perUnit)} each${at}${via}).\nReal cost depends on model load.`
   }, [currentModel, numVideos, costEstimate, blockedNoFirstFrame])
   const requestGenerate = () => {
     if (costEstimate.isKnown && costEstimate.total >= COST_CONFIRM_THRESHOLD_USD) {
       const msg =
         `You're about to submit ${numVideos} ${currentModel?.name || 'video'} generation${numVideos === 1 ? '' : 's'} ` +
-        `to fal.ai.\n\n` +
+        `to ${costEstimate.provider && costEstimate.provider !== 'fal' ? PROVIDER_LABEL[costEstimate.provider] : 'fal.ai'}.\n\n` +
         `Estimated cost: ~${formatUSD(costEstimate.total)} (${formatUSD(costEstimate.perUnit)} each` +
         `${costEstimate.tier ? ` at ${costEstimate.tier}` : ''}).\n` +
         `Real cost depends on model load.\n\n` +

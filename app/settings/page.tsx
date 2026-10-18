@@ -11,6 +11,7 @@ import {
 import { OnboardingTour } from '@/components/onboarding/use-onboarding-tour'
 import { VersionBadge } from '@/components/version-badge'
 import { startTour } from '@/lib/onboarding'
+import { ModelProvidersSection } from '@/components/settings/model-providers-section'
 
 export default function SettingsPage() {
   // API Key state
@@ -401,6 +402,8 @@ export default function SettingsPage() {
             </div>
           </div>
         </section>
+
+        <ModelProvidersSection />
 
         {/* Password Change Section */}
         <section className="space-y-4">

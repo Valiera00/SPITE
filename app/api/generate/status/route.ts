@@ -2,12 +2,14 @@ import { NextRequest, NextResponse } from 'next/server'
 import { recordAsset, rehostToR2 } from '@/lib/r2-upload'
 import { isValidFalModel, isValidFalRequestId } from '@/lib/fal-validate'
 import { rollbackSpendByRequestId } from '@/lib/spend-gate'
-import { isByteplusEndpoint, isValidByteplusEndpoint, isValidByteplusTaskId, getByteplusTask, ByteplusError } from '@/lib/byteplus'
+import { providerForEndpoint } from '@/lib/model-routing'
+import { ProviderError, type DirectProvider } from '@/lib/direct-provider'
 
 export async function GET(request: NextRequest) {
   {
     const { searchParams } = new URL(request.url)
-    if (isByteplusEndpoint(searchParams.get('model'))) return byteplusStatus(searchParams)
+    const direct = providerForEndpoint(searchParams.get('model'))
+    if (direct) return directStatus(direct, searchParams)
   }
   const falKey = process.env.FAL_KEY
   if (!falKey) {
@@ -185,16 +187,16 @@ function extractOutputUrls(result: any): { images?: string[], videos?: string[],
   return output
 }
 
-// Same contract as the fal path above, for jobs submitted to BytePlus
-// directly (pseudo-endpoint "byteplus/<model>", see lib/byteplus.ts).
-async function byteplusStatus(searchParams: URLSearchParams) {
+// Same contract as the fal path above, for jobs submitted to a model maker's
+// API directly (pseudo-endpoint "<provider>/<model>", see lib/model-routing.ts).
+async function directStatus(p: DirectProvider, searchParams: URLSearchParams) {
   const requestId = searchParams.get('request_id')
   const model = searchParams.get('model')
-  if (!isValidByteplusEndpoint(model) || !isValidByteplusTaskId(requestId)) {
+  if (!p.isValidEndpoint(model) || !p.isValidTaskId(requestId)) {
     return NextResponse.json({ error: 'Invalid model or request_id' }, { status: 400 })
   }
   try {
-    const task = await getByteplusTask(requestId)
+    const task = await p.get(requestId)
     if (task.status === 'FAILED') {
       await rollbackSpendByRequestId(requestId)
       return NextResponse.json({ status: 'FAILED', error: task.error || 'Generation failed', requestId })
@@ -202,13 +204,14 @@ async function byteplusStatus(searchParams: URLSearchParams) {
     if (task.status !== 'COMPLETED' || !task.videoUrl) {
       return NextResponse.json({ status: task.status, requestId })
     }
-    // BytePlus links expire after 24h: keep our own copy. The host comes from
-    // BytePlus's authenticated response, so it is allowed for this rehost.
+    // Direct providers' links expire after 24h: keep our own copy. The host
+    // comes from the provider's authenticated response, so it is allowed for
+    // this rehost.
     let stored = task.videoUrl
     try {
       stored = await rehostToR2(task.videoUrl, [new URL(task.videoUrl).hostname.toLowerCase()])
     } catch (err) {
-      console.error('[byteplus] Re-host failed, keeping BytePlus URL (expires in 24h):', err)
+      console.error(`[${p.id}] Re-host failed, keeping ${p.label} URL (expires in 24h):`, err)
     }
     const projectId = searchParams.get('projectId')
     if (projectId && projectId !== 'undefined' && projectId !== 'null') {
@@ -220,14 +223,14 @@ async function byteplusStatus(searchParams: URLSearchParams) {
     }
     return NextResponse.json({ status: 'COMPLETED', output: { videos: [stored], url: stored }, requestId })
   } catch (err) {
-    if (err instanceof ByteplusError && err.status === 404) {
+    if (err instanceof ProviderError && err.status === 404) {
       await rollbackSpendByRequestId(requestId)
-      return NextResponse.json({ status: 'FAILED', error: 'BytePlus has no record of this task', requestId })
+      return NextResponse.json({ status: 'FAILED', error: `${p.label} has no record of this task`, requestId })
     }
-    console.error('[byteplus] Status error:', err)
+    console.error(`[${p.id}] Status error:`, err)
     return NextResponse.json(
       { error: 'Status check failed' },
-      { status: err instanceof ByteplusError && err.status ? err.status : 500 },
+      { status: err instanceof ProviderError && err.status ? err.status : 500 },
     )
   }
 }

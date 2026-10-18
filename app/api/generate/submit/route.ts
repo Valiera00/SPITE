@@ -4,7 +4,8 @@ import { toFalFetchableUrl } from '@/lib/r2-upload'
 import { estimateGenerationCost } from '@/lib/fal-cost'
 import { reserveSpend, rollbackSpend, tagSpendRequestId, getPerRequestLimitUsd } from '@/lib/spend-gate'
 import { getOrCreateVoiceId } from '@/lib/fal-voices'
-import { byteplusModelFor, buildByteplusBody, createByteplusTask, ByteplusError, BYTEPLUS_PREFIX, describeUnavailable } from '@/lib/byteplus'
+import { resolveRoute } from '@/lib/model-routing'
+import { ProviderError, describeUnavailable } from '@/lib/direct-provider'
 import { logEvent } from '@/lib/events'
 
 export async function POST(request: NextRequest) {
@@ -73,9 +74,11 @@ export async function POST(request: NextRequest) {
   const durationSeconds = settings?.duration
     ? Number.parseInt(String(settings.duration), 10) || undefined
     : undefined
-  // Seedance 2.0 / 2.5 run on BytePlus when a key is set (lib/byteplus.ts);
-  // price them at the rate they will actually be billed at.
-  const bpModel = byteplusModelFor(model.id)
+  // Seedance and Wan can run on their makers' own APIs when chosen in
+  // Settings → Model providers (lib/model-routing.ts); price them at the rate
+  // they will actually be billed at.
+  const route = await resolveRoute(model.id)
+  const directRoute = route.kind === 'direct' ? route : null
   const estimateOptions = {
     count: requestedUnits,
     durationSeconds,
@@ -94,7 +97,7 @@ export async function POST(request: NextRequest) {
   }
   const costEstimate = estimateGenerationCost(model, {
     ...estimateOptions,
-    provider: bpModel ? 'byteplus' : 'fal',
+    provider: directRoute ? directRoute.provider.pricingId() : 'fal',
   })
   // Fail-closed on unknown cost: a model declared in lib/fal-models.ts but
   // missing from lib/fal-cost.ts would otherwise estimate $0 and bypass the
@@ -300,75 +303,88 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // Seedance 2.0 / 2.5 go straight to BytePlus when BYTEPLUS_API_KEY is set:
-  // the same model at roughly half fal's price (see lib/byteplus.ts). The
-  // values come from the fal `input` buildModelInput just produced, so every
-  // setting is validated the same way on both routes.
-  // Set when a job meant for BytePlus has to run on fal instead.
+  // Chosen in Settings → Model providers: send the job to the model maker's
+  // own API, the same model for less (lib/model-routing.ts). The values come
+  // from the fal `input` buildModelInput just produced, so every setting is
+  // validated the same way on both routes.
+  // Set when a job meant for a direct provider has to run on fal instead.
   let fallbackReason: string | undefined
+  let fallbackFrom: string | undefined
   let fallbackCostUsd: number | undefined
-  if (bpModel) {
+  let directCostUsd: number | undefined
+  if (route.kind === 'fal-instead') {
+    // Chosen, but the key isn't set up. Runs on fal; the node says so.
+    fallbackReason = route.reason
+    fallbackFrom = route.provider.label
+    directCostUsd = estimateGenerationCost(model, { ...estimateOptions, provider: route.provider.pricingId() }).total
+  }
+  if (directRoute) {
+    const { provider, providerModel } = directRoute
     const i = input as Record<string, unknown>
-    const body = buildByteplusBody(bpModel, {
+    const taskInput = {
       prompt: finalPrompt,
       firstFrameUrl: usesSeparateRefEndpoint ? undefined : (referenceImageSigned || undefined),
       lastFrameUrl: usesSeparateRefEndpoint ? undefined : (endImageSigned || undefined),
       referenceImageUrls: hasRefsViaRefParam ? refsSigned : undefined,
       referenceAudioUrls: hasAudioInput ? audioSigned : undefined,
       aspectRatio: typeof i.aspect_ratio === 'string' ? i.aspect_ratio : undefined,
-      duration: i.duration === undefined || i.duration === null ? undefined : String(i.duration),
+      // Wan's fal input says null for "let the model pick".
+      duration: i.duration === null ? 'auto' : i.duration === undefined ? undefined : String(i.duration),
       resolution: typeof i.resolution === 'string' ? i.resolution : undefined,
-      generateAudio: i.generate_audio === true,
-    })
+      // Seedance's sound toggle is generate_audio, Wan's is audio.
+      generateAudio: i.generate_audio === true || i.audio === true,
+    }
     try {
-      const taskId = await createByteplusTask(body)
+      const taskId = await provider.create(providerModel, taskInput)
       console.log(
-        `[byteplus] Submitted: model=${bpModel} task=${taskId} ` +
+        `[${provider.id}] Submitted: model=${providerModel} task=${taskId} ` +
           `frames=${referenceImageSigned ? 1 : 0}+${endImageSigned ? 1 : 0} refs=${refsSigned.length} audio=${audioSigned.length}`,
       )
       await tagSpendRequestId(reservation.ledgerId, taskId)
       return NextResponse.json({
         request_id: taskId,
-        model: BYTEPLUS_PREFIX + bpModel,
+        model: provider.prefix + providerModel,
         modelId: model.id,
         category: model.category,
-        provider: 'byteplus',
+        provider: provider.id,
         estimatedUsd: costEstimate.total,
       })
     } catch (err) {
-      if (err instanceof ByteplusError && err.routeUnavailable) {
-        // Unreachable, bad key, or the model isn't activated on the BytePlus
-        // account: nothing was created there, so fal can take the job.
-        console.warn(`[byteplus] route unavailable (${err.status} ${err.code || ''}), falling back to fal`)
+      if (err instanceof ProviderError && err.routeUnavailable) {
+        // Unreachable, bad key, or the model isn't activated on the account:
+        // nothing was created there, so fal can take the job.
+        console.warn(`[${provider.id}] route unavailable (${err.status} ${err.code || ''}), falling back to fal`)
         fallbackReason = describeUnavailable(err)
-        // The reservation was made at BytePlus's price; fal charges more, so
+        fallbackFrom = provider.label
+        directCostUsd = costEstimate.total
+        // The reservation was made at the direct price; fal charges more, so
         // re-check this job against the caps at fal's price before sending it.
         await rollbackSpend(reservation.ledgerId)
         const falEstimate = estimateGenerationCost(model, { ...estimateOptions, provider: 'fal' })
         if (perRequestLimit > 0 && falEstimate.total > perRequestLimit) {
           return NextResponse.json(
-            { error: `BytePlus is unavailable (${fallbackReason}), and on fal this costs ~$${falEstimate.total.toFixed(2)}, over your per-request ceiling. Not submitted.` },
+            { error: `${provider.label} is unavailable (${fallbackReason}), and on fal this costs ~$${falEstimate.total.toFixed(2)}, over your per-request ceiling. Not submitted.` },
             { status: 429 },
           )
         }
         const again = await reserveSpend(model.id, falEstimate.total)
         if (!again.allowed) {
           return NextResponse.json(
-            { error: `BytePlus is unavailable (${fallbackReason}), and at fal's price this would exceed the $${again.limitUsd}/hour ceiling. Not submitted.` },
+            { error: `${provider.label} is unavailable (${fallbackReason}), and at fal's price this would exceed the $${again.limitUsd}/hour ceiling. Not submitted.` },
             { status: 429 },
           )
         }
         reservation = again
         fallbackCostUsd = falEstimate.total
-        await logEvent('info', `${model.name} ran on fal instead of BytePlus: ${fallbackReason}`, {
-          detail: { modelId: model.id, falCostUsd: falEstimate.total, byteplusCostUsd: costEstimate.total, status: err.status, code: err.code ?? null },
+        await logEvent('info', `${model.name} ran on fal instead of ${provider.label}: ${fallbackReason}`, {
+          detail: { modelId: model.id, provider: provider.id, falCostUsd: falEstimate.total, directCostUsd: costEstimate.total, status: err.status, code: err.code ?? null },
         })
       } else {
         // A real rejection (bad parameter, filtered input). fal would refuse
-        // it too, so surface BytePlus's reason, minus any URLs.
+        // it too, so surface the provider's reason, minus any URLs.
         await rollbackSpend(reservation.ledgerId)
-        const raw = err instanceof Error ? err.message : 'BytePlus rejected the request'
-        const status = err instanceof ByteplusError && err.status >= 400 && err.status < 600 ? err.status : 500
+        const raw = err instanceof Error ? err.message : `${provider.label} rejected the request`
+        const status = err instanceof ProviderError && err.status >= 400 && err.status < 600 ? err.status : 500
         return NextResponse.json({ error: raw.replace(/https?:\/\/[^\s"')]+/g, '[url]').slice(0, 400) }, { status })
       }
     }
@@ -448,8 +464,8 @@ export async function POST(request: NextRequest) {
       category: model.category,
       provider: 'fal',
       estimatedUsd: fallbackCostUsd ?? costEstimate.total,
-      // Present only when a BytePlus-routed job had to run here instead.
-      ...(fallbackReason ? { fallbackReason, byteplusEstimatedUsd: costEstimate.total } : {}),
+      // Present only when a job meant for a direct provider ran here instead.
+      ...(fallbackReason ? { fallbackReason, fallbackFrom, directEstimatedUsd: directCostUsd } : {}),
     })
   } catch (error: any) {
     console.error('[fal.ai] Submit error:', error)

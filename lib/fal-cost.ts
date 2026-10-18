@@ -1,4 +1,5 @@
 import type { ModelConfig } from './fal-models'
+import type { PricingProvider } from './direct-provider'
 
 // Approximate per-unit cost in USD for each model. Numbers are
 // intentionally on the high side so the estimate trends "you might pay
@@ -171,10 +172,11 @@ const COST_TABLE: Record<string, CostEntry> = {
   'esrgan-image-upscale':  { unit: 'image', price: 0.02 },
 }
 
-export type Provider = 'fal' | 'byteplus'
+export type Provider = PricingProvider
 
 // The same models bought directly from ByteDance's BytePlus ModelArk, which
-// the submit route uses when BYTEPLUS_API_KEY is set (lib/byteplus.ts).
+// the submit route uses when chosen in Settings → Model providers
+// (lib/model-routing.ts).
 // ModelArk bills tokens = width x height x 24 fps x seconds / 1024, at a
 // per-million-token list price; converted to per-second here at each tier's
 // pixel count (480p = 854x480, 720p = 1280x720, 1080p = 1920x1080), without
@@ -188,6 +190,24 @@ const BYTEPLUS_COST_TABLE: Record<string, CostEntry> = {
                     byTier: { '480p': 0.1028, '720p': 0.2311, '1080p': 0.5686 } },
   'seedance-2.0': { unit: 'sec', price: 0.3742,
                     byTier: { '480p': 0.0672, '720p': 0.1512, '1080p': 0.3742 } },
+}
+
+// Wan 3.0 bought directly from Alibaba Model Studio (lib/alibaba.ts). Per
+// second, by region: Singapore matches fal; Frankfurt, Virginia and Tokyo are
+// about 17% cheaper. Sound doesn't change the price.
+const ALIBABA_COST_TABLE: Record<string, CostEntry> = {
+  'wan-3.0': { unit: 'sec', price: 0.165025,
+               byTier: { '480p': 0.041256, '720p': 0.082513, '1080p': 0.165025 } },
+}
+const ALIBABA_SG_COST_TABLE: Record<string, CostEntry> = {
+  'wan-3.0': { unit: 'sec', price: 0.20,
+               byTier: { '480p': 0.05, '720p': 0.10, '1080p': 0.20 } },
+}
+
+const DIRECT_COST_TABLES: Record<Exclude<Provider, 'fal'>, Record<string, CostEntry>> = {
+  byteplus: BYTEPLUS_COST_TABLE,
+  alibaba: ALIBABA_COST_TABLE,
+  'alibaba-sg': ALIBABA_SG_COST_TABLE,
 }
 
 export interface CostEstimate {
@@ -260,8 +280,8 @@ export function estimateGenerationCost(
   if (!model) {
     return { perUnit: 0, total: 0, unit: 'image', isKnown: false }
   }
-  const direct = options.provider === 'byteplus' ? BYTEPLUS_COST_TABLE[model.id] : undefined
-  const provider: Provider = direct ? 'byteplus' : 'fal'
+  const direct = options.provider && options.provider !== 'fal' ? DIRECT_COST_TABLES[options.provider]?.[model.id] : undefined
+  const provider: Provider = direct ? options.provider! : 'fal'
   const entry = direct || COST_TABLE[model.id]
   if (!entry) {
     return { perUnit: 0, total: 0, unit: model.category === 'video' ? 'video' : 'image', isKnown: false }

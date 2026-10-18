@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { isValidFalModel, isValidFalRequestId } from '@/lib/fal-validate'
-import { isByteplusEndpoint, isValidByteplusEndpoint, isValidByteplusTaskId, cancelByteplusTask } from '@/lib/byteplus'
+import { providerForEndpoint } from '@/lib/model-routing'
 
 export async function POST(request: NextRequest) {
   const { request_id, model } = await request.json()
@@ -8,17 +8,18 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'request_id and model are required' }, { status: 400 })
   }
 
-  // Jobs submitted straight to BytePlus (lib/byteplus.ts).
-  if (isByteplusEndpoint(model)) {
-    if (!isValidByteplusEndpoint(model) || !isValidByteplusTaskId(request_id)) {
+  // Jobs submitted straight to a model maker's API (lib/model-routing.ts).
+  const direct = providerForEndpoint(model)
+  if (direct) {
+    if (!direct.isValidEndpoint(model) || !direct.isValidTaskId(request_id)) {
       return NextResponse.json({ error: 'Invalid model or request_id' }, { status: 400 })
     }
     try {
-      await cancelByteplusTask(request_id)
-      console.log(`[byteplus] Cancelled: task=${request_id}`)
+      await direct.cancel(request_id)
+      console.log(`[${direct.id}] Cancelled: task=${request_id}`)
       return NextResponse.json({ success: true, request_id })
     } catch (error) {
-      console.error('[byteplus] Cancel error:', error)
+      console.error(`[${direct.id}] Cancel error:`, error)
       return NextResponse.json({ error: 'Cancel failed' }, { status: 500 })
     }
   }
