@@ -213,7 +213,7 @@ export default function FlowThread() {
           submitRes.status === 401 && /^unauthorized$/i.test(String(submitData.error || '').trim())
         const hint =
           sessionExpired ? 'Session expired — reload and log in again (your API key is fine).'
-          : submitRes.status === 401 ? 'fal rejected the key (invalid or rotated FAL_KEY)'
+          : submitRes.status === 401 ? 'fal rejected the key — check it in Settings → fal.ai API Key'
           : submitRes.status === 403 ? 'fal refused the request — usually an exhausted balance. Check fal.ai billing.'
           : ''
         const msg = sessionExpired ? hint : [hint, submitData.error].filter(Boolean).join(' — ')

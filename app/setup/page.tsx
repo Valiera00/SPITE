@@ -56,14 +56,14 @@ export default async function SetupPage() {
             className="text-2xl tracking-tight text-center"
             style={{ fontFamily: 'var(--font-montserrat)', color: OFF_WHITE }}
           >
-            {allDone ? 'Ready to go' : `Connect ${groups.length === 4 ? 'four' : groups.length} things`}
+            {allDone ? 'Ready to go' : `Connect ${['zero', 'one', 'two', 'three', 'four'][groups.length] ?? groups.length} things`}
           </h1>
           <p
             className="text-sm text-center mt-2.5 leading-relaxed"
             style={{ color: 'rgba(240,237,230,0.62)', maxWidth: '46ch' }}
           >
             {allDone
-              ? 'Everything is connected. If you just added these values, restart the server (or redeploy) so they take effect.'
+              ? 'Everything is connected. Once you’re in, paste your fal.ai key in Settings to start generating.'
               : 'SPITE runs on your own accounts, so it needs a few connections before it will start. Grab each value and paste it into your environment.'}
           </p>
           {schema?.ok && schema.created && (
@@ -376,7 +376,7 @@ export default async function SetupPage() {
                 <li>
                   Find the line starting with the name above and paste your value between the
                   quotes, so it looks like{' '}
-                  <span style={{ fontFamily: MONO, color: ICE }}>FAL_KEY=&quot;your-value-here&quot;</span>.
+                  <span style={{ fontFamily: MONO, color: ICE }}>APP_PASSWORD=&quot;your-value-here&quot;</span>.
                   No spaces around the <span style={{ fontFamily: MONO }}>=</span>.
                 </li>
                 <li>Save the file.</li>
@@ -414,7 +414,7 @@ export default async function SetupPage() {
                 </li>
                 <li>
                   Click <span style={{ color: OFF_WHITE }}>Add another</span>. Put the name from
-                  above (like <span style={{ fontFamily: MONO, color: ICE }}>FAL_KEY</span>) in the
+                  above (like <span style={{ fontFamily: MONO, color: ICE }}>APP_PASSWORD</span>) in the
                   Key box, and your value in the Value box. No quotes needed here.
                 </li>
                 <li>Save it, and repeat for each one listed above.</li>

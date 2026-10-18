@@ -139,7 +139,7 @@ export const TOURS: Record<TourSurface, TourStep[]> = {
     {
       target: '[data-tour="settings-apikey"]',
       title: 'Your fal.ai key',
-      body: 'SPITE runs on your own fal.ai key — set it in your host’s environment variables. This shows the live connection status.',
+      body: 'SPITE runs on your own fal.ai key. Paste it here; it’s stored encrypted and never shown again.',
     },
     {
       target: '[data-tour="settings-retention"]',

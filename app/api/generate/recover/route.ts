@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getSetting } from '@/lib/provider-secrets'
 import { getDb } from '@/lib/db'
 import { recordAsset, rehostToR2 } from '@/lib/r2-upload'
 import { isValidFalModel, isValidFalRequestId } from '@/lib/fal-validate'
@@ -208,9 +209,9 @@ async function recoverOne(item: RecoveryItem, falKey: string): Promise<RecoveryR
 }
 
 export async function POST(request: NextRequest) {
-  const falKey = process.env.FAL_KEY
+  const falKey = await getSetting('FAL_KEY')
   if (!falKey) {
-    return NextResponse.json({ error: 'FAL_KEY not configured' }, { status: 500 })
+    return NextResponse.json({ error: 'No fal.ai API key yet. Add it in Settings → fal.ai API Key.' }, { status: 500 })
   }
 
   const body = await request.json().catch(() => ({}))

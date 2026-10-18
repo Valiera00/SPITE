@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { getSetting } from '@/lib/provider-secrets'
 
 // HOTFIX (incident: silent fal charges): this route previously did
 // `fal.queue.submit('fal-ai/flux/schnell', { input: { prompt: 'test' } })`
@@ -9,11 +10,11 @@ import { NextResponse } from 'next/server'
 // and report a masked preview. The real validity check happens
 // implicitly the first time the user actually generates something.
 export async function POST() {
-  const key = process.env.FAL_KEY
+  const key = await getSetting('FAL_KEY')
   if (!key) {
     return NextResponse.json({
       connected: false,
-      error: 'FAL_KEY environment variable not set',
+      error: 'fal.ai API key not set',
     })
   }
   return NextResponse.json({

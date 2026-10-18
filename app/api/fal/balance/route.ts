@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { getSetting } from '@/lib/provider-secrets'
 
 // Proxy to fal's billing/balance endpoint. Returns the user's current
 // account balance so the canvas toolbar can show "fal: $X.XX" with
@@ -33,10 +34,10 @@ async function tryEndpoint(url: string, headers: Record<string, string>): Promis
 }
 
 export async function GET() {
-  const falKey = process.env.FAL_KEY
+  const falKey = await getSetting('FAL_KEY')
   if (!falKey) {
     return NextResponse.json<FalBalanceResponse>(
-      { available: false, error: 'FAL_KEY not configured' },
+      { available: false, error: 'No fal.ai API key yet. Add it in Settings → fal.ai API Key.' },
       { status: 500 },
     )
   }

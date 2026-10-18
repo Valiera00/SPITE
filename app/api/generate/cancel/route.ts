@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getSetting } from '@/lib/provider-secrets'
 import { isValidFalModel, isValidFalRequestId } from '@/lib/fal-validate'
 import { providerForEndpoint } from '@/lib/model-routing'
 
@@ -24,9 +25,9 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  const falKey = process.env.FAL_KEY
+  const falKey = await getSetting('FAL_KEY')
   if (!falKey) {
-    return NextResponse.json({ error: 'FAL_KEY not configured' }, { status: 500 })
+    return NextResponse.json({ error: 'No fal.ai API key yet. Add it in Settings → fal.ai API Key.' }, { status: 500 })
   }
   if (!isValidFalModel(model) || !isValidFalRequestId(request_id)) {
     return NextResponse.json({ error: 'Invalid model or request_id' }, { status: 400 })

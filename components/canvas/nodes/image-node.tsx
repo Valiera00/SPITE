@@ -825,7 +825,7 @@ function ImageNodeImpl({ id, data, selected }: NodeProps) {
         const sessionExpired = status === 401 && /^unauthorized$/i.test(falMsg.trim())
         const hint =
           sessionExpired ? 'your session expired — reload the page and log in again (your API key is fine)'
-          : status === 401 ? 'fal rejected the key (invalid or rotated FAL_KEY)'
+          : status === 401 ? 'fal rejected the key — check it in Settings → fal.ai API Key'
           : status === 403 ? 'fal refused the request — usually an exhausted balance or billing hold. Check fal.ai billing.'
           : status === 503 ? 'generation disabled (GENERATION_DISABLED env var)'
           : `HTTP ${status || 'error'}`

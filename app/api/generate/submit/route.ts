@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getSetting } from '@/lib/provider-secrets'
 import { getModelById, buildModelInput } from '@/lib/fal-models'
 import { toFalFetchableUrl } from '@/lib/r2-upload'
 import { estimateGenerationCost } from '@/lib/fal-cost'
@@ -24,10 +25,10 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  const falKey = process.env.FAL_KEY
+  const falKey = await getSetting('FAL_KEY')
   if (!falKey) {
     return NextResponse.json(
-      { error: 'FAL_KEY not configured' },
+      { error: 'No fal.ai API key yet. Add it in Settings → fal.ai API Key.' },
       { status: 500 }
     )
   }

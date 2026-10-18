@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Check, X } from '@phosphor-icons/react'
+import { ArrowLeft } from '@phosphor-icons/react'
 import {
   getConnectorAnimation,
   setConnectorAnimation,
@@ -12,13 +12,9 @@ import { OnboardingTour } from '@/components/onboarding/use-onboarding-tour'
 import { VersionBadge } from '@/components/version-badge'
 import { startTour } from '@/lib/onboarding'
 import { ModelProvidersSection } from '@/components/settings/model-providers-section'
+import { FalKeySection } from '@/components/settings/fal-key-section'
 
 export default function SettingsPage() {
-  // API Key state
-  const [apiKeyStatus, setApiKeyStatus] = useState<'checking' | 'connected' | 'not_set' | 'invalid'>('checking')
-  const [keyPreview, setKeyPreview] = useState('')
-  const [testingConnection, setTestingConnection] = useState(false)
-
   // Password change state
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
@@ -88,7 +84,6 @@ export default function SettingsPage() {
 
   // Check API key + load preferences on mount
   useEffect(() => {
-    checkApiKey()
     setConnectorAnimState(getConnectorAnimation())
     let cancelled = false
     ;(async () => {
@@ -164,29 +159,6 @@ export default function SettingsPage() {
   const changeConnectorAnim = (v: ConnectorAnimation) => {
     setConnectorAnimState(v)
     setConnectorAnimation(v)
-  }
-
-  const checkApiKey = async () => {
-    try {
-      const res = await fetch('/api/generate/test', { method: 'POST' })
-      const data = await res.json()
-      if (data.connected) {
-        setApiKeyStatus('connected')
-        setKeyPreview(data.keyPreview)
-      } else if (data.error?.includes('not set')) {
-        setApiKeyStatus('not_set')
-      } else {
-        setApiKeyStatus('invalid')
-      }
-    } catch {
-      setApiKeyStatus('not_set')
-    }
-  }
-
-  const testConnection = async () => {
-    setTestingConnection(true)
-    await checkApiKey()
-    setTestingConnection(false)
   }
 
   const handlePasswordChange = async () => {
@@ -359,49 +331,7 @@ export default function SettingsPage() {
       </div>
 
       <div className="max-w-3xl mx-auto px-6 py-8 space-y-10">
-        {/* fal.ai API Key Section */}
-        <section data-tour="settings-apikey" className="space-y-4">
-          <h2 className="text-sm font-mono uppercase tracking-wider text-muted-foreground">fal.ai API Key</h2>
-          <div className="glass rounded-xl p-6 space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-foreground">Connection Status</p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  {apiKeyStatus === 'checking' && 'Checking...'}
-                  {apiKeyStatus === 'connected' && `Connected ${keyPreview}`}
-                  {apiKeyStatus === 'not_set' && 'API key not configured'}
-                  {apiKeyStatus === 'invalid' && 'Invalid API key'}
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                {apiKeyStatus === 'connected' ? (
-                  <span className="flex items-center gap-1.5 text-xs font-mono text-accent">
-                    <Check size={14} weight="bold" /> Connected
-                  </span>
-                ) : apiKeyStatus === 'invalid' ? (
-                  <span className="flex items-center gap-1.5 text-xs font-mono text-destructive">
-                    <X size={14} weight="bold" /> Invalid key
-                  </span>
-                ) : null}
-                <button
-                  onClick={testConnection}
-                  disabled={testingConnection}
-                  className="px-3 py-1.5 text-xs font-mono rounded-lg glass-hover text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
-                >
-                  {testingConnection ? 'Testing...' : 'Test Connection'}
-                </button>
-              </div>
-            </div>
-
-            <div className="pt-3 border-t border-border/50">
-              <p className="text-xs text-muted-foreground leading-relaxed">
-                Add your fal.ai key to your Vercel project under{' '}
-                <span className="text-foreground font-mono">Settings → Environment Variables → FAL_KEY</span>, then redeploy.
-                The key is never sent to the browser — it lives only in Vercel&apos;s encrypted environment config.
-              </p>
-            </div>
-          </div>
-        </section>
+        <FalKeySection />
 
         <ModelProvidersSection />
 

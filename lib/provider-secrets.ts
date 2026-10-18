@@ -1,6 +1,6 @@
-// API keys and options for model makers' own APIs (Settings → Model
-// providers), pasted in Settings instead of set as Vercel environment
-// variables. A value saved here wins over the environment variable of the
+// API keys pasted in Settings instead of set as environment variables: fal's,
+// and those of the model makers' own APIs (Settings → Model providers), plus
+// Alibaba's workspace id and region. A value saved here wins over the environment variable of the
 // same name; with neither, the provider counts as not set up.
 //
 // Values are encrypted (AES-256-GCM) before they reach the database, with a
@@ -13,10 +13,11 @@
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'node:crypto'
 import { getDb } from './db'
 
-export const SETTING_NAMES = ['BYTEPLUS_API_KEY', 'DASHSCOPE_API_KEY', 'DASHSCOPE_WORKSPACE_ID', 'DASHSCOPE_REGION'] as const
+export const SETTING_NAMES = ['FAL_KEY', 'BYTEPLUS_API_KEY', 'DASHSCOPE_API_KEY', 'DASHSCOPE_WORKSPACE_ID', 'DASHSCOPE_REGION'] as const
 export type SettingName = (typeof SETTING_NAMES)[number]
 
 const SECRET: Record<SettingName, boolean> = {
+  FAL_KEY: true,
   BYTEPLUS_API_KEY: true,
   DASHSCOPE_API_KEY: true,
   DASHSCOPE_WORKSPACE_ID: false,

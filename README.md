@@ -68,7 +68,7 @@ More at **[spite.run](https://spite.run)**.
 
 ### Fastest way — deploy to Vercel
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FValiera00%2FSPITE&env=DATABASE_URL%2CAPP_PASSWORD%2CFAL_KEY%2CR2_ACCOUNT_ID%2CR2_ACCESS_KEY_ID%2CR2_SECRET_ACCESS_KEY%2CR2_BUCKET_NAME&envDescription=SPITE%20needs%20a%20database%2C%20object%20storage%20and%20a%20fal.ai%20key.%20The%20guide%20shows%20where%20to%20copy%20each%20value%20from.&envLink=https%3A%2F%2Fgithub.com%2FValiera00%2FSPITE%23configure&project-name=spite&repository-name=spite)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FValiera00%2FSPITE&env=DATABASE_URL%2CAPP_PASSWORD%2CR2_ACCOUNT_ID%2CR2_ACCESS_KEY_ID%2CR2_SECRET_ACCESS_KEY%2CR2_BUCKET_NAME&envDescription=SPITE%20needs%20a%20database%20and%20object%20storage.%20Your%20fal.ai%20key%20goes%20in%20Settings%20after%20you%20log%20in.%20The%20guide%20shows%20where%20to%20copy%20each%20value%20from.&envLink=https%3A%2F%2Fgithub.com%2FValiera00%2FSPITE%23configure&project-name=spite&repository-name=spite)
 
 Vercel clones this repo into your own GitHub account and asks for every value in
 a form before the first build. No terminal, no editing files. Have these three
@@ -147,7 +147,7 @@ Where to find each value:
 | `R2_ACCOUNT_ID` | Cloudflare dashboard → R2 (right sidebar) |
 | `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` | Cloudflare R2 → Manage API tokens → Create API token |
 | `R2_BUCKET_NAME` | Whatever you named the bucket you created |
-| `FAL_KEY` | fal.ai → Dashboard → Keys |
+| `FAL_KEY` (optional) | fal.ai → Dashboard → Keys. Or leave it out and paste the key in **Settings → fal.ai API Key** after you log in |
 | `APP_PASSWORD` | You pick — strong, your responsibility |
 
 ### Database
