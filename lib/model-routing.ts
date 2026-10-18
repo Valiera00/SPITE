@@ -1,7 +1,7 @@
 // Which provider runs a model: fal by default, or the maker's own API when
 // chosen in Settings → Model providers (stored in app_settings) and its key is
-// set. Keys stay in environment variables, like FAL_KEY; only the choice is
-// stored in the database.
+// set (pasted in Settings, encrypted — lib/provider-secrets.ts — or as an
+// environment variable).
 
 import { getDb } from './db'
 import { byteplusProvider } from './byteplus'
@@ -71,7 +71,7 @@ export async function resolveRoute(modelId: string): Promise<Route> {
   const choices = await getChoices()
   if (choices[family] !== 'direct') return { kind: 'fal' }
   const provider = FAMILIES[family].provider
-  if (!provider.configured()) return { kind: 'fal-instead', provider, reason: provider.missingConfig() }
+  if (!(await provider.configured())) return { kind: 'fal-instead', provider, reason: provider.missingConfig() }
   const providerModel = provider.modelFor(modelId)
   if (!providerModel) return { kind: 'fal' }
   return { kind: 'direct', provider, providerModel }
@@ -88,8 +88,9 @@ export async function routedPricing(): Promise<Record<string, PricingProvider>> 
   const out: Record<string, PricingProvider> = {}
   const choices = await getChoices()
   for (const [f, def] of Object.entries(FAMILIES)) {
-    if (choices[f as Family] !== 'direct' || !def.provider.configured()) continue
-    for (const m of def.models) if (def.provider.modelFor(m)) out[m] = def.provider.pricingId()
+    if (choices[f as Family] !== 'direct' || !(await def.provider.configured())) continue
+    const pricing = await def.provider.pricingId()
+    for (const m of def.models) if (def.provider.modelFor(m)) out[m] = pricing
   }
   return out
 }

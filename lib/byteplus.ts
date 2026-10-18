@@ -2,8 +2,8 @@
 //
 // fal resells Seedance at roughly twice ByteDance's own price; same model,
 // same content rules (fal passes BytePlus's real-face filter straight
-// through). Used when Settings → Model providers says so and
-// BYTEPLUS_API_KEY is set (lib/model-routing.ts).
+// through). Used when Settings → Model providers says so and a key is set
+// there or as BYTEPLUS_API_KEY (lib/model-routing.ts).
 //
 // Shape of the API (create, then poll):
 //   POST {base}/contents/generations/tasks   → { id }
@@ -18,6 +18,7 @@ import {
   ProviderError, modelOverride,
   type DirectProvider, type DirectTask, type DirectTaskInput,
 } from './direct-provider'
+import { getSetting } from './provider-secrets'
 
 const LABEL = 'BytePlus'
 const BASE_URL = (process.env.BYTEPLUS_API_BASE_URL || 'https://ark.ap-southeast.bytepluses.com/api/v3').replace(/\/+$/, '')
@@ -32,11 +33,13 @@ const DEFAULT_MODELS: Record<string, string> = {
 }
 
 async function call(path: string, init: RequestInit): Promise<any> {
+  const apiKey = await getSetting('BYTEPLUS_API_KEY')
+  if (!apiKey) throw new ProviderError(`No ${LABEL} API key`, LABEL, 401)
   let res: Response
   try {
     res = await fetch(`${BASE_URL}${path}`, {
       ...init,
-      headers: { Authorization: `Bearer ${process.env.BYTEPLUS_API_KEY}`, 'Content-Type': 'application/json' },
+      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
       cache: 'no-store',
     })
   } catch (err) {
@@ -77,10 +80,10 @@ export const byteplusProvider: DirectProvider = {
   label: LABEL,
   prefix: 'byteplus/',
   envVars: ['BYTEPLUS_API_KEY'],
-  configured: () => !!process.env.BYTEPLUS_API_KEY,
-  missingConfig: () => 'BYTEPLUS_API_KEY is not set',
+  configured: async () => !!(await getSetting('BYTEPLUS_API_KEY')),
+  missingConfig: () => 'no BytePlus API key yet (Settings → Model providers)',
   modelFor: (spiteId) => (DEFAULT_MODELS[spiteId] ? modelOverride('BYTEPLUS_MODEL_', spiteId) || DEFAULT_MODELS[spiteId] : null),
-  pricingId: () => 'byteplus',
+  pricingId: async () => 'byteplus',
   isValidEndpoint: (e): e is string => typeof e === 'string' && /^byteplus\/[a-z0-9][a-z0-9.-]{2,80}$/.test(e),
   isValidTaskId: (id): id is string => typeof id === 'string' && /^[A-Za-z0-9_-]{4,100}$/.test(id),
 

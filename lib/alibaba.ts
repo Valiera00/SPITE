@@ -3,8 +3,8 @@
 // Wan 3.0 costs the same on fal as in Alibaba's Singapore region, but about
 // 17% less in its other international regions (Frankfurt, Virginia, Tokyo):
 // $0.041 / $0.083 / $0.165 per second at 480p / 720p / 1080p against
-// $0.05 / $0.10 / $0.20. Used when Settings → Model providers says so and
-// DASHSCOPE_API_KEY is set (lib/model-routing.ts).
+// $0.05 / $0.10 / $0.20. Used when Settings → Model providers says so and a
+// key is set there or as DASHSCOPE_API_KEY (lib/model-routing.ts).
 //
 // API (from the Wan3.0 Video Generation API Reference):
 //   POST {base}/api/v1/services/aigc/video-generation/video-synthesis
@@ -21,19 +21,21 @@
 // Endpoint. Model Studio workspaces have their own host:
 //   https://{DASHSCOPE_WORKSPACE_ID}.{DASHSCOPE_REGION}.maas.aliyuncs.com
 // with DASHSCOPE_REGION one of us-east-1 (Virginia), eu-central-1
-// (Frankfurt), ap-northeast-1 (Tokyo), ap-southeast-1 (Singapore). Without a
-// workspace id the shared international endpoint (Singapore) is used.
-// DASHSCOPE_BASE_URL overrides all of that.
+// (Frankfurt), ap-northeast-1 (Tokyo), ap-southeast-1 (Singapore). Both can be
+// set in Settings or as environment variables. Without a workspace id the
+// shared international endpoint (Singapore) is used. The DASHSCOPE_BASE_URL
+// environment variable overrides all of that.
 
 import {
   ProviderError, modelOverride,
   type DirectProvider, type DirectTask, type DirectTaskInput, type PricingProvider,
 } from './direct-provider'
+import { getSetting } from './provider-secrets'
 
 const LABEL = 'Alibaba Model Studio'
 const SINGAPORE = 'ap-southeast-1'
 
-function endpoint(): { base: string; region: string } {
+async function endpoint(): Promise<{ base: string; region: string }> {
   const override = process.env.DASHSCOPE_BASE_URL?.trim()
   if (override) {
     const host = (() => { try { return new URL(override).hostname } catch { return '' } })()
@@ -42,8 +44,8 @@ function endpoint(): { base: string; region: string } {
     const region = host.match(/\.([a-z]{2}-[a-z]+-\d)\.maas\.aliyuncs\.com$/)?.[1] || SINGAPORE
     return { base: override.replace(/\/+$/, ''), region }
   }
-  const ws = process.env.DASHSCOPE_WORKSPACE_ID?.trim()
-  const region = process.env.DASHSCOPE_REGION?.trim() || SINGAPORE
+  const ws = await getSetting('DASHSCOPE_WORKSPACE_ID')
+  const region = (await getSetting('DASHSCOPE_REGION')) || SINGAPORE
   // Both go into a hostname: accept only characters that can't redirect it.
   if (ws && /^[A-Za-z0-9-]{3,64}$/.test(ws) && /^[a-z]{2}-[a-z]+-\d$/.test(region)) {
     return { base: `https://${ws}.${region}.maas.aliyuncs.com`, region }
@@ -56,14 +58,16 @@ const DEFAULT_MODELS: Record<string, string> = {
 }
 
 async function call(path: string, init: RequestInit & { async?: boolean }): Promise<any> {
+  const apiKey = await getSetting('DASHSCOPE_API_KEY')
+  if (!apiKey) throw new ProviderError(`No ${LABEL} API key`, LABEL, 401)
   const headers: Record<string, string> = {
-    Authorization: `Bearer ${process.env.DASHSCOPE_API_KEY}`,
+    Authorization: `Bearer ${apiKey}`,
     'Content-Type': 'application/json',
   }
   if (init.async) headers['X-DashScope-Async'] = 'enable'
   let res: Response
   try {
-    res = await fetch(`${endpoint().base}${path}`, { method: init.method, body: init.body, headers, cache: 'no-store' })
+    res = await fetch(`${(await endpoint()).base}${path}`, { method: init.method, body: init.body, headers, cache: 'no-store' })
   } catch (err) {
     throw new ProviderError(`${LABEL} unreachable (${err instanceof Error ? err.message : 'network error'})`, LABEL, 0)
   }
@@ -101,11 +105,11 @@ export const alibabaProvider: DirectProvider = {
   label: LABEL,
   prefix: 'alibaba/',
   envVars: ['DASHSCOPE_API_KEY', 'DASHSCOPE_WORKSPACE_ID', 'DASHSCOPE_REGION'],
-  configured: () => !!process.env.DASHSCOPE_API_KEY,
-  missingConfig: () => 'DASHSCOPE_API_KEY is not set',
+  configured: async () => !!(await getSetting('DASHSCOPE_API_KEY')),
+  missingConfig: () => 'no Alibaba API key yet (Settings → Model providers)',
   modelFor: (spiteId) => (DEFAULT_MODELS[spiteId] ? modelOverride('DASHSCOPE_MODEL_', spiteId) || DEFAULT_MODELS[spiteId] : null),
   // Singapore is priced like fal; the other international regions are cheaper.
-  pricingId: (): PricingProvider => (endpoint().region === SINGAPORE ? 'alibaba-sg' : 'alibaba'),
+  pricingId: async (): Promise<PricingProvider> => ((await endpoint()).region === SINGAPORE ? 'alibaba-sg' : 'alibaba'),
   isValidEndpoint: (e): e is string => typeof e === 'string' && /^alibaba\/[a-z0-9][a-z0-9.-]{2,80}$/.test(e),
   isValidTaskId: (id): id is string => typeof id === 'string' && /^[A-Za-z0-9-]{8,100}$/.test(id),
 

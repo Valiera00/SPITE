@@ -33,15 +33,15 @@ export interface DirectProvider {
   label: string
   /** Pseudo-endpoint prefix stored on the node in place of a fal queue path. */
   prefix: string
-  /** Environment variables the provider reads, for Settings to explain. */
+  /** Settings it reads: pasted in Settings, or environment variables. */
   envVars: string[]
-  configured(): boolean
+  configured(): Promise<boolean>
   /** Why it isn't usable, when configured() is false. */
   missingConfig(): string
   /** The provider's model id for a SPITE model, or null if it doesn't serve it. */
   modelFor(spiteId: string): string | null
   /** Which price table applies (Alibaba's depends on the region). */
-  pricingId(): PricingProvider
+  pricingId(): Promise<PricingProvider>
   isValidEndpoint(endpoint: unknown): endpoint is string
   isValidTaskId(id: unknown): id is string
   create(model: string, input: DirectTaskInput): Promise<string>

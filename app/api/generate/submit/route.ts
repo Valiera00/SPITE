@@ -97,7 +97,7 @@ export async function POST(request: NextRequest) {
   }
   const costEstimate = estimateGenerationCost(model, {
     ...estimateOptions,
-    provider: directRoute ? directRoute.provider.pricingId() : 'fal',
+    provider: directRoute ? await directRoute.provider.pricingId() : 'fal',
   })
   // Fail-closed on unknown cost: a model declared in lib/fal-models.ts but
   // missing from lib/fal-cost.ts would otherwise estimate $0 and bypass the
@@ -316,7 +316,7 @@ export async function POST(request: NextRequest) {
     // Chosen, but the key isn't set up. Runs on fal; the node says so.
     fallbackReason = route.reason
     fallbackFrom = route.provider.label
-    directCostUsd = estimateGenerationCost(model, { ...estimateOptions, provider: route.provider.pricingId() }).total
+    directCostUsd = estimateGenerationCost(model, { ...estimateOptions, provider: await route.provider.pricingId() }).total
   }
   if (directRoute) {
     const { provider, providerModel } = directRoute
