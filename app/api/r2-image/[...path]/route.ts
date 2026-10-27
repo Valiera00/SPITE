@@ -6,6 +6,7 @@ import {
   getR2Client,
   verifyImageToken,
   isThumbnailable,
+  isRasterImage,
   thumbKeyFor,
   THUMB_WIDTH,
 } from '@/lib/r2-upload'
@@ -30,6 +31,9 @@ async function getOrCreateThumbnail(key: string): Promise<Buffer | null> {
     const original = await client.send(new GetObjectCommand({ Bucket, Key: key }))
     const bytes = await original.Body?.transformToByteArray()
     if (!bytes?.length) return null
+    // Only real PNG/JPEG/WebP reaches sharp, whatever the file is named.
+    // Anything else falls back to serving the original.
+    if (!isRasterImage(bytes)) return null
     // fit 'outside': the SHORTER side lands on THUMB_WIDTH, so a square
     // object-cover tile stays sharp whatever the source aspect ratio.
     // rotate() with no args applies EXIF orientation before the strip.

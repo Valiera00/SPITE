@@ -57,6 +57,22 @@ export function isThumbnailable(key: string): boolean {
 }
 
 /**
+ * Whether these bytes really are a PNG, JPEG or WebP. sharp decodes by
+ * content, not by file name, so an SVG (or anything else) renamed to .png
+ * would otherwise reach its SVG/other decoders. Checked before every sharp
+ * call; SVG decoding in particular has had remote-code-execution bugs.
+ */
+export function isRasterImage(b: Uint8Array): boolean {
+  if (b.length < 12) return false
+  const png = b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47
+  const jpeg = b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff
+  const webp =
+    b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 && // RIFF
+    b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50 // WEBP
+  return png || jpeg || webp
+}
+
+/**
  * Delete the thumbnail belonging to `key`. Call alongside every delete of an
  * original. Deleting a key that doesn't exist is a no-op on S3/R2, so this is
  * safe to call unconditionally; it never throws.

@@ -5,7 +5,7 @@ overrides:
   # Security overrides for transitive deps we don't control directly.
   # postcss/nanoid: path-traversal + infinite-loop advisories.
   # browserslist: prototype-write via custom stats + unbounded cache growth.
-  # sharp: libvips/libheif CVEs (fixed in 0.35.4). Next declares it as an
+  # sharp: libvips/libheif CVEs (0.35.4) and the SVG RCE CVE-2026-96889 (0.35.5). Next declares it as an
   # optional dep on ^0.34.5, which would keep a vulnerable copy in the tree, and
   # the thumbnailer in api/r2-image now calls sharp directly — so it is pinned
   # forward here.
@@ -15,4 +15,4 @@ overrides:
   postcss@<8.5.23: '>=8.5.23'
   nanoid@<3.3.17: '>=3.3.17'
   browserslist@<4.28.7: '>=4.28.7'
-  sharp: '>=0.35.4'
+  sharp: '>=0.35.5'
