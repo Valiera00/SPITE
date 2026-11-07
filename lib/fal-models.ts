@@ -138,6 +138,44 @@ export const FAL_MODELS: ModelConfig[] = [
   // GPT Image 2 / FLUX.2 Pro / Ideogram v4 are the three image models
   // that consistently rank above everything else in current benchmarks.
 
+  // GPT Image 2.6 (Nov 2026) comes in two variants on the same rate card:
+  // Flare is the fast everyday model, Sunburst trades speed for finer detail
+  // and steadier edits. Sizes, qualities and inputs work like GPT Image 2,
+  // plus two higher quality levels (xhigh, max).
+  {
+    id: 'gpt-image-2.6-flare',
+    name: 'GPT Image 2.6 Flare',
+    falModel: 'openai/gpt-image-2.6/flare/text-to-image',
+    editModel: 'openai/gpt-image-2.6/flare/edit',
+    imageParam: 'image_urls',
+    category: 'image',
+    inputTypes: ['text', 'image'],
+    aspectRatios: ['16:9', '4:3', '1:1', '3:4', '9:16'],
+    resolutions: ['1K', '2K', '4K'],
+    qualities: ['low', 'medium', 'high', 'xhigh', 'max'],
+    defaultQuality: 'high',
+    defaultAspectRatio: '4:3',
+    defaultResolution: '2K',
+    description: 'OpenAI\'s newest image model, fast version — crisp typography and quick edits. Up to 4K.'
+  },
+
+  {
+    id: 'gpt-image-2.6-sunburst',
+    name: 'GPT Image 2.6 Sunburst',
+    falModel: 'openai/gpt-image-2.6/sunburst/text-to-image',
+    editModel: 'openai/gpt-image-2.6/sunburst/edit',
+    imageParam: 'image_urls',
+    category: 'image',
+    inputTypes: ['text', 'image'],
+    aspectRatios: ['16:9', '4:3', '1:1', '3:4', '9:16'],
+    resolutions: ['1K', '2K', '4K'],
+    qualities: ['low', 'medium', 'high', 'xhigh', 'max'],
+    defaultQuality: 'high',
+    defaultAspectRatio: '4:3',
+    defaultResolution: '2K',
+    description: 'OpenAI\'s newest image model, precision version — the finest detail and most consistent edits. Up to 4K.'
+  },
+
   {
     id: 'gpt-image-2',
     name: 'GPT Image 2',
@@ -1149,8 +1187,8 @@ export function buildModelInput(
   // ~8.3MP, so the resolution dropdown maps to REAL output sizes (1K/2K/4K)
   // per aspect ratio. `quality` is a SEPARATE fidelity param (sent 'high').
   // Every size below is a multiple of 16, ≤3840px edge, and within fal's
-  // 0.66–8.29 MP pixel window.
-  if (model.id === 'gpt-image-2') {
+  // 0.66–8.29 MP pixel window. GPT Image 2.6 has the same size rules.
+  if (model.id === 'gpt-image-2' || model.id === 'gpt-image-2.6-flare' || model.id === 'gpt-image-2.6-sunburst') {
     input.prompt = prompt
     const ratio = options.aspectRatio || model.defaultAspectRatio
     const tier = options.resolution || model.defaultResolution || '2K'
@@ -1166,7 +1204,8 @@ export function buildModelInput(
       options.quality && model.qualities?.includes(options.quality)
         ? options.quality
         : model.defaultQuality || 'high'
-    if (options.seed !== undefined) input.seed = options.seed
+    // 2.6's schema has no seed field.
+    if (options.seed !== undefined && model.id === 'gpt-image-2') input.seed = options.seed
     return input
   }
 

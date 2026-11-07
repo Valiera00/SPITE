@@ -66,6 +66,32 @@ const COST_TABLE: Record<string, CostEntry> = {
                              medium: { '1K': 0.053, '2K': 0.07, '4K': 0.11 },
                              high:   { '1K': 0.21,  '2K': 0.25, '4K': 0.41 },
                            } },
+  // GPT Image 2.6 bills tokens ($30 per 1M output image tokens, $8 per 1M
+  // input image tokens), the same for Flare and Sunburst. Neither fal nor
+  // OpenAI publishes a per-image table for it. The 1K column is OpenAI's
+  // calculator for 1024x1024 output (low $0.0247, medium $0.0435, high $0.0527,
+  // xhigh $0.0937, max $0.2107), rounded up. 2K and 4K are not published, so
+  // they are scaled from 1K by x1.4 and x2: more than GPT Image 2's own
+  // high-quality steps (x1.19, x1.9), which leaves room for reference-image
+  // input tokens.
+  'gpt-image-2.6-flare':    { unit: 'image', price: 0.43,
+                              byTier: { '1K': 0.054, '2K': 0.075, '4K': 0.106 },
+                              byQuality: {
+                                low:    { '1K': 0.025, '2K': 0.035, '4K': 0.05 },
+                                medium: { '1K': 0.044, '2K': 0.062, '4K': 0.088 },
+                                high:   { '1K': 0.054, '2K': 0.075, '4K': 0.106 },
+                                xhigh:  { '1K': 0.094, '2K': 0.132, '4K': 0.188 },
+                                max:    { '1K': 0.211, '2K': 0.296, '4K': 0.43 },
+                              } },
+  'gpt-image-2.6-sunburst': { unit: 'image', price: 0.43,
+                              byTier: { '1K': 0.054, '2K': 0.075, '4K': 0.106 },
+                              byQuality: {
+                                low:    { '1K': 0.025, '2K': 0.035, '4K': 0.05 },
+                                medium: { '1K': 0.044, '2K': 0.062, '4K': 0.088 },
+                                high:   { '1K': 0.054, '2K': 0.075, '4K': 0.106 },
+                                xhigh:  { '1K': 0.094, '2K': 0.132, '4K': 0.188 },
+                                max:    { '1K': 0.211, '2K': 0.296, '4K': 0.43 },
+                              } },
   'flux-2-pro':          { unit: 'image', price: 0.05 },
   // Ideogram v4 bills per megapixel by rendering speed: TURBO $0.0075,
   // BALANCED $0.015, QUALITY $0.025. The largest frame this app can request

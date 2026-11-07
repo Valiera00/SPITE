@@ -132,7 +132,9 @@ function StatusBadge({ status, progress }: { status: GenerationStatus; progress?
   )
 }
 
-const QUALITY_LABEL: Record<string, string> = { low: 'Low quality', medium: 'Medium quality', high: 'High quality' }
+const QUALITY_LABEL: Record<string, string> = {
+  low: 'Low quality', medium: 'Medium quality', high: 'High quality', xhigh: 'Extra-high quality', max: 'Max quality',
+}
 
 function ImageNodeImpl({ id, data, selected }: NodeProps) {
   const params = useParams()

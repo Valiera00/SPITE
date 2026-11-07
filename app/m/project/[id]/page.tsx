@@ -43,6 +43,7 @@ function refsFromUrls(urls?: string[]): Ref[] {
 
 const CREATE_MODELS = FAL_MODELS.filter((m) => m.category === 'image' && !m.optionalPrompt)
 const MAX_COUNT = 6
+const QUALITY_NAME: Record<string, string> = { low: 'Low', medium: 'Medium', high: 'High', xhigh: 'Extra-high', max: 'Max' }
 
 function findModelId(m: string | null): string | null {
   if (!m) return null
@@ -450,7 +451,7 @@ export default function FlowThread() {
               {model && (model.qualities?.length ?? 0) > 0 && (
                 <select value={quality || model.defaultQuality || ''} onChange={(e) => setQuality(e.target.value)} aria-label="Quality"
                   className="appearance-none bg-white/[0.06] hover:bg-white/10 transition rounded-full px-2.5 h-8 text-[11px] font-mono text-foreground/90 focus:outline-none cursor-pointer">
-                  {model.qualities!.map((q) => <option key={q} value={q}>{q === 'medium' ? 'Medium' : q === 'low' ? 'Low' : 'High'} quality</option>)}
+                  {model.qualities!.map((q) => <option key={q} value={q}>{QUALITY_NAME[q] || q} quality</option>)}
                 </select>
               )}
               <button data-tour="attach" onClick={() => fileRef.current?.click()} aria-label="Attach reference images"
