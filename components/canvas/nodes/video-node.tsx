@@ -60,8 +60,10 @@ function ControlSelect({
         {value}
         <CaretDown size={8} weight="bold" />
       </button>
+      {/* nowheel/nodrag: without them React Flow takes the wheel and zooms
+          the canvas instead of scrolling this list. */}
       {open && (
-        <div className="absolute bottom-full left-0 mb-1 bg-[#1a1d21] border border-white/10 rounded-lg py-1 z-50 min-w-[120px] shadow-xl max-h-[200px] overflow-y-auto">
+        <div className="nowheel nodrag absolute bottom-full left-0 mb-1 bg-[#1a1d21] border border-white/10 rounded-lg py-1 z-50 min-w-[120px] shadow-xl max-h-[min(380px,60vh)] overflow-y-auto">
           {options.map(opt => (
             <button
               key={opt.value}
