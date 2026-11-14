@@ -56,6 +56,15 @@ them. The bar is not perfection. It's honesty and usefulness.
   the pentest checklist — the goal is that no contribution silently
   weakens existing controls.
 
+## Privacy scan
+
+`pnpm check:private` (also run first by `pnpm release`) fails if any tracked
+file path, file content or unpushed commit message contains a string from a
+private list kept OUTSIDE the repo: `~/.spite/private-strings.txt`, or the
+path in `SPITE_PRIVATE_STRINGS_FILE`. One entry per line (e.g.
+`my-app.example.com`); blank lines and `#` comments are ignored, matching is
+case-insensitive plain text. No list file means the scan is skipped.
+
 ## License
 
 By contributing, you agree your contribution is licensed under the

@@ -7,9 +7,10 @@
 //   pnpm release major     # 0.3.0 -> 1.0.0
 //   pnpm release 1.2.3     # explicit version
 //
-// Does, in order: refuse on a dirty tree -> bump package.json -> BUILD (the gate;
-// nothing ships if the build fails) -> commit -> tag -> fast-forward main ->
-// push both branches with the tag -> open a DRAFT GitHub release.
+// Does, in order: refuse on a dirty tree -> privacy scan (nothing ships if a
+// private string is found) -> bump package.json -> BUILD (the gate; nothing
+// ships if the build fails) -> commit -> tag -> fast-forward main -> push both
+// branches with the tag -> open a DRAFT GitHub release.
 //
 // The GitHub release is left as a DRAFT on purpose: publishing is outward-facing,
 // so you review the notes and hit Publish yourself.
@@ -35,6 +36,16 @@ const MAIN_BRANCH = 'main'
 
 if (run('git status --porcelain')) {
   console.error('Working tree is dirty — commit or stash first.')
+  process.exit(1)
+}
+
+// Privacy gate: no tracked file or unpushed commit may contain a string from
+// the owner's private list (see scripts/check-private.mjs). Runs before the
+// version bump, so a failure leaves nothing to revert.
+try {
+  loud('node scripts/check-private.mjs')
+} catch {
+  console.error('\nPrivacy scan found private strings — release aborted, nothing changed or pushed.')
   process.exit(1)
 }
 

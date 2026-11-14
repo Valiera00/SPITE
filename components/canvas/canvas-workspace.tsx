@@ -29,6 +29,7 @@ import {
 } from '@/lib/connector-animation'
 import '@xyflow/react/dist/style.css'
 import { useCanvasAutoSave } from '@/hooks/use-canvas-auto-save'
+import { useBoardInbox } from '@/hooks/use-board-inbox'
 import { CanvasToolbar } from './canvas-toolbar'
 import { nodeHasNoMedia } from '@/lib/node-media'
 import { OnboardingTour } from '@/components/onboarding/use-onboarding-tour'
@@ -320,6 +321,9 @@ function CanvasInner({ projectId }: { projectId: string }) {
 
   // Auto-save hook
   const { saveCanvas, saveStatus } = useCanvasAutoSave(projectId, nodes, edges, scenes, activeSceneId)
+  // True once the saved canvas has been read. Anything that adds nodes on its
+  // own (the board inbox) waits for it, or the load would overwrite them.
+  const [canvasLoaded, setCanvasLoaded] = useState(false)
 
   // Load canvas data and assets on mount
   useEffect(() => {
@@ -375,9 +379,12 @@ function CanvasInner({ projectId }: { projectId: string }) {
         }
       } catch (error) {
         console.error('Error loading data:', error)
+      } finally {
+        setCanvasLoaded(true)
       }
     }
 
+    setCanvasLoaded(false)
     loadData()
   }, [projectId, setNodes, setEdges])
 
@@ -505,6 +512,17 @@ function CanvasInner({ projectId }: { projectId: string }) {
     const pos = flowPos || screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 })
     setNodes((ns: Node[]) => [...ns, makeNode(type, pos, undefined, activeSceneId, initialData)] as Node[])
   }, [screenToFlowPosition, setNodes, activeSceneId])
+
+  // Shots Claude was told to keep (Settings → Claude connection) land here.
+  useBoardInbox({
+    projectId,
+    ready: canvasLoaded,
+    getNodes,
+    setNodes: setNodes as (update: (nodes: Node[]) => Node[]) => void,
+    activeSceneId,
+    screenToFlowPosition,
+    saveStatus,
+  })
 
   // Scene handlers. Name = highest existing "Scene N" + 1 so deletes
   // don't reuse numbers (deleting Scene 3 then adding a new one gives

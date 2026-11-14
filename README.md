@@ -289,6 +289,32 @@ Set a positive number to opt in (e.g. `ASSET_RETENTION_DAYS=30`,
 
 ---
 
+## Claude connection (MCP)
+
+SPITE has a built-in [MCP](https://modelcontextprotocol.io) endpoint, so your
+own Claude can work in your projects: look around, generate images, and put the
+shots you choose on the board. It is **off by default**.
+
+1. In SPITE, open **Settings → Claude connection** and turn it on. You get an
+   access token, shown once.
+2. Add SPITE to Claude with the command the panel gives you. For Claude Code:
+   `claude mcp add --transport http spite https://your-app.example.com/api/mcp --header "Authorization: Bearer <token>"`
+
+How it behaves:
+
+- **A brief first.** Claude can't generate until it has recorded a brief you
+  agreed to (how many images, which models, a price ceiling per image). SPITE
+  enforces it; going beyond it needs a new brief.
+- **Drafts, then keeps.** What Claude makes lands in the project's library as
+  numbered drafts. Only the ones you tell it to keep go on the board, the next
+  time that canvas is open.
+- **Its own spend ceiling.** A per-hour limit for Claude (Settings, default
+  $5), on top of the normal spend gate. Claude can't change it.
+- **No destructive tools.** The endpoint can't delete anything, change
+  settings, or read keys. Turning the connection off revokes the token at once.
+
+Images only for now; video generation comes next.
+
 ## Updating
 
 SPITE tells you when a new release is out — a small **"Update vX.Y.Z"** link
@@ -344,6 +370,7 @@ lib/
 scripts/              Tooling (secret check, etc.)
 database-setup.sql    Idempotent schema for first-time setup
 proxy.ts              Auth gate + env-check redirect
+app/api/mcp/          MCP endpoint (Claude connection); tools in lib/mcp/
 ```
 
 ## Contributing

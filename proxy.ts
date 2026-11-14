@@ -10,6 +10,8 @@ import { SESSION_COOKIE_NAME, isSessionValid } from '@/lib/sessions'
 // - /api/auth/verify + /api/auth/logout: the login/logout endpoints
 // - /api/assets/cleanup: scheduled cleanup job, auth via CRON_SECRET
 // - /api/r2-image: media proxy, does its own cookie-or-signed-token check
+// - /api/mcp: Claude connection, does its own token check (an MCP client
+//   has no cookie); refuses everything while the connection is off
 const PUBLIC_PATHS = [
   '/login',
   '/setup',
@@ -17,6 +19,7 @@ const PUBLIC_PATHS = [
   '/api/auth/logout',
   '/api/assets/cleanup',
   '/api/r2-image',
+  '/api/mcp',
 ]
 
 export async function proxy(request: NextRequest) {

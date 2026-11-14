@@ -13,6 +13,7 @@ import { VersionBadge } from '@/components/version-badge'
 import { startTour } from '@/lib/onboarding'
 import { ModelProvidersSection } from '@/components/settings/model-providers-section'
 import { FalKeySection } from '@/components/settings/fal-key-section'
+import { McpSection } from '@/components/settings/mcp-section'
 
 export default function SettingsPage() {
   // Password change state
@@ -334,6 +335,8 @@ export default function SettingsPage() {
         <FalKeySection />
 
         <ModelProvidersSection />
+
+        <McpSection />
 
         {/* Password Change Section */}
         <section className="space-y-4">
