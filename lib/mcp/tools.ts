@@ -18,7 +18,8 @@ import { estimateGenerationCost } from '../fal-cost'
 import { compileMentionsForModel, pickRefStrategy, type FolderType } from '../mention-prompt'
 import { resolveRoute } from '../model-routing'
 import { isThumbnailable } from '../r2-upload'
-import { getOrCreateThumbnail, renderPreview } from '../thumbnails'
+import { getOrCreateThumbnail, imageSize, renderPreview } from '../thumbnails'
+import { labelFromPrompt } from '../auto-name'
 import { getMcpHourlyLimitUsd } from './access'
 import {
   activeBrief, addDraft, claimJobForCheck, createJob, finishJob, getJobs, keepDrafts, listDrafts,
@@ -92,7 +93,13 @@ function jobIdList(args: Args, required: boolean): string[] | undefined {
   return v as string[]
 }
 
-const usd = (n: number) => `$${n < 0.1 ? n.toFixed(3) : n.toFixed(2)}`
+// Prices are shown exactly (to a hundredth of a cent) and never rounded DOWN:
+// a brief's ceiling gets set from these figures, so a shown price below the
+// real one would make the brief refuse the very thing it was written for.
+const usd = (n: number) => {
+  const up = Math.ceil(n * 10_000 - 1e-6) / 10_000
+  return `$${up.toFixed(4).replace(/0{1,2}$/, '')}`
+}
 
 // ---------------------------------------------------------------------------
 // Shared lookups
@@ -140,44 +147,110 @@ function r2KeyOf(url: string): string | null {
   }
 }
 
-/** A stored image as something Claude can look at. Null for video, or when it can't be read. */
-async function imageOf(url: string, size: 'small' | 'large' = 'small'): Promise<Content | null> {
+interface Picture {
+  content: Content
+  /** Shape of the image, e.g. "9:16". */
+  shape: string
+  /** Pixel size of the original. Known only for the large view. */
+  pixels?: string
+}
+
+const COMMON_SHAPES: [string, number][] = [
+  ['21:9', 21 / 9], ['2:1', 2], ['16:9', 16 / 9], ['3:2', 1.5], ['4:3', 4 / 3], ['5:4', 1.25], ['1:1', 1],
+  ['4:5', 0.8], ['3:4', 0.75], ['2:3', 2 / 3], ['9:16', 9 / 16], ['1:2', 0.5], ['9:21', 9 / 21],
+]
+function shapeOf(width: number, height: number): string {
+  const r = width / height
+  const near = COMMON_SHAPES.find(([, v]) => Math.abs(r - v) / v < 0.025)
+  return near ? near[0] : `${r >= 1 ? r.toFixed(2) + ':1' : '1:' + (1 / r).toFixed(2)}`
+}
+
+/** A stored image as something Claude can look at, with its shape. Null for video, or when it can’t be read. */
+async function pictureOf(url: string, size: 'small' | 'large' = 'small'): Promise<Picture | null> {
   const key = r2KeyOf(url)
   if (!key || !isThumbnailable(key)) return null
   if (size === 'large') {
-    const jpeg = await renderPreview(key, 1280)
-    return jpeg ? { type: 'image', data: jpeg.toString('base64'), mimeType: 'image/jpeg' } : null
+    const p = await renderPreview(key, 1280)
+    if (!p) return null
+    return {
+      content: { type: 'image', data: p.data.toString('base64'), mimeType: 'image/jpeg' },
+      shape: shapeOf(p.width, p.height),
+      pixels: `${p.width}x${p.height}`,
+    }
   }
   const webp = await getOrCreateThumbnail(key)
-  return webp ? { type: 'image', data: webp.toString('base64'), mimeType: 'image/webp' } : null
+  if (!webp) return null
+  // The thumbnail keeps the original's proportions, so its shape is the image's.
+  const dims = await imageSize(webp)
+  return {
+    content: { type: 'image', data: webp.toString('base64'), mimeType: 'image/webp' },
+    shape: dims ? shapeOf(dims.width, dims.height) : 'unknown',
+  }
 }
 
-// What is on a project's board that can be looked at or used as an input: every
-// node holding an image, clip or sound. Read straight from the saved canvas,
-// which trails the open one by a few seconds of autosave.
+async function imageOf(url: string, size: 'small' | 'large' = 'small'): Promise<Content | null> {
+  return (await pictureOf(url, size))?.content ?? null
+}
+
+// What is on a project’s board that can be looked at or used as an input: every
+// node holding an image, clip or sound, plus how the nodes are wired together.
+// Read straight from the saved canvas, which trails the open one by a few
+// seconds of autosave.
 interface BoardItem {
   nodeId: string
   kind: 'image' | 'video' | 'audio'
   made: 'generated' | 'reference'
   label: string
+  /** The label is just the first words of the prompt, not a name someone gave it. */
+  labelIsAuto: boolean
   prompt?: string
   modelId?: string
   sceneId?: string
   url: string
   /** A still that stands for a clip. */
   posterUrl?: string
+  settings: Record<string, string | boolean>
+  folders: string[]
+  /** When the node was put on the board, and when it last generated. */
+  addedAt?: string
+  generatedAt?: string
+  position: { x: number; y: number }
+}
+
+interface Wire { from: string; role: string }
+
+interface Board {
+  items: BoardItem[]
+  byId: Map<string, BoardItem>
+  /** Text of prompt nodes, which feed generators through a wire. */
+  promptText: Map<string, string>
+  /** What is wired INTO each node, and what each node feeds. */
+  inputs: Map<string, Wire[]>
+  feeds: Map<string, string[]>
 }
 
 const usableUrl = (v: unknown): string | undefined =>
   typeof v === 'string' && (v.startsWith(PROXY_PREFIX) || /^https?:\/\//.test(v)) ? v : undefined
 
-async function boardItems(projectId: string): Promise<BoardItem[]> {
-  const rows = await getDb()`
-    SELECT nodeId AS id, type, data FROM canvas_nodes WHERE projectId = ${projectId}::text ORDER BY createdAt
-  `
+const stamp = (ms: number) => new Date(ms).toISOString().slice(0, 16).replace('T', ' ') + ' UTC'
+
+async function loadBoard(projectId: string): Promise<Board> {
+  const sql = getDb()
+  const [rows, edges] = await Promise.all([
+    sql`SELECT nodeId AS id, type, position_x, position_y, data FROM canvas_nodes WHERE projectId = ${projectId}::text ORDER BY nodeId`,
+    sql`SELECT source, target, targethandle FROM canvas_edges WHERE projectId = ${projectId}::text`,
+  ])
   const items: BoardItem[] = []
+  const promptText = new Map<string, string>()
+  const typeOf = new Map<string, string>()
   for (const r of rows) {
+    const id = String(r.id)
     const d = (r.data || {}) as Record<string, unknown>
+    typeOf.set(id, String(r.type))
+    if (r.type === 'prompt') {
+      if (typeof d.text === 'string' && d.text.trim()) promptText.set(id, d.text.trim())
+      continue
+    }
     // Same order the canvas itself uses to decide what a node holds (lib/node-media.ts).
     const url = usableUrl(d.outputUrl) ?? usableUrl(d.assetUrl) ?? usableUrl(d.thumbnail) ?? usableUrl(d.imageUrl)
     if (!url) continue
@@ -186,29 +259,107 @@ async function boardItems(projectId: string): Promise<BoardItem[]> {
       r.type === 'videoGen' ? 'video'
       : d.mediaType === 'video' || d.mediaType === 'audio' ? d.mediaType
       : byName ?? 'image'
+    const generated = r.type === 'imageGen' || r.type === 'videoGen'
+    const prompt = typeof d.prompt === 'string' && d.prompt.trim() ? d.prompt.trim() : undefined
+    const label = typeof d.label === 'string' ? d.label.trim() : ''
+    const settings: Record<string, string | boolean> = {}
+    if (generated) {
+      for (const [key, name] of [['aspectRatio', 'aspect_ratio'], ['resolution', 'resolution'], ['quality', 'quality'], ['duration', 'duration']] as const) {
+        if (typeof d[key] === 'string' && d[key]) settings[name] = d[key] as string
+      }
+      if (r.type === 'videoGen' && typeof d.enableAudio === 'boolean') settings.sound = d.enableAudio
+    }
+    // Node ids start with the moment they were created.
+    const born = /^[a-z]+-(\d{13})/.exec(id)
     items.push({
-      nodeId: String(r.id),
+      nodeId: id,
       kind,
-      made: r.type === 'imageGen' || r.type === 'videoGen' ? 'generated' : 'reference',
-      label: typeof d.label === 'string' ? d.label : '',
-      prompt: typeof d.prompt === 'string' && d.prompt.trim() ? d.prompt.trim() : undefined,
-      modelId: typeof d.modelId === 'string' ? d.modelId : undefined,
+      made: generated ? 'generated' : 'reference',
+      label,
+      labelIsAuto: generated && !!prompt && !!label && label === labelFromPrompt(prompt),
+      prompt,
+      modelId: generated && typeof d.modelId === 'string' ? d.modelId : undefined,
       sceneId: typeof d.sceneId === 'string' ? d.sceneId : undefined,
       url,
       posterUrl: kind === 'video' ? usableUrl(d.videoThumbnail) : undefined,
+      settings,
+      folders: Array.isArray(d.mentions)
+        ? (d.mentions as { name?: unknown }[]).map((m) => (typeof m?.name === 'string' ? m.name : '')).filter(Boolean)
+        : [],
+      addedAt: born ? stamp(Number(born[1])) : undefined,
+      generatedAt: typeof d.submittedAt === 'number' && d.submittedAt > 0 ? stamp(d.submittedAt) : undefined,
+      position: { x: Math.round(Number(r.position_x) || 0), y: Math.round(Number(r.position_y) || 0) },
     })
   }
-  return items
+  // Oldest first, so "the last one" is at the end.
+  items.sort((a, b) => (a.addedAt || '').localeCompare(b.addedAt || '') || a.nodeId.localeCompare(b.nodeId))
+
+  const inputs = new Map<string, Wire[]>()
+  const feeds = new Map<string, string[]>()
+  for (const e of edges) {
+    const source = String(e.source), target = String(e.target)
+    const handle = String(e.targethandle || '')
+    const role =
+      handle === 'end-frame-in' ? 'end_frame'
+      : handle === 'reference-in' ? 'reference'
+      : handle === 'video-in' ? 'source_video'
+      : handle === 'audio-in' ? 'audio'
+      : handle === 'prompt-in' || typeOf.get(source) === 'prompt' ? 'prompt'
+      : typeOf.get(target) === 'videoGen' ? 'first_frame'
+      : 'input_image'
+    inputs.set(target, [...(inputs.get(target) || []), { from: source, role }])
+    feeds.set(source, [...(feeds.get(source) || []), target])
+  }
+  return { items, byId: new Map(items.map((b) => [b.nodeId, b])), promptText, inputs, feeds }
 }
 
-const boardView = (b: BoardItem) => ({
-  node_id: b.nodeId,
-  kind: b.kind,
-  made: b.made,
-  ...(b.label ? { label: b.label } : {}),
-  ...(b.prompt ? { prompt: b.prompt.length > 240 ? b.prompt.slice(0, 240) + '…' : b.prompt } : {}),
-  ...(b.modelId && b.made === 'generated' ? { model: b.modelId } : {}),
-})
+const boardItems = async (projectId: string): Promise<BoardItem[]> => (await loadBoard(projectId)).items
+
+const LIST_PROMPT = 160
+
+/** One line of the board listing: enough to tell nodes apart; view_node has the rest. */
+const boardLine = (b: BoardItem, board: Board) => {
+  const from = (board.inputs.get(b.nodeId) || []).filter((w) => w.role !== 'prompt').map((w) => w.from)
+  return {
+    node_id: b.nodeId,
+    kind: b.kind,
+    made: b.made,
+    ...(b.label && !b.labelIsAuto ? { label: b.label } : {}),
+    ...(b.prompt ? { prompt: b.prompt.length > LIST_PROMPT ? b.prompt.slice(0, LIST_PROMPT) + '…' : b.prompt } : {}),
+    ...(b.modelId ? { model: b.modelId } : {}),
+    ...(typeof b.settings.aspect_ratio === 'string' ? { aspect_ratio: b.settings.aspect_ratio } : {}),
+    ...(b.generatedAt || b.addedAt ? { when: b.generatedAt || b.addedAt } : {}),
+    ...(from.length ? { made_from: from } : {}),
+  }
+}
+
+/** Everything known about one node. */
+const boardDetail = (b: BoardItem, board: Board) => {
+  const wires = board.inputs.get(b.nodeId) || []
+  const describe = (id: string) => {
+    const n = board.byId.get(id)
+    return n ? { node_id: id, kind: n.kind, ...(n.label && !n.labelIsAuto ? { label: n.label } : {}) } : { node_id: id, note: 'no longer holds media' }
+  }
+  const wiredPrompts = wires.filter((w) => w.role === 'prompt').map((w) => board.promptText.get(w.from)).filter((t): t is string => !!t)
+  const madeFrom = wires.filter((w) => w.role !== 'prompt').map((w) => ({ as: w.role, ...describe(w.from) }))
+  const feeds = (board.feeds.get(b.nodeId) || []).map(describe)
+  return {
+    node_id: b.nodeId,
+    kind: b.kind,
+    made: b.made,
+    ...(b.label ? { label: b.label, ...(b.labelIsAuto ? { label_note: 'automatic: the first words of the prompt' } : {}) } : {}),
+    ...(b.prompt ? { prompt: b.prompt } : {}),
+    ...(wiredPrompts.length ? { prompt_nodes_wired_in: wiredPrompts, prompt_note: 'Wired prompt text is sent ahead of the node’s own prompt.' } : {}),
+    ...(b.modelId ? { model: b.modelId } : {}),
+    ...(Object.keys(b.settings).length ? { settings: b.settings } : {}),
+    ...(b.folders.length ? { folders_referenced: b.folders } : {}),
+    ...(madeFrom.length ? { made_from: madeFrom } : b.made === 'generated' ? { made_from: 'nothing wired in (prompt only)' } : {}),
+    ...(feeds.length ? { used_by: feeds } : {}),
+    ...(b.addedAt ? { added_to_board: b.addedAt } : {}),
+    ...(b.generatedAt ? { last_generated: b.generatedAt } : {}),
+    position_on_board: b.position,
+  }
+}
 
 const allModels = (): ModelConfig[] => [...getImageModels(), ...getVideoModels()]
 
@@ -368,18 +519,19 @@ const TOOLS: ToolDef[] = [
     name: 'view_board',
     title: 'Look at the board',
     description:
-      'What is on a project’s board: every node holding an image, clip or sound, with its node_id, label and (for generated ones) prompt. ' +
+      'What is on a project’s board: every node holding an image, clip or sound, oldest first, with its node_id, prompt (shortened), model, when it was made and which nodes it was made from. ' +
       'This is the user’s existing work, whoever made it. A node_id can be used as an input to the generate tools (input_image, first_frame, end_frame, source_video, reference_images). ' +
-      'Set show_images to see them; clips show their poster frame. Results are paged.',
+      'Set show_images to see them, each captioned with its shape; clips show their poster frame. view_node gives one node’s full prompt, settings and wiring. Results are paged.',
     inputSchema: {
       type: 'object',
       properties: {
         project_id: projectIdProp,
         kind: { type: 'string', enum: ['image', 'video', 'audio', 'all'], description: 'Default all.' },
-        search: { type: 'string', description: 'Only nodes whose label or prompt contains this text.' },
+        made: { type: 'string', enum: ['generated', 'reference', 'all'], description: 'Generated in SPITE, or brought in as a reference. Default all.' },
+        search: { type: 'string', description: 'Only nodes whose label or full prompt contains this text.' },
         limit: { type: 'integer', minimum: 1, maximum: 60, description: 'How many to list. Default 30.' },
         offset: { type: 'integer', minimum: 0, description: 'Skip this many, to page through a large board. Default 0.' },
-        show_images: { type: 'boolean', description: 'Include pictures of the first 12 listed. Default false.' },
+        show_images: { type: 'boolean', description: 'Include pictures of the listed nodes (up to 30 per call). Default false.' },
       },
       required: ['project_id'],
       additionalProperties: false,
@@ -389,26 +541,35 @@ const TOOLS: ToolDef[] = [
       const project = await requireProject(args)
       const kind = str(args, 'kind', false) || 'all'
       if (!['image', 'video', 'audio', 'all'].includes(kind)) throw new ToolError('"kind" must be image, video, audio or all.')
+      const made = str(args, 'made', false) || 'all'
+      if (!['generated', 'reference', 'all'].includes(made)) throw new ToolError('"made" must be generated, reference or all.')
       const search = (str(args, 'search', false) || '').toLowerCase()
       const limit = int(args, 'limit', 1, 60, 30)
       const offset = int(args, 'offset', 0, 100_000, 0)
-      const all = (await boardItems(project.id)).filter((b) =>
+      const board = await loadBoard(project.id)
+      const all = board.items.filter((b) =>
         (kind === 'all' || b.kind === kind) &&
+        (made === 'all' || b.made === made) &&
         (!search || b.label.toLowerCase().includes(search) || (b.prompt || '').toLowerCase().includes(search)))
-      if (all.length === 0) return [text(search || kind !== 'all' ? 'Nothing on the board matches that.' : 'This board has no images, clips or sounds yet.')]
+      if (all.length === 0) return [text(search || kind !== 'all' || made !== 'all' ? 'Nothing on the board matches that.' : 'This board has no images, clips or sounds yet.')]
       const page = all.slice(offset, offset + limit)
       const out: Content[] = [text({
         total: all.length,
         showing: `${Math.min(offset + 1, all.length)}-${Math.min(offset + page.length, all.length)}`,
+        order: 'oldest first',
         ...(offset + page.length < all.length ? { more: `offset ${offset + page.length} for the next page` } : {}),
-        nodes: page.map(boardView),
+        ...(page.some((b) => (b.prompt || '').length > LIST_PROMPT) ? { note: 'Prompts are shortened here. view_node has the full prompt, settings and wiring.' } : {}),
+        nodes: page.map((b) => boardLine(b, board)),
       })]
       if (args.show_images === true) {
-        for (const b of page.slice(0, 12)) {
-          const img = b.kind === 'image' ? await imageOf(b.url) : b.posterUrl ? await imageOf(b.posterUrl) : null
-          if (img) out.push(text(`${b.nodeId}${b.label ? ` (${b.label})` : ''}${b.kind === 'video' ? ', poster frame of a clip' : ''}`), img)
+        const PICTURES = 30
+        for (const b of page.slice(0, PICTURES)) {
+          const pic = b.kind === 'image' ? await pictureOf(b.url) : b.posterUrl ? await pictureOf(b.posterUrl) : null
+          if (!pic) continue
+          const caption = [b.nodeId, pic.shape !== 'unknown' ? pic.shape : '', b.kind === 'video' ? 'poster frame of a clip' : '', b.label && !b.labelIsAuto ? `"${b.label}"` : '']
+          out.push(text(caption.filter(Boolean).join(' \u00b7 ')), pic.content)
         }
-        if (page.length > 12) out.push(text('Pictures shown for the first 12 only; page with offset, or use view_node.'))
+        if (page.length > PICTURES) out.push(text(`Pictures shown for the first ${PICTURES} only; page with offset for the rest.`))
       }
       return out
     },
@@ -417,13 +578,15 @@ const TOOLS: ToolDef[] = [
   {
     name: 'view_node',
     title: 'Look at a board node',
-    description: 'Shows one image on the board, small or large. For a clip it shows the poster frame; the clip itself can’t be watched here.',
+    description:
+      'Everything about one node on the board: its full prompt (and any prompt nodes wired into it), model and settings, which nodes it was made from and which use it, when it was made, ' +
+      'and the picture with its pixel size and shape. For a clip the picture is the poster frame; the clip itself can’t be watched here. Use it to match or build on earlier work exactly.',
     inputSchema: {
       type: 'object',
       properties: {
         project_id: projectIdProp,
         node_id: { type: 'string', description: 'A node_id from view_board.' },
-        size: { type: 'string', enum: ['small', 'large'], description: 'Default large.' },
+        size: { type: 'string', enum: ['small', 'large', 'none'], description: 'Picture size, or none for the details only. Default large.' },
       },
       required: ['project_id', 'node_id'],
       additionalProperties: false,
@@ -432,12 +595,24 @@ const TOOLS: ToolDef[] = [
     run: async (args) => {
       const project = await requireProject(args)
       const nodeId = str(args, 'node_id')!
-      const size = str(args, 'size', false) === 'small' ? 'small' : 'large'
-      const node = (await boardItems(project.id)).find((b) => b.nodeId === nodeId)
+      const sizeArg = str(args, 'size', false) || 'large'
+      if (!['small', 'large', 'none'].includes(sizeArg)) throw new ToolError('"size" must be small, large or none.')
+      const board = await loadBoard(project.id)
+      const node = board.byId.get(nodeId)
       if (!node) throw new ToolError(`No node "${nodeId}" with an image, clip or sound on this board. Call view_board for the ids.`)
-      const img = node.kind === 'image' ? await imageOf(node.url, size) : node.posterUrl ? await imageOf(node.posterUrl, size) : null
-      if (!img) return [text(boardView(node)), text(node.kind === 'image' ? 'This image can’t be shown here.' : 'This one has no picture to show here; the user can play it in SPITE.')]
-      return [text(boardView(node)), ...(node.kind === 'video' ? [text('Poster frame of the clip:')] : []), img]
+      const detail = boardDetail(node, board)
+      if (sizeArg === 'none') return [text(detail)]
+      const source = node.kind === 'image' ? node.url : node.posterUrl
+      const pic = source ? await pictureOf(source, sizeArg as 'small' | 'large') : null
+      if (!pic) {
+        return [text(detail), text(node.kind === 'image' ? 'This image can’t be shown here.' : 'This one has no picture to show here; the user can play it in SPITE.')]
+      }
+      const picture = {
+        shape: pic.shape,
+        ...(pic.pixels ? { pixels: pic.pixels } : {}),
+        ...(node.kind === 'video' ? { of: 'the clip’s poster frame, which may be smaller than the clip' } : {}),
+      }
+      return [text({ ...detail, picture }), pic.content]
     },
   },
 
@@ -446,7 +621,8 @@ const TOOLS: ToolDef[] = [
     title: 'List models',
     description:
       'The image and video models this SPITE can generate with: their options, what inputs they take, and what one output costs. ' +
-      'Use it to propose a brief with real prices. Video is priced per second unless it says per clip.',
+      'Use it to propose a brief with real prices. Video is priced per second unless it says per clip: one clip costs the per-second price times its length, ' +
+      'and each per-second model also lists the price of a clip at its default length. Set a brief’s price ceilings at or above these exact figures.',
     inputSchema: {
       type: 'object',
       properties: { kind: { type: 'string', enum: ['image', 'video', 'all'], description: 'Default all.' } },
@@ -759,6 +935,13 @@ async function listModels(args: Args): Promise<Content[]> {
       return row
     }
     const silent = await table(false)
+    // The whole-clip price at the model's default length, priced the way a job is.
+    const defaultSeconds = Number.parseInt(m.defaultDuration || '', 10) || 0
+    const clipTable = async () => {
+      const row: Record<string, string> = {}
+      for (const r of tiers) row[r ?? 'any size'] = show(await priceOf(m, { resolution: r, durationSeconds: defaultSeconds, audio: false }))
+      return row
+    }
     const withSound = m.supportsAudio ? await table(true) : null
     const provider = await pricingProvider(m)
     const notes: string[] = []
@@ -774,6 +957,7 @@ async function listModels(args: Args): Promise<Content[]> {
       ...(notes.length ? { notes } : {}),
       [perSecond ? 'price_per_second' : 'price_per_clip']:
         withSound && JSON.stringify(withSound) !== JSON.stringify(silent) ? { without_sound: silent, with_sound: withSound } : silent,
+      ...(perSecond && defaultSeconds ? { [`price_of_a_${defaultSeconds}s_clip`]: await clipTable() } : {}),
       ...(provider !== 'fal' ? { billed_by: 'the model maker’s own API (Settings → Model providers)' } : {}),
     })
   }

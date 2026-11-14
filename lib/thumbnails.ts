@@ -42,25 +42,49 @@ export async function getOrCreateThumbnail(key: string): Promise<Buffer | null> 
   }
 }
 
+export interface Preview {
+  data: Buffer
+  /** Pixel size of the stored original. */
+  width: number
+  height: number
+}
+
 /**
- * A one-off JPEG rendition of a stored image, longest side at most `size`.
- * Not stored: for views that are requested rarely and at varying sizes.
- * Null when the object is missing or isn't a still image.
+ * A one-off JPEG rendition of a stored image, longest side at most `size`,
+ * with the original's pixel size. Not stored: for views that are requested
+ * rarely and at varying sizes. Null when the object is missing or isn't a
+ * still image.
  */
-export async function renderPreview(key: string, size: number): Promise<Buffer | null> {
+export async function renderPreview(key: string, size: number): Promise<Preview | null> {
   try {
     const original = await getR2Client().send(
       new GetObjectCommand({ Bucket: process.env.R2_BUCKET_NAME!, Key: key }),
     )
     const bytes = await original.Body?.transformToByteArray()
     if (!bytes?.length || !isRasterImage(bytes)) return null
-    return await sharp(Buffer.from(bytes))
+    const input = Buffer.from(bytes)
+    const meta = await sharp(input).metadata()
+    if (!meta.width || !meta.height) return null
+    // EXIF orientations 5-8 are stored on their side: report the upright size.
+    const sideways = (meta.orientation ?? 1) >= 5
+    const data = await sharp(input)
       .rotate()
       .resize(size, size, { fit: 'inside', withoutEnlargement: true })
       .jpeg({ quality: 82 })
       .toBuffer()
+    return { data, width: sideways ? meta.height : meta.width, height: sideways ? meta.width : meta.height }
   } catch (err) {
     console.error('[thumbnails] preview failed for', key, err)
+    return null
+  }
+}
+
+/** Pixel size of an image buffer (e.g. a stored thumbnail, which keeps the original's shape). */
+export async function imageSize(buffer: Buffer): Promise<{ width: number; height: number } | null> {
+  try {
+    const { width, height } = await sharp(buffer).metadata()
+    return width && height ? { width, height } : null
+  } catch {
     return null
   }
 }
