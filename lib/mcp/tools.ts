@@ -997,10 +997,13 @@ const TOOLS: ToolDef[] = [
       const missing = numbers.filter((n) => !found.some((d) => d.number === n))
       if (missing.length) throw new ToolError(`No such draft in this project: ${missing.join(', ')}. Nothing was kept.`)
       await keepDrafts(project.id, numbers)
-      const already = found.filter((d) => d.state === 'on_board').map((d) => d.number)
+      const onBoard = found.filter((d) => d.state === 'on_board')
+      const already = onBoard.map((d) => d.number)
+      const byHand = onBoard.filter((d) => !d.placedByKeep).map((d) => d.number)
       return [text({
         kept: numbers,
         ...(already.length ? { already_on_board: already } : {}),
+        ...(byHand.length ? { put_there_by_the_user: byHand, why: 'These were placed on the board by hand in SPITE, not through keep_drafts.' } : {}),
         note: project.mode === 'canvas'
           ? 'They will appear on the board when the project’s canvas is open in SPITE.'
           : 'This is a Flow project with no board; the drafts are kept in its library and no longer expire.',

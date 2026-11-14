@@ -353,6 +353,8 @@ export interface Draft {
   state: 'draft' | 'kept' | 'on_board'
   /** It was placed on the board and has since been taken off again. */
   removedFromBoard: boolean
+  /** It reached the board through keep_drafts, rather than being put there by hand in the app. */
+  placedByKeep: boolean
 }
 
 function toDraft(r: Record<string, unknown>): Draft {
@@ -370,6 +372,7 @@ function toDraft(r: Record<string, unknown>): Draft {
     createdAt: new Date(r.created_at as string).toISOString(),
     state: r.used_in_canvas ? 'on_board' : r.kept_at && !r.placed_at ? 'kept' : 'draft',
     removedFromBoard: !!r.placed_at && !r.used_in_canvas,
+    placedByKeep: !!r.placed_at,
   }
 }
 
