@@ -41,6 +41,10 @@ export async function POST(request: NextRequest) {
     referenceImageUrls,
     referenceGroups,
     settings,
+    // Set by callers that agreed a price up front (the Claude connection): if
+    // the model maker's own API can't take the job, refuse it instead of
+    // sending it to fal at fal's higher price.
+    noFallback,
   } = await request.json()
 
   if (!modelId) {
@@ -354,6 +358,13 @@ export async function POST(request: NextRequest) {
       if (err instanceof ProviderError && err.routeUnavailable) {
         // Unreachable, bad key, or the model isn't activated on the account:
         // nothing was created there, so fal can take the job.
+        if (noFallback === true) {
+          await rollbackSpend(reservation.ledgerId)
+          return NextResponse.json(
+            { error: `${provider.label} can\u2019t take this job right now (${describeUnavailable(err)}). It was not sent to fal, where it costs more.` },
+            { status: 503 },
+          )
+        }
         console.warn(`[${provider.id}] route unavailable (${err.status} ${err.code || ''}), falling back to fal`)
         fallbackReason = describeUnavailable(err)
         fallbackFrom = provider.label

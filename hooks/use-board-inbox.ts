@@ -10,8 +10,15 @@ import { labelFromPrompt } from '@/lib/auto-name'
 // drafts therefore wait in a queue (/api/projects/<id>/board-inbox) and this
 // hook, running inside the canvas, adds them as nodes like any other edit.
 //
+// Adding a node makes this tab autosave, and a save replaces the board with
+// this tab's copy. So before adding anything the tab has to CLAIM the drafts,
+// and the server only grants a claim to a tab whose copy of the board is the
+// current one (lib/canvas-rev.ts), and only to one tab at a time. An
+// out-of-date tab, or a second tab on the same project, is told no: it adds
+// nothing, saves nothing, and so can't write its old copy over newer work.
+//
 // A draft is confirmed as placed only once a save has gone through with it on
-// the board. Close the tab before that and it simply arrives again next time.
+// the board. Close the tab before that and it is offered again later.
 
 interface InboxItem {
   number: number
@@ -33,6 +40,7 @@ const POLL_MS = 10_000
 const POLL_OFF_MS = 5 * 60_000
 const COLUMNS = 3
 const GAP = 380
+const STALE_TOAST = 'board-inbox-stale'
 
 export function useBoardInbox(opts: {
   projectId: string | undefined
@@ -43,20 +51,28 @@ export function useBoardInbox(opts: {
   activeSceneId: string
   screenToFlowPosition: (p: { x: number; y: number }) => { x: number; y: number }
   saveStatus: 'saved' | 'unsaved' | 'saving'
+  /** The board revision this tab holds: from its load, then from each of its saves. */
+  revRef: { current: number | null }
 }) {
   const { projectId, ready, saveStatus } = opts
   // Latest callbacks/values without restarting the poll loop on every render.
   const latest = useRef(opts)
   latest.current = opts
   const awaitingSave = useRef<number[]>([])
+  // Names this tab to the server, so a claim it made is still its own on retry.
+  const tabId = useRef('')
+  if (!tabId.current) tabId.current = `tab-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
 
-  const confirm = (numbers: number[]) => {
-    if (!projectId || numbers.length === 0) return
+  const post = (body: Record<string, unknown>) =>
     fetch(`/api/projects/${projectId}/board-inbox`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ placed: numbers }),
-    }).catch(() => {
+      body: JSON.stringify(body),
+    })
+
+  const confirm = (numbers: number[]) => {
+    if (!projectId || numbers.length === 0) return
+    post({ placed: numbers }).catch(() => {
       // Not confirmed: the queue offers them again, and the on-board check
       // below recognises them, so nothing is added twice.
     })
@@ -75,26 +91,50 @@ export function useBoardInbox(opts: {
         if (stopped) return
         if (data && data.enabled === false) next = POLL_OFF_MS
         const items = data?.items || []
-        if (items.length > 0) place(items)
+        if (items.length > 0) await take(items)
       } catch {
         // Offline or a hiccup: try again on the normal schedule.
       }
       if (!stopped) timer = setTimeout(tick, next)
     }
 
-    const place = (items: InboxItem[]) => {
-      const { getNodes, setNodes, activeSceneId, screenToFlowPosition } = latest.current
-      const onBoard = getNodes()
+    const take = async (items: InboxItem[]) => {
+      const onBoard = latest.current.getNodes()
       const isOnBoard = (it: InboxItem) =>
         onBoard.some((n) => n.data?.assetId === it.assetId || n.data?.outputUrl === it.url || n.data?.thumbnail === it.url)
       const already = items.filter(isOnBoard)
-      const fresh = items.filter((it) => !isOnBoard(it))
+      const wanted = items.filter((it) => !isOnBoard(it))
 
       // Already there (placed earlier, confirmation lost): confirm, unless a
       // save with them is still pending.
       confirm(already.map((it) => it.number).filter((n) => !awaitingSave.current.includes(n)))
-      if (fresh.length === 0) return
+      if (wanted.length === 0) return
 
+      // Ask for them. Granted only if this tab's copy of the board is current
+      // and no other tab has taken them.
+      const rev = latest.current.revRef.current
+      if (rev === null) return
+      const res = await post({ claim: wanted.map((it) => it.number), tab: tabId.current, rev })
+      const granted = res.ok ? ((await res.json()) as { claimed?: number[]; stale?: boolean }) : null
+      if (stopped || !granted) return
+      if (granted.stale) {
+        // Another tab or device has saved this board since this one loaded.
+        // Say so once; a reload brings the board up to date and the shots in.
+        toast.info(
+          wanted.length === 1
+            ? 'Claude has a shot for this board, but the board was changed somewhere else'
+            : `Claude has ${wanted.length} shots for this board, but the board was changed somewhere else`,
+          { id: STALE_TOAST, description: 'Reload this page to bring it up to date. Nothing was changed here.', duration: Infinity },
+        )
+        return
+      }
+      const claimed = new Set(granted.claimed || [])
+      const fresh = wanted.filter((it) => claimed.has(it.number))
+      if (fresh.length > 0) place(fresh)
+    }
+
+    const place = (fresh: InboxItem[]) => {
+      const { setNodes, activeSceneId, screenToFlowPosition } = latest.current
       // A tidy grid around the middle of what the user is looking at.
       const centre = screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 })
       const cols = Math.min(COLUMNS, fresh.length)
@@ -104,11 +144,14 @@ export function useBoardInbox(opts: {
         const position = { x: left + (i % cols) * GAP, y: centre.y - 160 + Math.floor(i / cols) * GAP }
         const label = labelFromPrompt(it.prompt) || `Claude draft ${it.number}`
         const base = { sceneId: activeSceneId, isUploading: false, uploadError: false, assetId: it.assetId }
+        // Starts with the moment it was added, like every node id: the board
+        // view reads a node's age from it.
+        const id = `node-${stamp}-${i}${Math.random().toString(36).slice(2, 7)}`
         if (it.type === 'image') {
           // An image node that already holds its result, with the prompt and
           // settings it was made with, so it can be reworked on the board.
           return {
-            id: `node-${stamp}-${i}-${Math.random().toString(36).slice(2, 7)}`,
+            id,
             type: 'imageGen',
             position,
             data: {
@@ -128,7 +171,7 @@ export function useBoardInbox(opts: {
           // Same idea for a clip: a video node holding its result and settings.
           // The node captures its own poster frame once it has loaded the clip.
           return {
-            id: `node-${stamp}-${i}-${Math.random().toString(36).slice(2, 7)}`,
+            id,
             type: 'videoGen',
             position,
             data: {

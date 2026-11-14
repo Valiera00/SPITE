@@ -11,6 +11,14 @@ export const dynamic = 'force-dynamic'
 
 const noStore = { 'Cache-Control': 'no-store' }
 
+function sameHost(origin: string, host: string | null): boolean {
+  try {
+    return !!host && new URL(origin).host.toLowerCase() === host.toLowerCase()
+  } catch {
+    return false
+  }
+}
+
 export async function GET() {
   try {
     return NextResponse.json(await getMcpStatus(), { headers: noStore })
@@ -21,6 +29,17 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+  // The login cookie is sent on requests from other pages on the same site
+  // (any other port on localhost counts), so a page elsewhere could post here
+  // on the owner's behalf. Two things it cannot do: send a JSON content type
+  // without the browser asking this server first, or hide where it came from.
+  if (!(request.headers.get('content-type') || '').toLowerCase().includes('application/json')) {
+    return NextResponse.json({ error: 'Send JSON.' }, { status: 415 })
+  }
+  const origin = request.headers.get('origin')
+  if (origin && !sameHost(origin, request.headers.get('host'))) {
+    return NextResponse.json({ error: 'Not allowed from another site.' }, { status: 403 })
+  }
   try {
     const body = await request.json().catch(() => null)
     const action = body?.action

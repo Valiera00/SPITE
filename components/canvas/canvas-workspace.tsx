@@ -320,7 +320,10 @@ function CanvasInner({ projectId }: { projectId: string }) {
   const [activeTool, setActiveTool] = useState<'select' | 'cut' | 'sticker' | 'comment'>('select')
 
   // Auto-save hook
-  const { saveCanvas, saveStatus } = useCanvasAutoSave(projectId, nodes, edges, scenes, activeSceneId)
+  // Which version of the board this tab holds: set when the canvas loads and
+  // after each of its own saves.
+  const canvasRevRef = useRef<number | null>(null)
+  const { saveCanvas, saveStatus } = useCanvasAutoSave(projectId, nodes, edges, scenes, activeSceneId, canvasRevRef)
   // True once the saved canvas has been read. Anything that adds nodes on its
   // own (the board inbox) waits for it, or the load would overwrite them.
   const [canvasLoaded, setCanvasLoaded] = useState(false)
@@ -351,7 +354,9 @@ function CanvasInner({ projectId }: { projectId: string }) {
             edges: savedEdges,
             scenes: savedScenes,
             activeSceneId: savedActiveSceneId,
+            rev: savedRev,
           } = await canvasResponse.json()
+          canvasRevRef.current = typeof savedRev === 'number' ? savedRev : null
           if (savedNodes && savedEdges) {
             setNodes(savedNodes)
             setEdges(savedEdges)
@@ -522,6 +527,7 @@ function CanvasInner({ projectId }: { projectId: string }) {
     activeSceneId,
     screenToFlowPosition,
     saveStatus,
+    revRef: canvasRevRef,
   })
 
   // Scene handlers. Name = highest existing "Scene N" + 1 so deletes

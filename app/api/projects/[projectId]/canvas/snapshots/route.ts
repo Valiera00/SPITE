@@ -1,3 +1,4 @@
+import { ensureCanvasRev } from '@/lib/canvas-rev'
 import { getDb, CANVAS_SAVE_LOCK_NS } from '@/lib/db'
 import { NextRequest, NextResponse } from 'next/server'
 
@@ -138,6 +139,9 @@ export async function POST(
         VALUES (${projectId}::text, ${edge.id}, ${edge.source}, ${edge.target}, ${edge.sourceHandle}, ${edge.targetHandle}, ${edge.animated}, ${JSON.stringify(edge.data || {})})
       `)
     }
+    // A restore rewrites the board, so every open tab's copy is now out of date.
+    await ensureCanvasRev(sql)
+    writeQueries.push(sql`UPDATE projects SET canvas_rev = canvas_rev + 1 WHERE id::text = ${projectId}`)
     await sql.transaction(writeQueries)
 
     return NextResponse.json({

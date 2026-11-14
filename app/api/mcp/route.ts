@@ -24,6 +24,14 @@ type Id = string | number | null
 const ok = (id: Id, result: unknown) => ({ jsonrpc: '2.0' as const, id, result })
 const fail = (id: Id, code: number, message: string) => ({ jsonrpc: '2.0' as const, id, error: { code, message } })
 
+function sameHost(origin: string, host: string | null): boolean {
+  try {
+    return !!host && new URL(origin).host.toLowerCase() === host.toLowerCase()
+  } catch {
+    return false
+  }
+}
+
 function unauthorized() {
   return NextResponse.json(
     { error: 'This SPITE’s Claude connection is off, or the token is wrong. Turn it on in Settings → Claude connection.' },
@@ -65,6 +73,14 @@ async function handle(message: unknown): Promise<object | null> {
 }
 
 export async function POST(request: NextRequest) {
+  // MCP clients are programs, not web pages, and send no Origin. A request
+  // that has one comes from a browser; only this app's own origin may call.
+  // (The token is the real gate; this is the check the MCP spec asks of
+  // servers against pages that reach a local address by trickery.)
+  const origin = request.headers.get('origin')
+  if (origin && !sameHost(origin, request.headers.get('host'))) {
+    return NextResponse.json({ error: 'Not allowed from another site.' }, { status: 403, headers: { 'Cache-Control': 'no-store' } })
+  }
   if (!(await verifyMcpAuthHeader(request.headers.get('authorization')))) return unauthorized()
 
   let body: unknown

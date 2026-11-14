@@ -10,6 +10,7 @@
 
 import { randomBytes } from 'node:crypto'
 import { getDb, type Sql } from '../db'
+import { ensureCanvasRev } from '../canvas-rev'
 
 let ready = false
 async function ensure(sql: Sql) {
@@ -60,6 +61,10 @@ async function ensure(sql: Sql) {
     PRIMARY KEY (project_id, number)
   )`
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_mcp_drafts_asset ON mcp_drafts (asset_id)`
+  // Which open canvas has taken a kept draft to place it (see claimForBoard).
+  await sql`ALTER TABLE mcp_drafts ADD COLUMN IF NOT EXISTS claimed_at timestamptz`
+  await sql`ALTER TABLE mcp_drafts ADD COLUMN IF NOT EXISTS claimed_by text`
+  await ensureCanvasRev(sql)
   ready = true
 }
 
@@ -182,7 +187,7 @@ export interface Job {
   modelId: string
   prompt: string
   settings: Record<string, unknown>
-  state: 'running' | 'done' | 'failed' | 'cancelled'
+  state: 'starting' | 'running' | 'done' | 'failed' | 'cancelled'
   error: string | null
   createdAt: string
 }
@@ -203,36 +208,73 @@ function toJob(r: Record<string, unknown>): Job {
   }
 }
 
-export async function createJob(input: {
+// Serialises reservations against the connection's hourly ceiling. A bigint
+// key ("MCPSP"), distinct from the app-wide spend gate's own lock.
+const MCP_SPEND_LOCK = 0x4d43505350
+
+/**
+ * Reserve room under the connection's hourly ceiling and create the job rows,
+ * in one step. Without this the check ("is there room?") and the record ("a
+ * job now exists") were separate, so several tool calls arriving together
+ * could each see room and overshoot the ceiling between them. Returns the new
+ * job ids, or null when the ceiling has no room for all of them: then nothing
+ * is created.
+ *
+ * Rows start as 'starting' and count toward the hour at once. Each is then
+ * either activated (the job was accepted) or dropped (it wasn't), which takes
+ * it back out of the count. A 'starting' row is only ever a reservation: it
+ * has no job behind it and nothing in the library, so dropping it loses nothing.
+ */
+export async function reserveJobs(input: {
   projectId: string
   briefId: string | null
-  requestId: string
-  pollModel: string
   modelId: string
   prompt: string
   settings: Record<string, unknown>
   estimatedUsd: number
-}): Promise<string> {
+  count: number
+  hourlyLimitUsd: number
+}): Promise<string[] | null> {
   const sql = getDb()
   await ensure(sql)
-  const id = newId('job')
-  await sql`
-    INSERT INTO mcp_jobs (id, project_id, brief_id, request_id, poll_model, model_id, prompt, settings, estimated_usd)
-    VALUES (${id}, ${input.projectId}, ${input.briefId}, ${input.requestId}, ${input.pollModel}, ${input.modelId},
-            ${input.prompt}, ${JSON.stringify(input.settings)}::jsonb, ${input.estimatedUsd})
-  `
-  return id
+  const ids = Array.from({ length: input.count }, () => newId('job'))
+  const results = await sql.transaction([
+    sql`SELECT pg_advisory_xact_lock(${MCP_SPEND_LOCK}::bigint)`,
+    // A reservation whose submit never came back (the server stopped mid-call)
+    // must not hold room forever.
+    sql`DELETE FROM mcp_jobs WHERE state = 'starting' AND created_at < now() - interval '10 minutes'`,
+    sql`
+      INSERT INTO mcp_jobs (id, project_id, brief_id, request_id, poll_model, model_id, prompt, settings, estimated_usd, state)
+      SELECT x.id, ${input.projectId}, ${input.briefId}, '', '', ${input.modelId}, ${input.prompt},
+             ${JSON.stringify(input.settings)}::jsonb, ${input.estimatedUsd}, 'starting'
+      FROM unnest(${ids}::text[]) AS x(id)
+      WHERE (
+        SELECT COALESCE(SUM(estimated_usd), 0) FROM mcp_jobs
+        WHERE created_at > now() - interval '1 hour' AND state <> 'failed'
+      ) + ${input.estimatedUsd}::numeric * ${input.count}::int <= ${input.hourlyLimitUsd}::numeric + 0.000001
+      RETURNING id
+    `,
+  ])
+  const made = (results[2] as { id: string }[]).map((r) => String(r.id))
+  return made.length === input.count ? ids : null
 }
 
-/** Estimated cost of the jobs Claude started in the last hour, failed ones excluded. */
-export async function mcpSpendLastHourUsd(): Promise<number> {
+/** Reservations whose job was never accepted. Only rows still 'starting' are touched. */
+export async function dropReservations(jobIds: string[]): Promise<void> {
+  if (jobIds.length === 0) return
   const sql = getDb()
   await ensure(sql)
-  const rows = await sql`
-    SELECT COALESCE(SUM(estimated_usd), 0)::float8 AS total FROM mcp_jobs
-    WHERE created_at > now() - interval '1 hour' AND state <> 'failed'
+  await sql`DELETE FROM mcp_jobs WHERE id = ANY(${jobIds}::text[]) AND state = 'starting'`
+}
+
+/** A reserved job was accepted: record how to follow it, and its real estimate. */
+export async function activateJob(jobId: string, requestId: string, pollModel: string, estimatedUsd: number): Promise<void> {
+  const sql = getDb()
+  await ensure(sql)
+  await sql`
+    UPDATE mcp_jobs SET state = 'running', request_id = ${requestId}, poll_model = ${pollModel}, estimated_usd = ${estimatedUsd}
+    WHERE id = ${jobId} AND state = 'starting'
   `
-  return Number(rows[0]?.total) || 0
 }
 
 export async function getJobs(projectId: string, ids?: string[]): Promise<Job[]> {
@@ -297,8 +339,10 @@ export interface Draft {
   modelId: string | null
   settings: Record<string, unknown>
   createdAt: string
-  /** 'draft' = in the library only; 'kept' = queued for the board; 'on_board' = placed. */
+  /** 'draft' = in the library only; 'kept' = queued for the board; 'on_board' = on it now. */
   state: 'draft' | 'kept' | 'on_board'
+  /** It was placed on the board and has since been taken off again. */
+  removedFromBoard: boolean
 }
 
 function toDraft(r: Record<string, unknown>): Draft {
@@ -314,7 +358,8 @@ function toDraft(r: Record<string, unknown>): Draft {
     modelId: r.model_id ? String(r.model_id) : null,
     settings: (r.settings as Record<string, unknown>) || {},
     createdAt: new Date(r.created_at as string).toISOString(),
-    state: r.placed_at || r.used_in_canvas ? 'on_board' : r.kept_at ? 'kept' : 'draft',
+    state: r.used_in_canvas ? 'on_board' : r.kept_at && !r.placed_at ? 'kept' : 'draft',
+    removedFromBoard: !!r.placed_at && !r.used_in_canvas,
   }
 }
 
@@ -373,8 +418,16 @@ export async function keepDrafts(projectId: string, numbers: number[]): Promise<
   const sql = getDb()
   await ensure(sql)
   await sql.transaction([
-    sql`UPDATE mcp_drafts SET kept_at = COALESCE(kept_at, now())
-        WHERE project_id = ${projectId} AND number = ANY(${numbers}::int[])`,
+    // Queue the ones that aren't on the board. That includes a draft that was
+    // placed once and later taken off: keeping it again puts it back in the
+    // queue. One already waiting keeps its place; one on the board is left be.
+    sql`UPDATE mcp_drafts d
+        SET kept_at = CASE WHEN d.kept_at IS NOT NULL AND d.placed_at IS NULL THEN d.kept_at ELSE now() END,
+            placed_at = NULL, claimed_at = NULL, claimed_by = NULL
+        FROM generation_history g
+        WHERE g.id = d.asset_id AND g.used_in_canvas = false
+          AND d.project_id = ${projectId} AND d.number = ANY(${numbers}::int[])
+          AND (d.kept_at IS NULL OR d.placed_at IS NOT NULL)`,
     sql`UPDATE generation_history SET expires_at = NULL
         WHERE project_id = ${projectId}
           AND id IN (SELECT asset_id FROM mcp_drafts WHERE project_id = ${projectId} AND number = ANY(${numbers}::int[]))`,
@@ -398,11 +451,50 @@ export async function boardInbox(projectId: string): Promise<Draft[]> {
   return rows.map(toDraft)
 }
 
+/**
+ * An open canvas asks to take kept drafts so it can place them.
+ *
+ * Placing a draft makes that tab autosave, and a save replaces the whole board
+ * with the tab's copy. So a claim is granted only when BOTH hold:
+ *   - the tab's copy is current: the revision it holds is the project's
+ *     (lib/canvas-rev.ts). A tab that loaded before someone else saved is
+ *     refused, so it never autosaves its old copy over the newer board.
+ *   - no other tab holds the draft. Two up-to-date tabs would otherwise both
+ *     place it and then save over each other.
+ * A claim lapses after two minutes, so a tab that closed before saving doesn't
+ * strand the draft.
+ *
+ * `stale` says the refusal was for the first reason, so the tab can tell the
+ * owner to reload.
+ */
+export async function claimForBoard(
+  projectId: string,
+  numbers: number[],
+  tabId: string,
+  rev: number,
+): Promise<{ claimed: number[]; stale: boolean }> {
+  if (numbers.length === 0) return { claimed: [], stale: false }
+  const sql = getDb()
+  await ensure(sql)
+  const rows = await sql`
+    UPDATE mcp_drafts d SET claimed_at = now(), claimed_by = ${tabId}
+    WHERE d.project_id = ${projectId} AND d.number = ANY(${numbers}::int[])
+      AND d.kept_at IS NOT NULL AND d.placed_at IS NULL
+      AND (d.claimed_at IS NULL OR d.claimed_by = ${tabId} OR d.claimed_at < now() - interval '2 minutes')
+      AND EXISTS (SELECT 1 FROM projects p WHERE p.id::text = ${projectId} AND p.canvas_rev = ${rev})
+    RETURNING d.number
+  `
+  const claimed = rows.map((r) => Number(r.number))
+  if (claimed.length > 0) return { claimed, stale: false }
+  const current = await sql`SELECT canvas_rev FROM projects WHERE id::text = ${projectId} LIMIT 1`
+  return { claimed: [], stale: current.length > 0 && Number(current[0].canvas_rev) !== rev }
+}
+
 /** The canvas confirms it placed these drafts. */
 export async function markPlaced(projectId: string, numbers: number[]): Promise<void> {
   if (numbers.length === 0) return
   const sql = getDb()
   await ensure(sql)
-  await sql`UPDATE mcp_drafts SET placed_at = now()
+  await sql`UPDATE mcp_drafts SET placed_at = now(), claimed_at = NULL, claimed_by = NULL
             WHERE project_id = ${projectId} AND number = ANY(${numbers}::int[]) AND placed_at IS NULL`
 }

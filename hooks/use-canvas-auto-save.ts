@@ -14,6 +14,9 @@ export function useCanvasAutoSave(
   edges: Edge[],
   scenes: PersistedScene[],
   activeSceneId: string,
+  // Receives the board's revision after each save (lib/canvas-rev.ts), so the
+  // tab knows which version of the board it holds.
+  revRef?: { current: number | null },
 ) {
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const lastSavedRef = useRef<string>('')
@@ -88,6 +91,8 @@ export function useCanvasAutoSave(
       })
 
       if (response.ok) {
+        const saved = await response.json().catch(() => null)
+        if (revRef && typeof saved?.rev === 'number') revRef.current = saved.rev
         lastSavedRef.current = currentState
         setSaveStatus('saved')
         failToastedRef.current = false

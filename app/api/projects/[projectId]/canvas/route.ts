@@ -1,6 +1,7 @@
 import { getDb, CANVAS_SAVE_LOCK_NS } from '@/lib/db'
 import { NextRequest, NextResponse } from 'next/server'
 import { getProjectAssetRetentionDays } from '@/lib/retention'
+import { ensureCanvasRev } from '@/lib/canvas-rev'
 
 // A save of a 500-node canvas is one transaction of ~1000 statements, a
 // snapshot insert and three reconcile updates. Vercel's default 10s function
@@ -144,6 +145,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     // inside a tagged-template transaction would lock for longer than
     // we want, and these calls are no-ops after the first cold start.
     await ensureSceneColumns(sql)
+    await ensureCanvasRev(sql)
 
     // Touch the project so the dashboard's "last edited" timestamp +
     // most-recently-used sort actually reflect canvas activity, not just
@@ -154,10 +156,16 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       UPDATE projects
       SET updatedat = NOW(),
           scenes = COALESCE(${scenesToSave ? JSON.stringify(scenesToSave) : null}::jsonb, scenes),
-          active_scene_id = COALESCE(${activeIdToSave}, active_scene_id)
+          active_scene_id = COALESCE(${activeIdToSave}, active_scene_id),
+          canvas_rev = canvas_rev + 1
       WHERE id = ${projectId}
+      RETURNING canvas_rev
     `)
-    await sql.transaction(writeQueries)
+    const written = await sql.transaction(writeQueries)
+    // The revision this save produced (lib/canvas-rev.ts). The saving tab keeps
+    // it, to know later whether anyone else has written the board since.
+    const revRow = (written[written.length - 1] as { canvas_rev?: unknown }[] | undefined)?.[0]
+    const rev = revRow ? Number(revRow.canvas_rev) || 0 : undefined
 
     // Rolling-backup snapshot: write the just-saved state to a separate
     // snapshots table so we can recover from a botched save / accidental
@@ -266,7 +274,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       console.error('[canvas] Protection reconcile failed:', reconcileErr)
     }
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ success: true, rev })
   } catch (error) {
     console.error('Error saving canvas:', error)
     return NextResponse.json({ error: 'Failed to save canvas' }, { status: 500 })
@@ -283,6 +291,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     // instance. Also keeps existing installs working without a manual
     // migration step.
     await ensureSceneColumns(sql)
+    await ensureCanvasRev(sql)
 
     // Fetch nodes (cast to text to avoid UUID inference)
     const nodesResult = await sql`
@@ -305,7 +314,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     // project, or pre-migration project on its first load after the
     // scene-persistence change).
     const projectMeta = await sql`
-      SELECT scenes, active_scene_id FROM projects WHERE id = ${projectId}
+      SELECT scenes, active_scene_id, canvas_rev FROM projects WHERE id = ${projectId}
     `
     const savedScenes = (projectMeta[0] as any)?.scenes as
       | { id: string; name: string }[]
@@ -337,7 +346,8 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       data: row.data || {},
     }))
 
-    return NextResponse.json({ nodes, edges, scenes, activeSceneId })
+    const rev = Number((projectMeta[0] as any)?.canvas_rev) || 0
+    return NextResponse.json({ nodes, edges, scenes, activeSceneId, rev })
   } catch (error) {
     console.error('Error loading canvas:', error)
     return NextResponse.json({ error: 'Failed to load canvas' }, { status: 500 })

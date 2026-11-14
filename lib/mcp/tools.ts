@@ -15,15 +15,15 @@ import { GET as foldersGet } from '@/app/api/folders/route'
 import { getDb } from '../db'
 import { getImageModels, getVideoModels, getModelById, type ModelConfig } from '../fal-models'
 import { estimateGenerationCost } from '../fal-cost'
-import { compileMentionsForModel, pickRefStrategy, type FolderType } from '../mention-prompt'
+import { compileMentionsForModel, type FolderType } from '../mention-prompt'
 import { resolveRoute } from '../model-routing'
 import { isThumbnailable } from '../r2-upload'
 import { getOrCreateThumbnail, imageSize, renderPreview } from '../thumbnails'
 import { labelFromPrompt } from '../auto-name'
 import { getMcpHourlyLimitUsd } from './access'
 import {
-  activeBrief, addDraft, claimJobForCheck, createJob, finishJob, getJobs, keepDrafts, listDrafts,
-  mcpSpendLastHourUsd, releaseJob, returnToBrief, startBrief, takeFromBrief,
+  activateJob, activeBrief, addDraft, claimJobForCheck, dropReservations, finishJob, getJobs, keepDrafts, listDrafts,
+  releaseJob, reserveJobs, returnToBrief, startBrief, takeFromBrief,
   type Brief, type Draft, type Job, type Kind,
 } from './store'
 
@@ -367,9 +367,30 @@ const takesText = (m: ModelConfig) => m.inputTypes.includes('text')
 const takesImage = (m: ModelConfig) => m.inputTypes.includes('image')
 const takesVideo = (m: ModelConfig) => m.inputTypes.includes('video')
 const promptOptional = (m: ModelConfig) => !takesText(m) || !!m.optionalPrompt
+/** Whether a prompt means anything to the model: it reads text, or takes optional guidance (Happy Horse, Clarity). */
+const promptAllowed = (m: ModelConfig) => takesText(m) || !!m.optionalPrompt
 /** Models that can't run from text alone: they animate, rework or upscale an image. */
 const needsImage = (m: ModelConfig) =>
-  takesImage(m) && (!takesText(m) || takesVideo(m) || /image-to-video/.test(m.falModel))
+  // An optional prompt marks a model that reworks what it is given (the
+  // upscalers): without a picture it has nothing to work on.
+  takesImage(m) && (!takesText(m) || takesVideo(m) || !!m.optionalPrompt || /image-to-video/.test(m.falModel))
+
+/**
+ * How many reference pictures (reference_images or @Tag folders) reach the
+ * model. Follows what the request builder actually sends: a video model
+ * without a reference field gets no reference pictures at all, whatever its
+ * prompt says, and an image model with a single picture slot shares that slot
+ * with input_image.
+ */
+function refSupport(m: ModelConfig): 'several' | 'one' | 'none' {
+  if (!takesText(m)) return 'none'
+  if (m.category === 'video') {
+    if (!m.referenceParam) return 'none'
+    return m.referenceParam === 'subject_reference_image_url' ? 'one' : 'several'
+  }
+  if (m.imageParam === 'image_urls' || m.referenceParam) return 'several'
+  return takesImage(m) ? 'one' : 'none'
+}
 
 /** Whose price list applies: the maker's own API when Settings routes the model there, else fal. */
 async function pricingProvider(model: ModelConfig) {
@@ -399,6 +420,7 @@ const draftView = (d: Draft) => ({
   draft: d.number,
   kind: d.type,
   state: d.state,
+  ...(d.removedFromBoard ? { note: 'Was on the board and has been taken off. keep_drafts puts it back.' } : {}),
   model: d.modelId,
   prompt: d.prompt,
   made: d.createdAt,
@@ -735,7 +757,7 @@ const TOOLS: ToolDef[] = [
         sound: { type: 'boolean', description: 'Generate sound, on models that can. Default false. May change the price.' },
         first_frame: { type: ['integer', 'string'], description: 'Image the clip starts from: a draft number or a board node_id.' },
         end_frame: { type: ['integer', 'string'], description: 'Image the clip ends on: a draft number or a board node_id.' },
-        reference_images: { type: 'array', maxItems: 10, items: { type: ['integer', 'string'] }, description: 'Reference pictures, as draft numbers or board node_ids. They come before any @Tag folders. On models that cite references, name them in the prompt in the order given: @Image1, @Image2 (Seedance, Wan, Veo) or @Element1, @Element2 (Kling).' },
+        reference_images: { type: 'array', maxItems: 10, items: { type: ['integer', 'string'] }, description: 'Reference pictures, as draft numbers or board node_ids. They come before any @Tag folders. Where list_models shows cite_references_as for the model, name them that way in the prompt in the order given (@Image1, @Image2 or @Element1, @Element2); any the prompt doesn’t name are named for you at the end. Other models take them without naming.' },
         source_video: { type: ['integer', 'string'], description: 'A clip to work from, for models that take one: a video draft number or a board node_id.' },
       },
       required: ['project_id', 'model'],
@@ -890,9 +912,6 @@ const TOOLS: ToolDef[] = [
 async function listModels(args: Args): Promise<Content[]> {
   const kind = str(args, 'kind', false) || 'all'
   if (!['image', 'video', 'all'].includes(kind)) throw new ToolError('"kind" must be image, video or all.')
-  const refs: Record<string, string> = {
-    'citation-flat': 'several', 'citation-elements': 'several', multi: 'several', single: 'one', none: 'none',
-  }
   const show = (p: number | null) => (p === null ? 'unknown' : usd(p))
   const out: Record<string, unknown>[] = []
   for (const m of allModels()) {
@@ -905,8 +924,9 @@ async function listModels(args: Args): Promise<Content[]> {
       about: m.description,
       ...(m.aspectRatios.length ? { aspect_ratios: m.aspectRatios } : {}),
       ...(m.resolutions?.length ? { resolutions: m.resolutions, default_resolution: m.defaultResolution } : {}),
-      prompt: !takesText(m) ? 'not used' : m.optionalPrompt ? 'optional' : 'required',
-      folder_references: takesText(m) ? refs[pickRefStrategy(m)] : 'none',
+      prompt: !promptAllowed(m) ? 'not used' : promptOptional(m) ? 'optional' : 'required',
+      folder_references: refSupport(m),
+      ...(m.referenceCite && refSupport(m) !== 'none' ? { cite_references_as: `${m.referenceCite}1, ${m.referenceCite}2 … in the prompt, in the order the pictures are given` } : {}),
     }
     if (m.category === 'image') {
       const table = async (q?: string) => {
@@ -922,7 +942,7 @@ async function listModels(args: Args): Promise<Content[]> {
       out.push({
         ...common,
         ...(m.qualities?.length ? { qualities: m.qualities, default_quality: m.defaultQuality } : {}),
-        input_image: !takesImage(m) ? 'no' : needsImage(m) ? 'required (based_on_draft)' : 'optional (based_on_draft)',
+        input_image: !takesImage(m) ? 'no' : needsImage(m) ? 'required' : refSupport(m) === 'one' ? 'optional (the one picture this model takes: not together with a folder)' : 'optional',
         price_per_image: price,
       })
       continue
@@ -954,6 +974,7 @@ async function listModels(args: Args): Promise<Content[]> {
       first_frame: !takesImage(m) ? 'no' : needsImage(m) ? 'required' : 'optional',
       end_frame: takesImage(m) && !takesVideo(m) ? 'optional' : 'no',
       source_video: takesVideo(m) ? 'required' : 'no',
+      ...(takesVideo(m) && !perSecond ? { price_note: 'The per-clip price is for a source of about 10 seconds. A longer source costs more, in proportion to its length.' } : {}),
       ...(notes.length ? { notes } : {}),
       [perSecond ? 'price_per_second' : 'price_per_clip']:
         withSound && JSON.stringify(withSound) !== JSON.stringify(silent) ? { without_sound: silent, with_sound: withSound } : silent,
@@ -983,7 +1004,7 @@ async function generate(kind: Kind, args: Args): Promise<Content[]> {
   const prompt = str(args, 'prompt', false) || ''
   if (prompt.length > 8000) throw new ToolError('The prompt is too long (8000 characters at most).')
   if (!prompt && !promptOptional(model)) throw new ToolError(`${model.name} needs a prompt.`)
-  if (prompt && !takesText(model)) throw new ToolError(`${model.name} doesn’t take a prompt. Leave "prompt" out.`)
+  if (prompt && !promptAllowed(model)) throw new ToolError(`${model.name} doesn’t take a prompt. Leave "prompt" out.`)
 
   const pick = (key: string, options: string[] | undefined, fallback: string | undefined, label: string) => {
     const v = str(args, key, false)
@@ -1014,7 +1035,7 @@ async function generate(kind: Kind, args: Args): Promise<Content[]> {
   if (brief.models && !brief.models.includes(model.id)) {
     throw new ToolError(`The agreed brief allows only: ${brief.models.join(', ')}. Ask the user before using ${model.name}, then record a new brief.`)
   }
-  const price = await priceOf(model, {
+  let price = await priceOf(model, {
     resolution, quality,
     durationSeconds: duration && duration !== 'auto' ? Number.parseInt(duration, 10) || undefined : undefined,
     autoDuration: duration === 'auto',
@@ -1034,15 +1055,6 @@ async function generate(kind: Kind, args: Args): Promise<Content[]> {
       left > 0
         ? `The agreed brief has ${left} ${noun}${left === 1 ? '' : 's'} left, and this asks for ${count}. Ask for fewer, or ask the user for more and record a new brief.`
         : `The agreed brief has no ${noun}s left. Ask the user whether to continue, then record a new brief.`,
-    )
-  }
-  // The owner's own ceiling for this connection, from Settings. Stated as a
-  // limit, never as a running total.
-  const hourly = await getMcpHourlyLimitUsd()
-  if ((await mcpSpendLastHourUsd()) + price * count > hourly + 1e-9) {
-    throw new ToolError(
-      'This would go over the hourly limit set for Claude in SPITE’s Settings. ' +
-      `Ask for fewer or cheaper ${noun}s, wait a while, or the user can raise it in Settings → Claude connection.`,
     )
   }
 
@@ -1075,7 +1087,7 @@ async function generate(kind: Kind, args: Args): Promise<Content[]> {
     }
   }
 
-  interface Input { from: string; url: string }
+  interface Input { from: string; url: string; seconds?: number }
   let board: BoardItem[] | null = null
   const resolveInput = async (value: unknown, key: string, want: 'image' | 'video'): Promise<Input> => {
     const a = (t: string) => (t === 'video' ? 'a video' : t === 'audio' ? 'a sound' : 'an image')
@@ -1085,14 +1097,14 @@ async function generate(kind: Kind, args: Args): Promise<Content[]> {
       const [draft] = await listDrafts(project.id, { numbers: [asNumber] })
       if (!draft) throw new ToolError(`There is no draft ${asNumber} in this project.`)
       if (draft.type !== want) throw new ToolError(`Draft ${asNumber} is ${a(draft.type)}; "${key}" needs ${a(want)}.`)
-      return { from: `draft ${asNumber}`, url: draft.url }
+      return { from: `draft ${asNumber}`, url: draft.url, seconds: Number.parseInt(String(draft.settings.duration ?? ''), 10) || undefined }
     }
     if (typeof value !== 'string' || !value.trim()) throw new ToolError(`"${key}" must be a draft number or a board node_id.`)
     board = board ?? (await boardItems(project.id))
     const node = board.find((b) => b.nodeId === value.trim())
     if (!node) throw new ToolError(`"${key}": there is no node "${value}" with media on this board. Call view_board for the ids.`)
     if (node.kind !== want) throw new ToolError(`Node "${node.nodeId}" is ${a(node.kind)}; "${key}" needs ${a(want)}.`)
-    return { from: `node ${node.nodeId}`, url: node.url }
+    return { from: `node ${node.nodeId}`, url: node.url, seconds: Number.parseInt(String(node.settings.duration ?? ''), 10) || undefined }
   }
   const first = imageArg !== undefined ? await resolveInput(imageArg, imageKey, 'image') : undefined
   const end = endArg !== undefined ? await resolveInput(endArg, 'end_frame', 'image') : undefined
@@ -1121,7 +1133,10 @@ async function generate(kind: Kind, args: Args): Promise<Content[]> {
 
   // @Tag references, compiled exactly as the nodes do it.
   const folders = prompt ? await projectFolders(project.id) : []
-  const tags = Array.from(prompt.matchAll(/@([\w-]+)/g), (m) => m[1])
+  // @Image2 / @Element1 and the like are how a prompt points at a reference
+  // by position (the tools tell Claude to write them); they are not folders.
+  const CITATION = /^(image|element|video|audio|voice)\d+$/i
+  const tags = Array.from(prompt.matchAll(/@([\w-]+)/g), (m) => m[1]).filter((t) => !CITATION.test(t))
   const byTag = new Map(folders.map((f) => [tagFromName(f.name).toLowerCase(), f]))
   const unknownTags = Array.from(new Set(tags.filter((t) => !byTag.has(t.toLowerCase()))))
   if (unknownTags.length) {
@@ -1136,10 +1151,34 @@ async function generate(kind: Kind, args: Args): Promise<Content[]> {
   const refGroups = [...extras.map((x) => ({ urls: [x.url] })), ...compiled.refGroups]
   const hasRefs = refGroups.length > 0
   const notes: string[] = []
-  if (tags.length && compiled.strategy === 'none') {
-    notes.push(`${model.name} can’t use reference images, so the folders were sent as plain names only.`)
-  } else if (tags.length && compiled.strategy === 'single') {
-    notes.push(`${model.name} takes one reference image, so only the first folder’s first image was sent.`)
+  // Refuse rather than send a paid job whose prompt talks about a reference
+  // picture the model never receives.
+  const support = refSupport(model)
+  if (tags.length && support === 'none') {
+    throw new ToolError(
+      `${model.name} can’t use reference folders${kind === 'video' && takesImage(model) ? ' (it can start from a picture: first_frame)' : ''}. ` +
+      'Take the @Tags out of the prompt, or pick a model whose folder_references isn’t "none".',
+    )
+  }
+  if (tags.length && support === 'one') {
+    if (kind === 'image' && primary) {
+      throw new ToolError(`${model.name} takes one picture, and input_image already uses it. Drop the @Tag, or pick a model whose folder_references is "several".`)
+    }
+    notes.push(`${model.name} takes one reference picture: the first image of the first folder was sent.`)
+  }
+  if (hasRefs) {
+    const sent = refGroups.reduce((total, g) => total + g.urls.length, 0)
+    notes.push(`${sent} reference picture${sent === 1 ? ' was' : 's were'} sent with the job.`)
+  }
+  // Models that cite references only use the ones the prompt names. Folder
+  // tags became citations above; a wired reference the prompt doesn't name is
+  // named here, or it would be sent and then ignored.
+  let finalPrompt = compiled.prompt
+  if (kind === 'video' && extras.length > 0 && model.referenceCite) {
+    const missing = extras
+      .map((_, i) => `${model.referenceCite}${i + 1}`)
+      .filter((cite) => !new RegExp(`${cite}(?![0-9])`, 'i').test(finalPrompt))
+    if (missing.length) finalPrompt = `${finalPrompt} ${missing.join(' ')}`.trim()
   }
   if (kind === 'video' && hasRefs) {
     // The same two rules the video node enforces before it lets a job go.
@@ -1154,13 +1193,67 @@ async function generate(kind: Kind, args: Args): Promise<Content[]> {
     }
   }
 
+  // A flat per-clip price assumes a short source clip (about 10 seconds), but
+  // the real charge follows the clip's length, and any clip on the board can be
+  // chosen. Price a longer source in proportion, and an unknown length as 30s,
+  // so the brief and the hourly limit are checked against a realistic figure.
+  if (sourceVideo && (await priceOf(model, { durationSeconds: 1 })) === (await priceOf(model, { durationSeconds: 2 }))) {
+    const seconds = sourceVideo.seconds ?? 30
+    if (seconds > 10) {
+      price = price * (seconds / 10)
+      notes.push(
+        sourceVideo.seconds
+          ? `Priced for a ${seconds}s source clip.`
+          : 'The source clip’s length isn’t known, so it is priced as a 30s clip.',
+      )
+      if (cap !== null && price > cap + 1e-9) {
+        throw new ToolError(
+          `For this source clip one ${noun} is about ${usd(price)}, over the ${usd(cap)} per ${noun} in the agreed brief. ` +
+          'Ask the user, then record a new brief.',
+        )
+      }
+    }
+  }
+
   if (!(await takeFromBrief(brief.id, kind, count))) {
     throw new ToolError('The agreed brief no longer has room for this (it changed a moment ago). Call get_project to see what is left.')
   }
 
+  // The owner's own ceiling for this connection, from Settings: room is
+  // reserved and the job rows are created in one step, so calls arriving
+  // together can't each see room and overshoot it between them. Stated to
+  // Claude as a limit, never as a running total.
+  const reserved = await reserveJobs({
+    projectId: project.id,
+    briefId: brief.id,
+    modelId: model.id,
+    prompt,
+    settings: {
+      aspectRatio, resolution, quality, duration,
+      ...(kind === 'video' ? { enableAudio: sound } : {}),
+      ...(primary ? { from: primary.from } : {}),
+      ...(end ? { endFrame: end.from } : {}),
+      ...(extras.length ? { references: extras.map((x) => x.from) } : {}),
+      ...(sourceVideo ? { sourceVideo: sourceVideo.from } : {}),
+    },
+    estimatedUsd: price,
+    count,
+    hourlyLimitUsd: await getMcpHourlyLimitUsd(),
+  })
+  if (!reserved) {
+    await returnToBrief(brief.id, kind, count)
+    throw new ToolError(
+      'This would go over the hourly limit set for Claude in SPITE’s Settings. ' +
+      `Ask for fewer or cheaper ${noun}s, wait a while, or the user can raise it in Settings → Claude connection.`,
+    )
+  }
+
   const body = JSON.stringify({
     modelId: model.id,
-    prompt: compiled.prompt,
+    prompt: finalPrompt,
+    // The price was agreed for the route Settings chose; don't run it on fal
+    // at fal's higher price if that route is down.
+    noFallback: true,
     referenceImageUrl: primary?.url,
     endImageUrl: end?.url,
     referenceGroups: hasRefs ? refGroups : undefined,
@@ -1169,7 +1262,7 @@ async function generate(kind: Kind, args: Args): Promise<Content[]> {
       : { aspectRatio, resolution, quality, numImages: 1 },
   })
 
-  // One job per output, never overlapping — the same pacing the nodes use.
+  // One job per output, never overlapping: the same pacing the nodes use.
   const jobs: string[] = []
   let failure: string | null = null
   let actualPrice = price
@@ -1187,8 +1280,13 @@ async function generate(kind: Kind, args: Args): Promise<Content[]> {
       console.error('[mcp] submit threw:', err instanceof Error ? err.message : err)
     }
     if (!ok) {
-      failure = typeof data.error === 'string' ? data.error.slice(0, 500) : 'SPITE could not start the job.'
-      await returnToBrief(brief.id, kind, count - i) // this one and the rest never started
+      // Provider errors can echo the request, links to the owner's files included.
+      failure = typeof data.error === 'string'
+        ? data.error.replace(/https?:\/\/[^\s"')]+/g, '[link]').slice(0, 500)
+        : 'SPITE could not start the job.'
+      // This one and the rest never started: free their room and their tries.
+      await dropReservations(reserved.slice(i))
+      await returnToBrief(brief.id, kind, count - i)
       break
     }
     if (typeof data.estimatedUsd === 'number') actualPrice = data.estimatedUsd
@@ -1196,23 +1294,8 @@ async function generate(kind: Kind, args: Args): Promise<Content[]> {
     if (typeof data.fallbackReason === 'string' && !notes.some((n) => n.startsWith('Ran on fal'))) {
       notes.push(`Ran on fal instead of ${typeof data.fallbackFrom === 'string' ? data.fallbackFrom : 'the maker’s API'}: ${data.fallbackReason}. Price per ${noun} is about ${usd(actualPrice)}.`)
     }
-    jobs.push(await createJob({
-      projectId: project.id,
-      briefId: brief.id,
-      requestId: String(data.request_id),
-      pollModel: String(data.model),
-      modelId: model.id,
-      prompt,
-      settings: {
-        aspectRatio, resolution, quality, duration,
-        ...(kind === 'video' ? { enableAudio: sound } : {}),
-        ...(primary ? { from: primary.from } : {}),
-        ...(end ? { endFrame: end.from } : {}),
-        ...(extras.length ? { references: extras.map((x) => x.from) } : {}),
-        ...(sourceVideo ? { sourceVideo: sourceVideo.from } : {}),
-      },
-      estimatedUsd: actualPrice,
-    }))
+    await activateJob(reserved[i], String(data.request_id), String(data.model), actualPrice)
+    jobs.push(reserved[i])
   }
 
   if (jobs.length === 0) throw new ToolError(`Nothing was started. ${failure}`)
@@ -1244,7 +1327,7 @@ interface JobReport {
 }
 
 /** One status check of one running job. Returns null when another check holds it. */
-async function checkOne(job: Job): Promise<{ report: JobReport; newDrafts: number[] } | null> {
+async function checkOne(job: Job): Promise<{ report: JobReport; newDrafts: number[]; unreachable?: boolean } | null> {
   if (!(await claimJobForCheck(job.id))) return null
   try {
     const q = new URLSearchParams({ request_id: job.requestId, model: job.pollModel, projectId: job.projectId, prompt: job.prompt || 'Generated asset' })
@@ -1276,8 +1359,21 @@ async function checkOne(job: Job): Promise<{ report: JobReport; newDrafts: numbe
         ? { report: { job_id: job.id, state: 'done', drafts: numbers }, newDrafts: numbers }
         : { report: { job_id: job.id, state: 'done', note: 'It finished, but the result could not be saved to the library.' }, newDrafts: [] }
     }
+    if (!res.ok) {
+      // The provider has no record of the job, or it hasn't been reachable in
+      // three hours (far longer than any job runs): stop following it, or it
+      // would sit in every later check as "still running" for good.
+      const hours = (Date.now() - new Date(job.createdAt).getTime()) / 3_600_000
+      if (res.status === 404 || res.status === 422 || hours > 3) {
+        const error = 'SPITE lost track of this job: the provider no longer answers for it.'
+        await finishJob(job.id, 'failed', error)
+        await returnToBrief(job.briefId, kindOf(job), 1)
+        return { report: { job_id: job.id, state: 'failed', error }, newDrafts: [] }
+      }
+      await releaseJob(job.id)
+      return { report: { job_id: job.id, state: 'running', note: 'Could not reach the provider to check it just now; try again later.' }, newDrafts: [], unreachable: true }
+    }
     await releaseJob(job.id)
-    if (!res.ok) return { report: { job_id: job.id, state: 'running', note: 'Could not check it just now; try again.' }, newDrafts: [] }
     return { report: { job_id: job.id, state: data.status === 'IN_QUEUE' ? 'queued' : 'running' }, newDrafts: [] }
   } catch (err) {
     await releaseJob(job.id)
@@ -1300,6 +1396,7 @@ async function checkJobs(args: Args): Promise<Content[]> {
   for (const j of jobs) {
     if (j.state === 'failed') reports.set(j.id, { job_id: j.id, state: 'failed', error: j.error || 'Generation failed' })
     if (j.state === 'cancelled') reports.set(j.id, { job_id: j.id, state: 'cancelled' })
+    if (j.state === 'starting') reports.set(j.id, { job_id: j.id, state: 'starting' })
   }
   const doneBefore = jobs.filter((j) => j.state === 'done')
   let pending = jobs.filter((j) => j.state === 'running')
@@ -1309,13 +1406,24 @@ async function checkJobs(args: Args): Promise<Content[]> {
     for (const job of pending) {
       const result = await checkOne(job)
       if (!result) {
-        reports.set(job.id, { job_id: job.id, state: 'running' })
-        still.push(job)
+        // Another check holds it, or has just finished it: find out which.
+        const [now] = await getJobs(project.id, [job.id])
+        if (now && now.state === 'done') {
+          const numbers = (await listDrafts(project.id, { jobId: job.id })).map((d) => d.number)
+          reports.set(job.id, { job_id: job.id, state: 'done', drafts: numbers })
+          fresh.push(...numbers) // new to this caller, whoever finished it
+        } else if (now && now.state !== 'running') {
+          reports.set(job.id, { job_id: job.id, state: now.state, ...(now.error ? { error: now.error } : {}) })
+        } else {
+          reports.set(job.id, { job_id: job.id, state: 'running' })
+          still.push(job)
+        }
         continue
       }
       reports.set(job.id, result.report)
       fresh.push(...result.newDrafts)
-      if (result.report.state === 'running' || result.report.state === 'queued') still.push(job)
+      // A job the provider can't be reached for isn't worth waiting on here.
+      if ((result.report.state === 'running' || result.report.state === 'queued') && !result.unreachable) still.push(job)
     }
     pending = still
     if (pending.length === 0 || Date.now() + 3000 > deadline) break
@@ -1330,7 +1438,7 @@ async function checkJobs(args: Args): Promise<Content[]> {
 
   const out: Content[] = [text({
     jobs: jobs.map((j) => reports.get(j.id)),
-    ...(pending.length ? { still_running: pending.length, next: 'Call check_jobs again in a little while.' } : {}),
+    ...(jobs.some((j) => ['running', 'queued', 'starting'].includes(reports.get(j.id)?.state || '')) ? { next: 'Some are still going. Call check_jobs again in a little while.' } : {}),
   })]
   // Show what this call finished; with nothing new, show the already-finished ones asked about.
   const show = fresh.length

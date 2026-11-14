@@ -101,6 +101,7 @@ export async function revokeMcpToken(): Promise<void> {
 // database lookup, not one per call. Short enough that turning the connection
 // off takes effect almost at once.
 let verified: { hash: string; until: number } | null = null
+let lastUsedStamp: { hash: string; at: number } | null = null
 const VERIFY_TTL_MS = 15_000
 
 /** Whether an `Authorization` header carries the current token. */
@@ -115,13 +116,20 @@ export async function verifyMcpAuthHeader(header: string | null): Promise<boolea
     const sql = getDb()
     await ensure(sql)
     // Lookup by hash: the comparison happens on a digest, so its timing says
-    // nothing about the token itself.
-    const rows = await sql`UPDATE mcp_tokens SET last_used_at = now() WHERE token_hash = ${hash} RETURNING token_hash`
+    // nothing about the token itself. A read, not a write: this runs before
+    // anything is known about the caller, and a wrong token must cost no more
+    // than one indexed lookup.
+    const rows = await sql`SELECT 1 FROM mcp_tokens WHERE token_hash = ${hash} LIMIT 1`
     if (rows.length === 0) {
       if (verified?.hash === hash) verified = null
       return false
     }
     verified = { hash, until: Date.now() + VERIFY_TTL_MS }
+    // "Last used" in Settings needs minute precision, not a write per call.
+    if (lastUsedStamp?.hash !== hash || Date.now() - lastUsedStamp.at > 60_000) {
+      lastUsedStamp = { hash, at: Date.now() }
+      sql`UPDATE mcp_tokens SET last_used_at = now() WHERE token_hash = ${hash}`.catch(() => {})
+    }
     return true
   } catch (err) {
     console.error('[mcp] token check failed:', err instanceof Error ? err.message : err)

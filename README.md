@@ -309,7 +309,12 @@ How it behaves:
   numbered drafts. Only the ones you tell it to keep go on the board, the next
   time that canvas is open.
 - **Its own spend ceiling.** A per-hour limit for Claude (Settings, default
-  $5), on top of the normal spend gate. Claude can't change it.
+  $5), on top of the normal spend gate. Claude can't change it. This is the
+  hard limit: the brief keeps Claude to what you agreed, but Claude is the one
+  who records it, so the ceiling is what bounds a mistake or a stolen token.
+- **Your board stays yours.** Kept shots are added by the open canvas, never
+  written behind its back, and only by a tab that has the current board. A tab
+  that is out of date is told to reload instead.
 - **No destructive tools.** The endpoint can't delete anything, change
   settings, or read keys. Turning the connection off revokes the token at once.
 
