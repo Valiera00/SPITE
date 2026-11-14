@@ -4,10 +4,11 @@ import { Position, NodeProps, Handle, useReactFlow, useUpdateNodeInternals } fro
 import { useCanvasNodes } from '../canvas-nodes-context'
 import { useRoutedProviders, PROVIDER_LABEL } from '@/lib/use-providers'
 import { useParams } from 'next/navigation'
-import { Play, CaretDown, SpeakerHigh, SpeakerSlash, Waveform, TextT, Image as ImageIcon, FilmStrip, CircleNotch, X, Check, ArrowsClockwise, Minus, Plus } from '@phosphor-icons/react'
+import { Play, SpeakerHigh, SpeakerSlash, Waveform, TextT, Image as ImageIcon, FilmStrip, CircleNotch, X, Check, ArrowsClockwise, Minus, Plus } from '@phosphor-icons/react'
 import { memo, useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { toast } from 'sonner'
 import { NodeActionToolbar } from './node-toolbar'
+import { ControlSelect } from './control-select'
 import { ShotSelector, type ShotOption } from './shot-selector'
 import { useSceneShots } from './use-scene-shots'
 import { Lightbox } from '../lightbox'
@@ -25,59 +26,6 @@ import { uploadPoster, dataUrlToBlob } from '@/lib/poster-upload'
 const VIDEO_MODELS = getVideoModels()
 
 type GenerationStatus = 'idle' | 'submitting' | 'in_queue' | 'in_progress' | 'completed' | 'failed' | 'cancelled'
-
-function ControlSelect({ 
-  value, 
-  options, 
-  onChange,
-  disabled 
-}: { 
-  value: string
-  options: { value: string; label: string }[]
-  onChange: (value: string) => void
-  disabled?: boolean
-}) {
-  const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setOpen(false)
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [])
-
-  return (
-    <div ref={ref} className="relative">
-      <button 
-        onClick={() => !disabled && setOpen(!open)}
-        disabled={disabled}
-        className="flex items-center gap-1 px-2 h-6 rounded-md bg-white/5 hover:bg-white/10 text-[10px] font-mono text-muted-foreground transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-      >
-        {value}
-        <CaretDown size={8} weight="bold" />
-      </button>
-      {/* nowheel/nodrag: without them React Flow takes the wheel and zooms
-          the canvas instead of scrolling this list. */}
-      {open && (
-        <div className="nowheel nodrag absolute bottom-full left-0 mb-1 bg-[#1a1d21] border border-white/10 rounded-lg py-1 z-50 min-w-[120px] shadow-xl max-h-[min(380px,60vh)] overflow-y-auto">
-          {options.map(opt => (
-            <button
-              key={opt.value}
-              onClick={() => { onChange(opt.value); setOpen(false) }}
-              className={`w-full text-left px-3 py-1.5 text-[10px] font-mono hover:bg-white/10 transition-colors ${opt.value === value ? 'text-accent' : 'text-muted-foreground'}`}
-            >
-              {opt.label}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
 
 function HandleIcon({ icon: Icon, color, position, top, visible = true }: { 
   icon: React.ElementType
