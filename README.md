@@ -313,8 +313,10 @@ How it behaves:
 - **No destructive tools.** The endpoint can't delete anything, change
   settings, or read keys. Turning the connection off revokes the token at once.
 
-Claude can look at the images it makes and at your reference folders. It can't
-watch video, so clips are yours to review in the library.
+Claude can see your board and reference folders and the images it makes, and
+can use anything on the board as an input: an image to rework, the first or
+last frame of a clip, a reference. It can't change what is on the board, and it
+can't watch video, so clips are yours to review in the library.
 
 ## Updating
 

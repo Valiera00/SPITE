@@ -328,7 +328,7 @@ export function McpSection() {
           <div className="space-y-1">
             <p className="text-xs text-foreground">Claude can</p>
             <ul className="text-xs text-muted-foreground leading-relaxed list-disc pl-4">
-              <li>See your projects, folders and models</li>
+              <li>See your projects, boards, folders and models</li>
               <li>Generate images and video into a project</li>
               <li>Put shots you keep onto the board</li>
             </ul>
@@ -336,7 +336,7 @@ export function McpSection() {
           <div className="space-y-1">
             <p className="text-xs text-foreground">Claude can&apos;t</p>
             <ul className="text-xs text-muted-foreground leading-relaxed list-disc pl-4">
-              <li>Delete anything</li>
+              <li>Delete or change what is on your board</li>
               <li>Change settings</li>
               <li>See your API keys</li>
             </ul>

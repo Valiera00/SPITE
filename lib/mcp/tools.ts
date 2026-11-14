@@ -152,6 +152,64 @@ async function imageOf(url: string, size: 'small' | 'large' = 'small'): Promise<
   return webp ? { type: 'image', data: webp.toString('base64'), mimeType: 'image/webp' } : null
 }
 
+// What is on a project's board that can be looked at or used as an input: every
+// node holding an image, clip or sound. Read straight from the saved canvas,
+// which trails the open one by a few seconds of autosave.
+interface BoardItem {
+  nodeId: string
+  kind: 'image' | 'video' | 'audio'
+  made: 'generated' | 'reference'
+  label: string
+  prompt?: string
+  modelId?: string
+  sceneId?: string
+  url: string
+  /** A still that stands for a clip. */
+  posterUrl?: string
+}
+
+const usableUrl = (v: unknown): string | undefined =>
+  typeof v === 'string' && (v.startsWith(PROXY_PREFIX) || /^https?:\/\//.test(v)) ? v : undefined
+
+async function boardItems(projectId: string): Promise<BoardItem[]> {
+  const rows = await getDb()`
+    SELECT nodeId AS id, type, data FROM canvas_nodes WHERE projectId = ${projectId}::text ORDER BY createdAt
+  `
+  const items: BoardItem[] = []
+  for (const r of rows) {
+    const d = (r.data || {}) as Record<string, unknown>
+    // Same order the canvas itself uses to decide what a node holds (lib/node-media.ts).
+    const url = usableUrl(d.outputUrl) ?? usableUrl(d.assetUrl) ?? usableUrl(d.thumbnail) ?? usableUrl(d.imageUrl)
+    if (!url) continue
+    const byName = /\.(mp4|mov|webm|m4v)(\?|$)/i.test(url) ? 'video' : /\.(mp3|wav|m4a|ogg|flac)(\?|$)/i.test(url) ? 'audio' : null
+    const kind: BoardItem['kind'] =
+      r.type === 'videoGen' ? 'video'
+      : d.mediaType === 'video' || d.mediaType === 'audio' ? d.mediaType
+      : byName ?? 'image'
+    items.push({
+      nodeId: String(r.id),
+      kind,
+      made: r.type === 'imageGen' || r.type === 'videoGen' ? 'generated' : 'reference',
+      label: typeof d.label === 'string' ? d.label : '',
+      prompt: typeof d.prompt === 'string' && d.prompt.trim() ? d.prompt.trim() : undefined,
+      modelId: typeof d.modelId === 'string' ? d.modelId : undefined,
+      sceneId: typeof d.sceneId === 'string' ? d.sceneId : undefined,
+      url,
+      posterUrl: kind === 'video' ? usableUrl(d.videoThumbnail) : undefined,
+    })
+  }
+  return items
+}
+
+const boardView = (b: BoardItem) => ({
+  node_id: b.nodeId,
+  kind: b.kind,
+  made: b.made,
+  ...(b.label ? { label: b.label } : {}),
+  ...(b.prompt ? { prompt: b.prompt.length > 240 ? b.prompt.slice(0, 240) + '…' : b.prompt } : {}),
+  ...(b.modelId && b.made === 'generated' ? { model: b.modelId } : {}),
+})
+
 const allModels = (): ModelConfig[] => [...getImageModels(), ...getVideoModels()]
 
 const takesText = (m: ModelConfig) => m.inputTypes.includes('text')
@@ -240,19 +298,21 @@ const TOOLS: ToolDef[] = [
     name: 'get_project',
     title: 'Project overview',
     description:
-      'One project at a glance: its reference folders (each usable in a prompt as its @Tag), the brief currently agreed, ' +
-      'and how many drafts and running jobs it has.',
+      'One project at a glance: what is on its board, its reference folders (each usable in a prompt as its @Tag), the brief currently agreed, ' +
+      'and the drafts and running jobs you have in it. Use view_board to see the board itself.',
     inputSchema: { type: 'object', properties: { project_id: projectIdProp }, required: ['project_id'], additionalProperties: false },
     annotations: readOnly,
     run: async (args) => {
       const project = await requireProject(args)
-      const [folders, brief, drafts, jobs] = await Promise.all([
-        projectFolders(project.id), activeBrief(project.id), listDrafts(project.id), getJobs(project.id),
+      const [folders, brief, drafts, jobs, board] = await Promise.all([
+        projectFolders(project.id), activeBrief(project.id), listDrafts(project.id), getJobs(project.id), boardItems(project.id),
       ])
-      const count = (s: Draft['state']) => drafts.filter((d) => d.state === s).length
+      const count = (st: Draft['state']) => drafts.filter((d) => d.state === st).length
+      const onBoard = (k: BoardItem['kind']) => board.filter((b) => b.kind === k).length
       return [text({
         name: project.name,
         mode: project.mode,
+        board: { images: onBoard('image'), videos: onBoard('video'), sounds: onBoard('audio'), see: 'view_board' },
         folders: folders.map((f) => ({
           tag: `@${tagFromName(f.name)}`,
           name: f.name,
@@ -261,7 +321,8 @@ const TOOLS: ToolDef[] = [
           images: f.assets.length,
         })),
         brief: brief ? briefView(brief) : 'none agreed yet',
-        drafts: { not_kept: count('draft'), kept_waiting_for_board: count('kept'), on_board: count('on_board') },
+        // Only what was made through this connection; the board counts above are everything.
+        your_drafts: { not_kept: count('draft'), kept_waiting_for_board: count('kept'), kept_and_on_board: count('on_board') },
         jobs_running: jobs.filter((j) => j.state === 'running').length,
       })]
     },
@@ -300,6 +361,83 @@ const TOOLS: ToolDef[] = [
         if (img) out.push(img)
       }
       return out
+    },
+  },
+
+  {
+    name: 'view_board',
+    title: 'Look at the board',
+    description:
+      'What is on a project’s board: every node holding an image, clip or sound, with its node_id, label and (for generated ones) prompt. ' +
+      'This is the user’s existing work, whoever made it. A node_id can be used as an input to the generate tools (input_image, first_frame, end_frame, source_video, reference_images). ' +
+      'Set show_images to see them; clips show their poster frame. Results are paged.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        project_id: projectIdProp,
+        kind: { type: 'string', enum: ['image', 'video', 'audio', 'all'], description: 'Default all.' },
+        search: { type: 'string', description: 'Only nodes whose label or prompt contains this text.' },
+        limit: { type: 'integer', minimum: 1, maximum: 60, description: 'How many to list. Default 30.' },
+        offset: { type: 'integer', minimum: 0, description: 'Skip this many, to page through a large board. Default 0.' },
+        show_images: { type: 'boolean', description: 'Include pictures of the first 12 listed. Default false.' },
+      },
+      required: ['project_id'],
+      additionalProperties: false,
+    },
+    annotations: readOnly,
+    run: async (args) => {
+      const project = await requireProject(args)
+      const kind = str(args, 'kind', false) || 'all'
+      if (!['image', 'video', 'audio', 'all'].includes(kind)) throw new ToolError('"kind" must be image, video, audio or all.')
+      const search = (str(args, 'search', false) || '').toLowerCase()
+      const limit = int(args, 'limit', 1, 60, 30)
+      const offset = int(args, 'offset', 0, 100_000, 0)
+      const all = (await boardItems(project.id)).filter((b) =>
+        (kind === 'all' || b.kind === kind) &&
+        (!search || b.label.toLowerCase().includes(search) || (b.prompt || '').toLowerCase().includes(search)))
+      if (all.length === 0) return [text(search || kind !== 'all' ? 'Nothing on the board matches that.' : 'This board has no images, clips or sounds yet.')]
+      const page = all.slice(offset, offset + limit)
+      const out: Content[] = [text({
+        total: all.length,
+        showing: `${Math.min(offset + 1, all.length)}-${Math.min(offset + page.length, all.length)}`,
+        ...(offset + page.length < all.length ? { more: `offset ${offset + page.length} for the next page` } : {}),
+        nodes: page.map(boardView),
+      })]
+      if (args.show_images === true) {
+        for (const b of page.slice(0, 12)) {
+          const img = b.kind === 'image' ? await imageOf(b.url) : b.posterUrl ? await imageOf(b.posterUrl) : null
+          if (img) out.push(text(`${b.nodeId}${b.label ? ` (${b.label})` : ''}${b.kind === 'video' ? ', poster frame of a clip' : ''}`), img)
+        }
+        if (page.length > 12) out.push(text('Pictures shown for the first 12 only; page with offset, or use view_node.'))
+      }
+      return out
+    },
+  },
+
+  {
+    name: 'view_node',
+    title: 'Look at a board node',
+    description: 'Shows one image on the board, small or large. For a clip it shows the poster frame; the clip itself can’t be watched here.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        project_id: projectIdProp,
+        node_id: { type: 'string', description: 'A node_id from view_board.' },
+        size: { type: 'string', enum: ['small', 'large'], description: 'Default large.' },
+      },
+      required: ['project_id', 'node_id'],
+      additionalProperties: false,
+    },
+    annotations: readOnly,
+    run: async (args) => {
+      const project = await requireProject(args)
+      const nodeId = str(args, 'node_id')!
+      const size = str(args, 'size', false) === 'small' ? 'small' : 'large'
+      const node = (await boardItems(project.id)).find((b) => b.nodeId === nodeId)
+      if (!node) throw new ToolError(`No node "${nodeId}" with an image, clip or sound on this board. Call view_board for the ids.`)
+      const img = node.kind === 'image' ? await imageOf(node.url, size) : node.posterUrl ? await imageOf(node.posterUrl, size) : null
+      if (!img) return [text(boardView(node)), text(node.kind === 'image' ? 'This image can’t be shown here.' : 'This one has no picture to show here; the user can play it in SPITE.')]
+      return [text(boardView(node)), ...(node.kind === 'video' ? [text('Poster frame of the clip:')] : []), img]
     },
   },
 
@@ -375,8 +513,8 @@ const TOOLS: ToolDef[] = [
     description:
       'Starts image generations in a project, inside the agreed brief. Each image is its own job and costs money. ' +
       'Results are DRAFTS: they go to the project’s library, not onto the board. The user picks which to keep (keep_drafts). ' +
-      'Write @Tag in the prompt to use a folder’s reference images (tags from get_project). ' +
-      'To make new versions of an earlier draft, or to upscale one, pass based_on_draft. ' +
+      'Images can be given as inputs, each either a draft number or a board node_id from view_board: input_image is the picture to rework or upscale, ' +
+      'reference_images are extra pictures to draw on (on models that take several). Folder references are written as @Tag in the prompt. ' +
       'Returns job ids at once; results come from check_jobs.',
     inputSchema: {
       type: 'object',
@@ -388,7 +526,8 @@ const TOOLS: ToolDef[] = [
         aspect_ratio: { type: 'string', description: 'One of the model’s aspect ratios. Default: the model’s own.' },
         resolution: { type: 'string', description: 'One of the model’s resolutions (for upscalers: 2x or 4x). Default: the model’s own.' },
         quality: { type: 'string', description: 'One of the model’s qualities, for models that have them.' },
-        based_on_draft: { type: 'integer', minimum: 1, description: 'Image draft number to use as the input image.' },
+        input_image: { type: ['integer', 'string'], description: 'The image to work from: a draft number or a board node_id.' },
+        reference_images: { type: 'array', maxItems: 10, items: { type: ['integer', 'string'] }, description: 'More images to draw on, as draft numbers or board node_ids. They come after input_image and before any @Tag folders: refer to them in the prompt as "reference image 2", "reference image 3" and so on.' },
       },
       required: ['project_id', 'model'],
       additionalProperties: false,
@@ -403,8 +542,9 @@ const TOOLS: ToolDef[] = [
     description:
       'Starts video generations in a project, inside the agreed brief. Each clip is its own job; video costs far more than images, so be exact about length and resolution. ' +
       'Results are DRAFTS in the project’s library; the user picks which to keep (keep_drafts). You cannot watch video: tell the user to review clips in SPITE. ' +
-      'Inputs: a prompt (with @Tag folder references where the model supports them), an image draft as first_frame_draft and/or end_frame_draft to animate, ' +
-      'or a video draft as source_video_draft for upscalers and video-to-video models. list_models says what each model takes. ' +
+      'Inputs are each a draft number or a board node_id from view_board: first_frame and end_frame are images the clip starts and ends on, ' +
+      'reference_images are pictures of characters or things to keep consistent (on models with folder_references), source_video is a clip for upscalers and video-to-video models. ' +
+      'Folder references are written as @Tag in the prompt. list_models says what each model takes. ' +
       'Returns job ids at once; clips take from under a minute to several minutes (check_jobs).',
     inputSchema: {
       type: 'object',
@@ -417,9 +557,10 @@ const TOOLS: ToolDef[] = [
         aspect_ratio: { type: 'string', description: 'One of the model’s aspect ratios. Default: the model’s own.' },
         resolution: { type: 'string', description: 'One of the model’s resolutions. Default: the model’s own.' },
         sound: { type: 'boolean', description: 'Generate sound, on models that can. Default false. May change the price.' },
-        first_frame_draft: { type: 'integer', minimum: 1, description: 'Image draft number to start the clip from.' },
-        end_frame_draft: { type: 'integer', minimum: 1, description: 'Image draft number to end the clip on.' },
-        source_video_draft: { type: 'integer', minimum: 1, description: 'Video draft number, for models that take a video.' },
+        first_frame: { type: ['integer', 'string'], description: 'Image the clip starts from: a draft number or a board node_id.' },
+        end_frame: { type: ['integer', 'string'], description: 'Image the clip ends on: a draft number or a board node_id.' },
+        reference_images: { type: 'array', maxItems: 10, items: { type: ['integer', 'string'] }, description: 'Reference pictures, as draft numbers or board node_ids. They come before any @Tag folders. On models that cite references, name them in the prompt in the order given: @Image1, @Image2 (Seedance, Wan, Veo) or @Element1, @Element2 (Kling).' },
+        source_video: { type: ['integer', 'string'], description: 'A clip to work from, for models that take one: a video draft number or a board node_id.' },
       },
       required: ['project_id', 'model'],
       additionalProperties: false,
@@ -721,28 +862,78 @@ async function generate(kind: Kind, args: Args): Promise<Content[]> {
     )
   }
 
-  // Drafts used as inputs. What the model can take is checked before any
-  // draft is looked up, so the answer is about the model, not a draft number.
-  const given = (key: string) => args[key] !== undefined && args[key] !== null
-  const imageKey = kind === 'video' ? 'first_frame_draft' : 'based_on_draft'
-  if ((given(imageKey) || given('end_frame_draft')) && !takesImage(model)) throw new ToolError(`${model.name} can’t take an input image.`)
-  if (needsImage(model) && !given(imageKey)) throw new ToolError(`${model.name} works from an image: pass "${imageKey}".`)
+  // Inputs: each is a draft number or the id of a node on the board. What the
+  // model can take is checked before anything is looked up, so the answer is
+  // about the model, not about one particular draft or node. The *_draft names
+  // are the first version's and still work.
+  const arg = (...keys: string[]) => keys.map((k) => args[k]).find((v) => v !== undefined && v !== null && v !== '')
+  const imageKey = kind === 'video' ? 'first_frame' : 'input_image'
+  const imageArg = kind === 'video' ? arg('first_frame', 'first_frame_draft') : arg('input_image', 'based_on_draft')
+  const endArg = kind === 'video' ? arg('end_frame', 'end_frame_draft') : undefined
+  const videoArg = kind === 'video' ? arg('source_video', 'source_video_draft') : undefined
+  const refArgs = args.reference_images
+  if (refArgs !== undefined && refArgs !== null && (!Array.isArray(refArgs) || refArgs.length > 10)) {
+    throw new ToolError('"reference_images" must be a list of up to 10 draft numbers or board node_ids.')
+  }
+  const refList: unknown[] = Array.isArray(refArgs) ? refArgs : []
+  if ((imageArg !== undefined || endArg !== undefined || refList.length > 0) && !takesImage(model)) {
+    throw new ToolError(`${model.name} can’t take an input image.`)
+  }
+  if (needsImage(model) && imageArg === undefined && !(kind === 'image' && refList.length > 0)) {
+    throw new ToolError(`${model.name} works from an image: pass "${imageKey}".`)
+  }
   if (kind === 'video') {
-    if (given('end_frame_draft') && takesVideo(model)) throw new ToolError(`${model.name} has no end frame. Leave "end_frame_draft" out.`)
-    if (given('source_video_draft') && !takesVideo(model)) throw new ToolError(`${model.name} doesn’t take a video. Leave "source_video_draft" out.`)
-    if (takesVideo(model) && !given('source_video_draft')) throw new ToolError(`${model.name} works from a video: pass "source_video_draft".`)
+    if (endArg !== undefined && takesVideo(model)) throw new ToolError(`${model.name} has no end frame. Leave "end_frame" out.`)
+    if (videoArg !== undefined && !takesVideo(model)) throw new ToolError(`${model.name} doesn’t take a video. Leave "source_video" out.`)
+    if (takesVideo(model) && videoArg === undefined) throw new ToolError(`${model.name} works from a video: pass "source_video".`)
+    if (refList.length > 0 && !model.referenceParam) {
+      throw new ToolError(`${model.name} can’t use reference images. Use "first_frame", or pick a model whose folder_references isn’t "none".`)
+    }
   }
-  const draftInput = async (key: string, wantType: 'image' | 'video'): Promise<{ number: number; url: string } | undefined> => {
-    if (args[key] === undefined || args[key] === null) return undefined
-    const number = int(args, key, 1, 1_000_000)
-    const [draft] = await listDrafts(project.id, { numbers: [number] })
-    if (!draft) throw new ToolError(`There is no draft ${number} in this project.`)
-    if (draft.type !== wantType) throw new ToolError(`Draft ${number} is ${draft.type === 'video' ? 'a video' : 'an image'}; "${key}" needs ${wantType === 'video' ? 'a video' : 'an image'} draft.`)
-    return { number, url: draft.url }
+
+  interface Input { from: string; url: string }
+  let board: BoardItem[] | null = null
+  const resolveInput = async (value: unknown, key: string, want: 'image' | 'video'): Promise<Input> => {
+    const a = (t: string) => (t === 'video' ? 'a video' : t === 'audio' ? 'a sound' : 'an image')
+    const asNumber = typeof value === 'number' ? value : typeof value === 'string' && /^\d+$/.test(value.trim()) ? Number(value) : null
+    if (asNumber !== null) {
+      if (!Number.isInteger(asNumber) || asNumber < 1) throw new ToolError(`"${key}": ${asNumber} isn’t a draft number.`)
+      const [draft] = await listDrafts(project.id, { numbers: [asNumber] })
+      if (!draft) throw new ToolError(`There is no draft ${asNumber} in this project.`)
+      if (draft.type !== want) throw new ToolError(`Draft ${asNumber} is ${a(draft.type)}; "${key}" needs ${a(want)}.`)
+      return { from: `draft ${asNumber}`, url: draft.url }
+    }
+    if (typeof value !== 'string' || !value.trim()) throw new ToolError(`"${key}" must be a draft number or a board node_id.`)
+    board = board ?? (await boardItems(project.id))
+    const node = board.find((b) => b.nodeId === value.trim())
+    if (!node) throw new ToolError(`"${key}": there is no node "${value}" with media on this board. Call view_board for the ids.`)
+    if (node.kind !== want) throw new ToolError(`Node "${node.nodeId}" is ${a(node.kind)}; "${key}" needs ${a(want)}.`)
+    return { from: `node ${node.nodeId}`, url: node.url }
   }
-  const first = await draftInput(imageKey, 'image')
-  const end = kind === 'video' ? await draftInput('end_frame_draft', 'image') : undefined
-  const sourceVideo = kind === 'video' ? await draftInput('source_video_draft', 'video') : undefined
+  const first = imageArg !== undefined ? await resolveInput(imageArg, imageKey, 'image') : undefined
+  const end = endArg !== undefined ? await resolveInput(endArg, 'end_frame', 'image') : undefined
+  const sourceVideo = videoArg !== undefined ? await resolveInput(videoArg, 'source_video', 'video') : undefined
+  const refs: Input[] = []
+  for (const r of refList) refs.push(await resolveInput(r, 'reference_images', 'image'))
+
+  // How the inputs map onto the model, mirroring the nodes. On an image node
+  // every wired image is a peer: the first is the input image and the rest ride
+  // along where the model takes several. On a video node the first frame is its
+  // own input and wired references come before folder references.
+  let primary = first
+  let extras = refs
+  if (kind === 'image') {
+    const every = [...(first ? [first] : []), ...refs]
+    primary = every[0]
+    extras = every.slice(1)
+    const takesSeveral = model.imageParam === 'image_urls' || !!model.referenceParam
+    if (extras.length > 0 && !takesSeveral) {
+      throw new ToolError(`${model.name} accepts one input image, and ${every.length} were given. Give one, or pick a model whose folder_references is "several".`)
+    }
+  }
+  const slotsAhead = kind === 'video'
+    ? extras.length
+    : model.imageParam === 'image_urls' ? (primary ? 1 : 0) + extras.length : primary ? 1 : 0
 
   // @Tag references, compiled exactly as the nodes do it.
   const folders = prompt ? await projectFolders(project.id) : []
@@ -757,10 +948,9 @@ async function generate(kind: Kind, args: Args): Promise<Content[]> {
   }
   const emptyTags = Array.from(new Set(tags.filter((t) => byTag.get(t.toLowerCase())!.assets.length === 0)))
   if (emptyTags.length) throw new ToolError(`These folders have no images to reference: ${emptyTags.map((t) => `@${t}`).join(', ')}.`)
-  // Image models put the input image in slot 1, ahead of folder references;
-  // on video the first frame is a separate input and takes no slot.
-  const compiled = compileMentionsForModel(prompt, [], folders, model, kind === 'image' && first ? 1 : 0)
-  const hasRefs = compiled.refGroups.length > 0
+  const compiled = compileMentionsForModel(prompt, [], folders, model, slotsAhead)
+  const refGroups = [...extras.map((x) => ({ urls: [x.url] })), ...compiled.refGroups]
+  const hasRefs = refGroups.length > 0
   const notes: string[] = []
   if (tags.length && compiled.strategy === 'none') {
     notes.push(`${model.name} can’t use reference images, so the folders were sent as plain names only.`)
@@ -769,14 +959,14 @@ async function generate(kind: Kind, args: Args): Promise<Content[]> {
   }
   if (kind === 'video' && hasRefs) {
     // The same two rules the video node enforces before it lets a job go.
-    if (model.referenceModel && !model.referenceTakesFrames && (first || end)) {
+    if (model.referenceModel && !model.referenceTakesFrames && (primary || end)) {
       throw new ToolError(
-        `${model.name} can’t use a first/end frame and folder references in the same clip: they are separate modes. ` +
-        'Drop the @Tags to keep the exact frame, or drop the frame to use the references.',
+        `${model.name} can’t use a first/end frame and reference images in the same clip: they are separate modes. ` +
+        'Drop the references to keep the exact frame, or drop the frame to use the references.',
       )
     }
-    if (model.referenceParam === 'elements' && !model.referenceModel && !first) {
-      throw new ToolError(`${model.name} needs a first frame to use folder references: pass "first_frame_draft".`)
+    if (model.referenceParam === 'elements' && !model.referenceModel && !primary) {
+      throw new ToolError(`${model.name} needs a first frame to use reference images: pass "first_frame".`)
     }
   }
 
@@ -787,9 +977,9 @@ async function generate(kind: Kind, args: Args): Promise<Content[]> {
   const body = JSON.stringify({
     modelId: model.id,
     prompt: compiled.prompt,
-    referenceImageUrl: first?.url,
+    referenceImageUrl: primary?.url,
     endImageUrl: end?.url,
-    referenceGroups: hasRefs ? compiled.refGroups : undefined,
+    referenceGroups: hasRefs ? refGroups : undefined,
     settings: kind === 'video'
       ? { aspectRatio, duration, resolution, enableAudio: sound, enableLoop: false, videoUrl: sourceVideo?.url }
       : { aspectRatio, resolution, quality, numImages: 1 },
@@ -832,9 +1022,10 @@ async function generate(kind: Kind, args: Args): Promise<Content[]> {
       settings: {
         aspectRatio, resolution, quality, duration,
         ...(kind === 'video' ? { enableAudio: sound } : {}),
-        ...(first ? { fromDraft: first.number } : {}),
-        ...(end ? { endDraft: end.number } : {}),
-        ...(sourceVideo ? { sourceVideoDraft: sourceVideo.number } : {}),
+        ...(primary ? { from: primary.from } : {}),
+        ...(end ? { endFrame: end.from } : {}),
+        ...(extras.length ? { references: extras.map((x) => x.from) } : {}),
+        ...(sourceVideo ? { sourceVideo: sourceVideo.from } : {}),
       },
       estimatedUsd: actualPrice,
     }))
@@ -1026,11 +1217,11 @@ async function cancelJobs(args: Args): Promise<Content[]> {
 export const SERVER_INSTRUCTIONS =
   'SPITE is a canvas app for AI filmmaking. Through these tools you work in the owner’s projects: look around, generate images and video, and put the results they choose on the board.\n' +
   'How to work:\n' +
-  '1. Find the project (list_projects, get_project). Look inside folders you will reference (view_folder).\n' +
+  '1. Find the project (list_projects, get_project). Look at what is already there before proposing anything: view_board for the images and clips on the board, view_folder for reference folders.\n' +
   '2. Before generating anything, agree a brief with the user: what you will make, how many tries, which models and settings, and what each costs (list_models). Record it with agree_brief only after they say yes. Inside the brief, work freely; for anything beyond it, ask first.\n' +
-  '3. generate_images or generate_videos, then check_jobs. Results are drafts in the project’s library. Look at image drafts and say what you think. You cannot watch video: ask the user to review clips in SPITE.\n' +
-  '4. The user decides what is kept. keep_drafts puts those on the board. To iterate, generate again from a draft (based_on_draft, first_frame_draft).\n' +
-  'Generation costs the user real money, video most of all: quote prices per image and per clip, and never start more than was agreed. You cannot delete anything or change settings here.'
+  '3. generate_images or generate_videos, then check_jobs. Anything on the board or any earlier draft can be an input (a board node_id or a draft number). Results are drafts in the project’s library. Look at image drafts and say what you think. You cannot watch video: ask the user to review clips in SPITE.\n' +
+  '4. The user decides what is kept. keep_drafts puts those on the board.\n' +
+  'Generation costs the user real money, video most of all: quote prices per image and per clip, and never start more than was agreed. You cannot delete or change anything on the board, and cannot change settings. To bring in a file from outside, the user drops it on the board in SPITE, and it then shows up in view_board.'
 
 export function listTools() {
   return TOOLS.map(({ name, title, description, inputSchema, annotations }) => ({ name, title, description, inputSchema, annotations }))
