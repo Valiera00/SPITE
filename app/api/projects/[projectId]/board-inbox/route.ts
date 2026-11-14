@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getMcpStatus } from '@/lib/mcp/access'
-import { boardInbox, claimForBoard, markPlaced } from '@/lib/mcp/store'
+import { boardInbox, claimForBoard, latestDraftNumber, markPlaced } from '@/lib/mcp/store'
 
 // Drafts Claude was told to keep, waiting to go on this project's board.
 //
@@ -37,7 +37,10 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
       duration: typeof d.settings.duration === 'string' ? d.settings.duration : undefined,
       enableAudio: typeof d.settings.enableAudio === 'boolean' ? d.settings.enableAudio : undefined,
     }))
-    return NextResponse.json({ enabled: true, items }, { headers: { 'Cache-Control': 'no-store' } })
+    // The newest draft number, so the canvas can say when Claude has made
+    // something new: drafts go to the library, where they're easy to miss.
+    const latestDraft = await latestDraftNumber(projectId)
+    return NextResponse.json({ enabled: true, items, latestDraft }, { headers: { 'Cache-Control': 'no-store' } })
   } catch (err) {
     console.error('[board-inbox] read failed:', err instanceof Error ? err.message : 'unknown')
     // Not worth an error state on the canvas: it just asks again later.

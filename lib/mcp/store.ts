@@ -61,6 +61,16 @@ async function ensure(sql: Sql) {
     PRIMARY KEY (project_id, number)
   )`
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_mcp_drafts_asset ON mcp_drafts (asset_id)`
+  // Notes from the Claude using the tools to whoever maintains this install.
+  await sql`CREATE TABLE IF NOT EXISTS mcp_feedback (
+    id          text PRIMARY KEY,
+    created_at  timestamptz NOT NULL DEFAULT now(),
+    kind        text NOT NULL,
+    title       text NOT NULL,
+    details     text NOT NULL,
+    project_id  text,
+    read_at     timestamptz
+  )`
   // Which open canvas has taken a kept draft to place it (see claimForBoard).
   await sql`ALTER TABLE mcp_drafts ADD COLUMN IF NOT EXISTS claimed_at timestamptz`
   await sql`ALTER TABLE mcp_drafts ADD COLUMN IF NOT EXISTS claimed_by text`
@@ -497,4 +507,40 @@ export async function markPlaced(projectId: string, numbers: number[]): Promise<
   await ensure(sql)
   await sql`UPDATE mcp_drafts SET placed_at = now(), claimed_at = NULL, claimed_by = NULL
             WHERE project_id = ${projectId} AND number = ANY(${numbers}::int[]) AND placed_at IS NULL`
+}
+
+/** The highest draft number in a project (0 when there are none). */
+export async function latestDraftNumber(projectId: string): Promise<number> {
+  const sql = getDb()
+  await ensure(sql)
+  const rows = await sql`SELECT COALESCE(MAX(number), 0)::int AS n FROM mcp_drafts WHERE project_id = ${projectId}`
+  return Number(rows[0]?.n) || 0
+}
+
+// ---------------------------------------------------------------------------
+// Feedback
+// ---------------------------------------------------------------------------
+
+/**
+ * Save a note from the Claude using the tools: a bug, something missing, an
+ * observation. It stays in this install's database for the owner (or whoever
+ * maintains the install) to read; nothing is sent anywhere. Returns null when
+ * the day's allowance is used up, so a loop can't fill the table.
+ */
+export async function addFeedback(input: {
+  kind: 'bug' | 'wish' | 'note'
+  title: string
+  details: string
+  projectId: string | null
+}): Promise<string | null> {
+  const sql = getDb()
+  await ensure(sql)
+  const today = await sql`SELECT COUNT(*)::int AS n FROM mcp_feedback WHERE created_at > now() - interval '24 hours'`
+  if (Number(today[0]?.n) >= 100) return null
+  const id = newId('note')
+  await sql`
+    INSERT INTO mcp_feedback (id, kind, title, details, project_id)
+    VALUES (${id}, ${input.kind}, ${input.title}, ${input.details}, ${input.projectId})
+  `
+  return id
 }

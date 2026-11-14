@@ -278,6 +278,18 @@ export function LeftToolbar({
     }
   }, [generatedAssets])
 
+  // Something elsewhere on the canvas asks for the library to be shown (the
+  // "Claude made a new draft" notice).
+  useEffect(() => {
+    const open = () => {
+      setHistoryOpen(true)
+      onShowHistoryChange?.(true)
+      mutateAssets()
+    }
+    window.addEventListener('spite-open-library', open)
+    return () => window.removeEventListener('spite-open-library', open)
+  }, [mutateAssets, onShowHistoryChange])
+
   // Listen for asset status changes (from canvas node deletion)
   useEffect(() => {
     const handleAssetStatusChange = () => mutateAssets()

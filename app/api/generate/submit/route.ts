@@ -8,6 +8,7 @@ import { getOrCreateVoiceId } from '@/lib/fal-voices'
 import { resolveRoute } from '@/lib/model-routing'
 import { ProviderError, describeUnavailable } from '@/lib/direct-provider'
 import { logEvent } from '@/lib/events'
+import { later, recordSubmitted } from '@/lib/generation-timings'
 
 export async function POST(request: NextRequest) {
   // KILL SWITCH — set GENERATION_DISABLED=1 in Vercel env vars to halt
@@ -346,6 +347,12 @@ export async function POST(request: NextRequest) {
           `frames=${referenceImageSigned ? 1 : 0}+${endImageSigned ? 1 : 0} refs=${refsSigned.length} audio=${audioSigned.length}`,
       )
       await tagSpendRequestId(reservation.ledgerId, taskId)
+      // For the time estimates (lib/generation-timings.ts).
+      later(recordSubmitted({
+        requestId: taskId, modelId: model.id, kind: model.category, provider: provider.id,
+        resolution: settings?.resolution, quality: settings?.quality, clipSeconds: durationSeconds,
+        sound: estimateOptions.audio, refCount: refsSigned.length, hasFrame,
+      }))
       return NextResponse.json({
         request_id: taskId,
         model: provider.prefix + providerModel,
@@ -468,6 +475,13 @@ export async function POST(request: NextRequest) {
       ? data.status_url.match(/queue\.fal\.run\/(.+?)\/requests\//)
       : null
     if (m) pollModel = m[1]
+
+    // For the time estimates (lib/generation-timings.ts).
+    later(recordSubmitted({
+      requestId: String(data.request_id), modelId: model.id, kind: model.category, provider: 'fal',
+      resolution: settings?.resolution, quality: settings?.quality, clipSeconds: durationSeconds,
+      sound: estimateOptions.audio, refCount: refsSigned.length, hasFrame,
+    }))
 
     return NextResponse.json({
       request_id: data.request_id,

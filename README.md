@@ -315,6 +315,12 @@ How it behaves:
 - **Your board stays yours.** Kept shots are added by the open canvas, never
   written behind its back, and only by a tab that has the current board. A tab
   that is out of date is told to reload instead.
+- **Time estimates that learn.** SPITE times every generation and tells Claude
+  how long a job like the one it just started usually takes on your install,
+  by model, settings, hour and kind of day.
+- **Files out, notes back.** Claude can fetch a result's original file to work
+  on it elsewhere, and can leave you a note when a tool gets in its way
+  (saved in your database, sent nowhere).
 - **No destructive tools.** The endpoint can't delete anything, change
   settings, or read keys. Turning the connection off revokes the token at once.
 

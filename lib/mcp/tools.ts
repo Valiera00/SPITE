@@ -16,13 +16,16 @@ import { getDb } from '../db'
 import { getImageModels, getVideoModels, getModelById, type ModelConfig } from '../fal-models'
 import { estimateGenerationCost } from '../fal-cost'
 import { compileMentionsForModel, type FolderType } from '../mention-prompt'
-import { resolveRoute } from '../model-routing'
-import { isThumbnailable } from '../r2-upload'
+import { GetObjectCommand } from '@aws-sdk/client-s3'
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
+import { providerForEndpoint, resolveRoute } from '../model-routing'
+import { getR2Client, isThumbnailable } from '../r2-upload'
+import { estimateSeconds, spokenDuration } from '../generation-timings'
 import { getOrCreateThumbnail, imageSize, renderPreview } from '../thumbnails'
 import { labelFromPrompt } from '../auto-name'
 import { getMcpHourlyLimitUsd } from './access'
 import {
-  activateJob, activeBrief, addDraft, claimJobForCheck, dropReservations, finishJob, getJobs, keepDrafts, listDrafts,
+  activateJob, activeBrief, addDraft, addFeedback, claimJobForCheck, dropReservations, finishJob, getJobs, keepDrafts, listDrafts,
   releaseJob, reserveJobs, returnToBrief, startBrief, takeFromBrief,
   type Brief, type Draft, type Job, type Kind,
 } from './store'
@@ -428,6 +431,25 @@ const draftView = (d: Draft) => ({
 
 const VIDEO_NOTE = 'is a video. It can’t be previewed here; the user can watch it in the project’s library in SPITE.'
 
+/** "about 3 min 20s (slow runs about 5 min), going by 12 earlier runs", or that it's too early to say. */
+async function usualTime(q: { modelId: string; provider: string; resolution?: unknown; quality?: unknown; duration?: unknown }): Promise<{ words: string; typical: number | null }> {
+  const est = await estimateSeconds({
+    modelId: q.modelId,
+    provider: q.provider,
+    resolution: q.resolution,
+    quality: q.quality,
+    clipSeconds: Number.parseInt(String(q.duration ?? ''), 10) || undefined,
+  })
+  if (!est) return { words: 'no estimate yet: SPITE hasn’t timed enough runs like this one', typical: null }
+  const slow = est.slow > est.typical * 1.25 ? ` (slow runs about ${spokenDuration(est.slow)})` : ''
+  return { words: `about ${spokenDuration(est.typical)}${slow}, going by ${est.basedOn} earlier runs`, typical: est.typical }
+}
+
+// How long one check_jobs call may wait. A serverless host cuts a request off
+// (see maxDuration in the route); a server that stays up can hold it longer,
+// short of the five minutes after which HTTP clients give up on a silent reply.
+const MAX_WAIT_SECONDS = process.env.VERCEL ? 40 : 200
+
 const kindOf = (job: Job): Kind => (getModelById(job.modelId)?.category === 'video' ? 'video' : 'image')
 
 // ---------------------------------------------------------------------------
@@ -773,13 +795,14 @@ const TOOLS: ToolDef[] = [
     description:
       'Progress of generation jobs. Finished results get a draft number, and finished images are shown. ' +
       'With no job_ids it covers everything still running in the project plus what finished in the last 15 minutes. ' +
-      'Images usually take 10–60 seconds and video one to several minutes; wait_seconds lets this call wait for results instead of you calling repeatedly.',
+      'For jobs still going it says how long they have run and how long such a job usually takes, from this SPITE’s own timings. ' +
+      'wait_seconds lets this call wait for results instead of you calling repeatedly.',
     inputSchema: {
       type: 'object',
       properties: {
         project_id: projectIdProp,
         job_ids: { type: 'array', items: { type: 'string' }, description: 'Specific jobs. Omit for all recent ones.' },
-        wait_seconds: { type: 'integer', minimum: 0, maximum: 40, description: 'Wait up to this long for running jobs to finish. Default 20.' },
+        wait_seconds: { type: 'integer', minimum: 0, maximum: 200, description: 'Wait up to this long for running jobs to finish; it returns as soon as they do. Default 20. For video, use the estimate the job gave you. Some hosts allow less, and the reply says so.' },
       },
       required: ['project_id'],
       additionalProperties: false,
@@ -805,6 +828,87 @@ const TOOLS: ToolDef[] = [
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     run: cancelJobs,
+  },
+
+  {
+    name: 'download_link',
+    title: 'Get a file',
+    description:
+      'A link to the original file of a draft or a board node, at full quality, for working on it outside SPITE (editing, cutting, sending on). ' +
+      'The link works for one hour and needs no sign-in, so treat it as private: fetch the file with your own tools and don’t paste the link anywhere else. ' +
+      'SPITE itself is unchanged by this.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        project_id: projectIdProp,
+        draft: { type: 'integer', minimum: 1, description: 'Draft number. Give this or node_id.' },
+        node_id: { type: 'string', description: 'A board node_id from view_board. Give this or draft.' },
+      },
+      required: ['project_id'],
+      additionalProperties: false,
+    },
+    annotations: readOnly,
+    run: async (args) => {
+      const project = await requireProject(args)
+      const hasDraft = args.draft !== undefined && args.draft !== null
+      const nodeId = str(args, 'node_id', false)
+      if (hasDraft === !!nodeId) throw new ToolError('Give either "draft" or "node_id".')
+      let url: string, name: string, kind: string
+      if (hasDraft) {
+        const number = int(args, 'draft', 1, 1_000_000)
+        const [draft] = await listDrafts(project.id, { numbers: [number] })
+        if (!draft) throw new ToolError(`There is no draft ${number} in this project.`)
+        url = draft.url; name = `spite-draft-${number}`; kind = draft.type
+      } else {
+        const node = (await boardItems(project.id)).find((b) => b.nodeId === nodeId)
+        if (!node) throw new ToolError(`No node "${nodeId}" with media on this board. Call view_board for the ids.`)
+        url = node.url; name = `spite-${node.nodeId}`; kind = node.kind
+      }
+      const key = r2KeyOf(url)
+      // Stored somewhere other than this install's own storage (an older
+      // result still on the provider's servers): the address is all there is.
+      if (!key) return [text({ kind, link: url, note: 'This file isn’t in SPITE’s own storage; the link is the provider’s and may stop working.' })]
+      const ext = (key.split('.').pop() || 'bin').toLowerCase().replace(/[^a-z0-9]/g, '') || 'bin'
+      const fileName = `${name}.${ext}`
+      const link = await getSignedUrl(
+        getR2Client(),
+        new GetObjectCommand({ Bucket: process.env.R2_BUCKET_NAME!, Key: key, ResponseContentDisposition: `attachment; filename="${fileName}"` }),
+        { expiresIn: 3600 },
+      )
+      return [text({ kind, file_name: fileName, link, works_for: '1 hour' })]
+    },
+  },
+
+  {
+    name: 'send_feedback',
+    title: 'Report a problem or a wish',
+    description:
+      'Leaves a note for whoever maintains this SPITE: a tool that refused something it shouldn’t have, gave wrong or unclear information, or lacks what the task needed. ' +
+      'Use it as soon as you hit such a thing, then carry on with the task as best you can; mention to the user that you filed it. ' +
+      'Say exactly what you called, what came back and what you expected. The note is saved inside SPITE and sent nowhere else. ' +
+      'Don’t put anything in it the user wouldn’t want kept.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        kind: { type: 'string', enum: ['bug', 'wish', 'note'], description: 'bug = something behaved wrongly; wish = something is missing; note = anything else worth knowing.' },
+        title: { type: 'string', description: 'One line that names it.' },
+        details: { type: 'string', description: 'What you called (tool and arguments), what came back, what you expected, and how much it mattered.' },
+        project_id: { type: 'string', description: 'The project you were working in, if any.' },
+      },
+      required: ['kind', 'title', 'details'],
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+    run: async (args) => {
+      const kind = str(args, 'kind')!
+      if (kind !== 'bug' && kind !== 'wish' && kind !== 'note') throw new ToolError('"kind" must be bug, wish or note.')
+      const title = str(args, 'title')!.slice(0, 200)
+      const details = str(args, 'details')!.slice(0, 6000)
+      const pid = str(args, 'project_id', false)
+      const id = await addFeedback({ kind, title, details, projectId: pid && UUID.test(pid) ? pid : null })
+      if (!id) return [text('Not saved: today’s allowance of notes is used up. Tell the user what you found instead.')]
+      return [text({ saved: true, note_id: id })]
+    },
   },
 
   {
@@ -1266,6 +1370,7 @@ async function generate(kind: Kind, args: Args): Promise<Content[]> {
   const jobs: string[] = []
   let failure: string | null = null
   let actualPrice = price
+  let ranOn = 'fal'
   for (let i = 0; i < count; i++) {
     if (i > 0) await new Promise((r) => setTimeout(r, 300))
     let data: Record<string, unknown> = {}
@@ -1290,6 +1395,7 @@ async function generate(kind: Kind, args: Args): Promise<Content[]> {
       break
     }
     if (typeof data.estimatedUsd === 'number') actualPrice = data.estimatedUsd
+    if (typeof data.provider === 'string') ranOn = data.provider
     // Meant for the maker's own API but ran on fal (key missing, provider down).
     if (typeof data.fallbackReason === 'string' && !notes.some((n) => n.startsWith('Ran on fal'))) {
       notes.push(`Ran on fal instead of ${typeof data.fallbackFrom === 'string' ? data.fallbackFrom : 'the maker’s API'}: ${data.fallbackReason}. Price per ${noun} is about ${usd(actualPrice)}.`)
@@ -1299,6 +1405,7 @@ async function generate(kind: Kind, args: Args): Promise<Content[]> {
   }
 
   if (jobs.length === 0) throw new ToolError(`Nothing was started. ${failure}`)
+  const usual = await usualTime({ modelId: model.id, provider: ranOn, resolution, quality, duration })
   const after = await activeBrief(project.id)
   return [text({
     started: jobs.length,
@@ -1310,7 +1417,10 @@ async function generate(kind: Kind, args: Args): Promise<Content[]> {
       : { images: 0, videos: 0 },
     ...(failure ? { stopped_early: `Only ${jobs.length} of ${count} started. ${failure}` } : {}),
     ...(notes.length ? { notes } : {}),
-    next: kind === 'video' ? 'Call check_jobs for the results; clips can take a few minutes.' : 'Call check_jobs for the results.',
+    usually_takes: usual.words,
+    next: usual.typical !== null
+      ? `Call check_jobs with wait_seconds around ${Math.min(MAX_WAIT_SECONDS, Math.max(20, usual.typical + 15))}.`
+      : kind === 'video' ? 'Call check_jobs for the results; clips can take a few minutes.' : 'Call check_jobs for the results.',
   })]
 }
 
@@ -1324,6 +1434,8 @@ interface JobReport {
   drafts?: number[]
   error?: string
   note?: string
+  running_for?: string
+  usually_takes?: string
 }
 
 /** One status check of one running job. Returns null when another check holds it. */
@@ -1385,7 +1497,8 @@ async function checkOne(job: Job): Promise<{ report: JobReport; newDrafts: numbe
 async function checkJobs(args: Args): Promise<Content[]> {
   const project = await requireProject(args)
   const ids = jobIdList(args, false)
-  const wait = int(args, 'wait_seconds', 0, 40, 20)
+  const asked = int(args, 'wait_seconds', 0, 200, 20)
+  const wait = Math.min(asked, MAX_WAIT_SECONDS)
   const deadline = Date.now() + wait * 1000
 
   const jobs = await getJobs(project.id, ids)
@@ -1436,9 +1549,38 @@ async function checkJobs(args: Args): Promise<Content[]> {
     reports.set(j.id, { job_id: j.id, state: 'done', drafts: drafts.map((d) => d.number) })
   }
 
+  // For what is still going: how long it has run, and how long such a job
+  // usually takes, so the next check can be timed instead of guessed.
+  let soonest: number | null = null
+  for (const j of jobs) {
+    const r = reports.get(j.id)
+    if (!r || !['running', 'queued'].includes(r.state)) continue
+    const ranFor = (Date.now() - new Date(j.createdAt).getTime()) / 1000
+    const usual = await usualTime({
+      modelId: j.modelId,
+      provider: providerForEndpoint(j.pollModel)?.id ?? 'fal',
+      resolution: j.settings.resolution,
+      quality: j.settings.quality,
+      duration: j.settings.duration,
+    })
+    r.running_for = spokenDuration(ranFor)
+    r.usually_takes = usual.words
+    if (usual.typical !== null) {
+      const left = Math.max(10, Math.round(usual.typical - ranFor))
+      soonest = soonest === null ? left : Math.min(soonest, left)
+    }
+  }
+  const going = jobs.some((j) => ['running', 'queued', 'starting'].includes(reports.get(j.id)?.state || ''))
   const out: Content[] = [text({
     jobs: jobs.map((j) => reports.get(j.id)),
-    ...(jobs.some((j) => ['running', 'queued', 'starting'].includes(reports.get(j.id)?.state || '')) ? { next: 'Some are still going. Call check_jobs again in a little while.' } : {}),
+    ...(going
+      ? {
+          next: soonest !== null
+            ? `Some are still going. Check again with wait_seconds around ${Math.min(MAX_WAIT_SECONDS, Math.max(20, soonest + 15))}.`
+            : 'Some are still going. Call check_jobs again in a little while.',
+        }
+      : {}),
+    ...(asked > wait ? { note: `This host lets one check wait ${MAX_WAIT_SECONDS}s at most.` } : {}),
   })]
   // Show what this call finished; with nothing new, show the already-finished ones asked about.
   const show = fresh.length
@@ -1513,6 +1655,7 @@ export const SERVER_INSTRUCTIONS =
   '2. Before generating anything, agree a brief with the user: what you will make, how many tries, which models and settings, and what each costs (list_models). Record it with agree_brief only after they say yes. Inside the brief, work freely; for anything beyond it, ask first.\n' +
   '3. generate_images or generate_videos, then check_jobs. Anything on the board or any earlier draft can be an input (a board node_id or a draft number). Results are drafts in the project’s library. Look at image drafts and say what you think. You cannot watch video: ask the user to review clips in SPITE.\n' +
   '4. The user decides what is kept. keep_drafts puts those on the board.\n' +
+  'When a tool here gets in your way (refuses what it shouldn’t, tells you something wrong, or is missing what you need), file it with send_feedback and tell the user you did; then carry on.\n' +
   'Generation costs the user real money, video most of all: quote prices per image and per clip, and never start more than was agreed. You cannot delete or change anything on the board, and cannot change settings. To bring in a file from outside, the user drops it on the board in SPITE, and it then shows up in view_board.'
 
 export function listTools() {

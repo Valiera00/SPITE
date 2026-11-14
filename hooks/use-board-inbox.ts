@@ -41,6 +41,7 @@ const POLL_OFF_MS = 5 * 60_000
 const COLUMNS = 3
 const GAP = 380
 const STALE_TOAST = 'board-inbox-stale'
+const DRAFTS_TOAST = 'board-inbox-new-drafts'
 
 export function useBoardInbox(opts: {
   projectId: string | undefined
@@ -59,6 +60,9 @@ export function useBoardInbox(opts: {
   const latest = useRef(opts)
   latest.current = opts
   const awaitingSave = useRef<number[]>([])
+  // The newest draft number seen so far; null until the first look, so drafts
+  // that already existed when the canvas opened aren't announced.
+  const seenDraft = useRef<number | null>(null)
   // Names this tab to the server, so a claim it made is still its own on retry.
   const tabId = useRef('')
   if (!tabId.current) tabId.current = `tab-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
@@ -87,9 +91,23 @@ export function useBoardInbox(opts: {
       let next = POLL_MS
       try {
         const res = await fetch(`/api/projects/${projectId}/board-inbox`, { cache: 'no-store' })
-        const data = res.ok ? ((await res.json()) as { enabled?: boolean; items?: InboxItem[] }) : null
+        const data = res.ok ? ((await res.json()) as { enabled?: boolean; items?: InboxItem[]; latestDraft?: number }) : null
         if (stopped) return
         if (data && data.enabled === false) next = POLL_OFF_MS
+        // New drafts land in the library, not on the board, where they are easy
+        // to miss: say so, with a way straight to them.
+        if (typeof data?.latestDraft === 'number') {
+          const made = seenDraft.current === null ? 0 : data.latestDraft - seenDraft.current
+          seenDraft.current = data.latestDraft
+          if (made > 0) {
+            toast.info(made === 1 ? 'Claude made a new draft' : `Claude made ${made} new drafts`, {
+              id: DRAFTS_TOAST,
+              description: 'Drafts are in this project’s library, not on the board, until you keep them.',
+              duration: 20_000,
+              action: { label: 'Open library', onClick: () => window.dispatchEvent(new CustomEvent('spite-open-library')) },
+            })
+          }
+        }
         const items = data?.items || []
         if (items.length > 0) await take(items)
       } catch {

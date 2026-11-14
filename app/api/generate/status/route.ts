@@ -5,6 +5,7 @@ import { isValidFalModel, isValidFalRequestId } from '@/lib/fal-validate'
 import { rollbackSpendByRequestId } from '@/lib/spend-gate'
 import { providerForEndpoint } from '@/lib/model-routing'
 import { ProviderError, type DirectProvider } from '@/lib/direct-provider'
+import { later, recordFinished, recordStillRunning } from '@/lib/generation-timings'
 
 export async function GET(request: NextRequest) {
   {
@@ -77,6 +78,7 @@ export async function GET(request: NextRequest) {
           // refund the reserved spend so a failed attempt doesn't eat the
           // hourly cap. Idempotent across repeated polls.
           await rollbackSpendByRequestId(requestId)
+          later(recordFinished(requestId, 'failed'))
           return NextResponse.json({
             status: 'FAILED',
             error: typeof msg === 'string' ? msg : 'Generation failed',
@@ -87,6 +89,9 @@ export async function GET(request: NextRequest) {
       }
       
       const result = await resultRes.json()
+      // Stamp the finish now, before the result is copied into our own storage:
+      // that copy can take a while and isn't part of how long the model took.
+      later(recordFinished(requestId, 'done', Number(statusData?.metrics?.inference_time)))
       console.log('[fal.ai] Result received:', JSON.stringify(result).slice(0, 200))
       
       const output = extractOutputUrls(result)
@@ -146,6 +151,7 @@ export async function GET(request: NextRequest) {
       // Refund the reservation — the job failed, so it shouldn't count against
       // the hourly spend cap. Idempotent across repeated polls.
       await rollbackSpendByRequestId(requestId)
+      later(recordFinished(requestId, 'failed'))
       return NextResponse.json({
         status: 'FAILED',
         error: statusData.error || 'Generation failed',
@@ -153,6 +159,7 @@ export async function GET(request: NextRequest) {
       })
     }
 
+    later(() => recordStillRunning(requestId, status === 'IN_PROGRESS'))
     return NextResponse.json({
       status,
       position: statusData.queue_position,
@@ -200,11 +207,14 @@ async function directStatus(p: DirectProvider, searchParams: URLSearchParams) {
     const task = await p.get(requestId)
     if (task.status === 'FAILED') {
       await rollbackSpendByRequestId(requestId)
+      later(recordFinished(requestId, 'failed'))
       return NextResponse.json({ status: 'FAILED', error: task.error || 'Generation failed', requestId })
     }
     if (task.status !== 'COMPLETED' || !task.videoUrl) {
+      later(() => recordStillRunning(requestId, task.status === 'IN_PROGRESS'))
       return NextResponse.json({ status: task.status, requestId })
     }
+    later(recordFinished(requestId, 'done'))
     // Direct providers' links expire after 24h: keep our own copy. The host
     // comes from the provider's authenticated response, so it is allowed for
     // this rehost.
