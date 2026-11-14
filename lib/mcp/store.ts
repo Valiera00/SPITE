@@ -27,6 +27,10 @@ async function ensure(sql: Sql) {
     replaced_at          timestamptz
   )`
   await sql`CREATE INDEX IF NOT EXISTS idx_mcp_briefs_project ON mcp_briefs (project_id, created_at DESC)`
+  // Video allowance, added after the first (images-only) version.
+  await sql`ALTER TABLE mcp_briefs ADD COLUMN IF NOT EXISTS max_videos integer NOT NULL DEFAULT 0`
+  await sql`ALTER TABLE mcp_briefs ADD COLUMN IF NOT EXISTS used_videos integer NOT NULL DEFAULT 0`
+  await sql`ALTER TABLE mcp_briefs ADD COLUMN IF NOT EXISTS max_price_per_video numeric(10,4)`
   await sql`CREATE TABLE IF NOT EXISTS mcp_jobs (
     id             text PRIMARY KEY,
     project_id     text NOT NULL,
@@ -75,8 +79,13 @@ export interface Brief {
   usedImages: number
   models: string[] | null
   maxPricePerImage: number | null
+  maxVideos: number
+  usedVideos: number
+  maxPricePerVideo: number | null
   expiresAt: string
 }
+
+export type Kind = 'image' | 'video'
 
 const BRIEF_HOURS = 12
 
@@ -89,6 +98,9 @@ function toBrief(r: Record<string, unknown>): Brief {
     usedImages: Number(r.used_images),
     models: Array.isArray(r.models) ? (r.models as string[]) : null,
     maxPricePerImage: r.max_price_per_image === null || r.max_price_per_image === undefined ? null : Number(r.max_price_per_image),
+    maxVideos: Number(r.max_videos) || 0,
+    usedVideos: Number(r.used_videos) || 0,
+    maxPricePerVideo: r.max_price_per_video === null || r.max_price_per_video === undefined ? null : Number(r.max_price_per_video),
     expiresAt: new Date(r.expires_at as string).toISOString(),
   }
 }
@@ -100,6 +112,8 @@ export async function startBrief(input: {
   maxImages: number
   models: string[] | null
   maxPricePerImage: number | null
+  maxVideos: number
+  maxPricePerVideo: number | null
 }): Promise<Brief> {
   const sql = getDb()
   await ensure(sql)
@@ -107,9 +121,10 @@ export async function startBrief(input: {
   const expires = new Date(Date.now() + BRIEF_HOURS * 3600_000).toISOString()
   const results = await sql.transaction([
     sql`UPDATE mcp_briefs SET replaced_at = now() WHERE project_id = ${input.projectId} AND replaced_at IS NULL`,
-    sql`INSERT INTO mcp_briefs (id, project_id, summary, max_images, models, max_price_per_image, expires_at)
+    sql`INSERT INTO mcp_briefs (id, project_id, summary, max_images, models, max_price_per_image, max_videos, max_price_per_video, expires_at)
         VALUES (${id}, ${input.projectId}, ${input.summary}, ${input.maxImages},
-                ${input.models ? JSON.stringify(input.models) : null}::jsonb, ${input.maxPricePerImage}, ${expires})
+                ${input.models ? JSON.stringify(input.models) : null}::jsonb, ${input.maxPricePerImage},
+                ${input.maxVideos}, ${input.maxPricePerVideo}, ${expires})
         RETURNING *`,
   ])
   return toBrief((results[1] as Record<string, unknown>[])[0])
@@ -127,24 +142,31 @@ export async function activeBrief(projectId: string): Promise<Brief | null> {
   return rows.length ? toBrief(rows[0]) : null
 }
 
-/** Take `n` images out of a brief's allowance. False when that would exceed it: nothing is taken. */
-export async function takeFromBrief(briefId: string, n: number): Promise<boolean> {
+/** Take `n` images or videos out of a brief's allowance. False when that would exceed it: nothing is taken. */
+export async function takeFromBrief(briefId: string, kind: Kind, n: number): Promise<boolean> {
   const sql = getDb()
   await ensure(sql)
-  const rows = await sql`
-    UPDATE mcp_briefs SET used_images = used_images + ${n}
-    WHERE id = ${briefId} AND replaced_at IS NULL AND expires_at > now() AND used_images + ${n} <= max_images
-    RETURNING id
-  `
+  const rows = kind === 'video'
+    ? await sql`
+        UPDATE mcp_briefs SET used_videos = used_videos + ${n}
+        WHERE id = ${briefId} AND replaced_at IS NULL AND expires_at > now() AND used_videos + ${n} <= max_videos
+        RETURNING id
+      `
+    : await sql`
+        UPDATE mcp_briefs SET used_images = used_images + ${n}
+        WHERE id = ${briefId} AND replaced_at IS NULL AND expires_at > now() AND used_images + ${n} <= max_images
+        RETURNING id
+      `
   return rows.length > 0
 }
 
-/** Hand images back to a brief (a job that never started, or failed). */
-export async function returnToBrief(briefId: string | null | undefined, n: number): Promise<void> {
+/** Hand allowance back to a brief (a job that never started, failed, or was cancelled). */
+export async function returnToBrief(briefId: string | null | undefined, kind: Kind, n: number): Promise<void> {
   if (!briefId || n <= 0) return
   const sql = getDb()
   await ensure(sql)
-  await sql`UPDATE mcp_briefs SET used_images = GREATEST(0, used_images - ${n}) WHERE id = ${briefId}`
+  if (kind === 'video') await sql`UPDATE mcp_briefs SET used_videos = GREATEST(0, used_videos - ${n}) WHERE id = ${briefId}`
+  else await sql`UPDATE mcp_briefs SET used_images = GREATEST(0, used_images - ${n}) WHERE id = ${briefId}`
 }
 
 // ---------------------------------------------------------------------------
@@ -160,7 +182,7 @@ export interface Job {
   modelId: string
   prompt: string
   settings: Record<string, unknown>
-  state: 'running' | 'done' | 'failed'
+  state: 'running' | 'done' | 'failed' | 'cancelled'
   error: string | null
   createdAt: string
 }
@@ -252,7 +274,7 @@ export async function releaseJob(jobId: string): Promise<void> {
   await sql`UPDATE mcp_jobs SET checking_at = NULL WHERE id = ${jobId} AND state = 'running'`
 }
 
-export async function finishJob(jobId: string, state: 'done' | 'failed', error?: string): Promise<void> {
+export async function finishJob(jobId: string, state: 'done' | 'failed' | 'cancelled', error?: string): Promise<void> {
   const sql = getDb()
   await ensure(sql)
   await sql`

@@ -1,8 +1,8 @@
 // The tools SPITE's MCP endpoint offers. Each one goes through the same code
-// the app's own buttons use: generation is submitted and polled through the
-// /api/generate routes (so the spend gate, provider routing and library
-// recording all apply unchanged), and folder references are compiled by the
-// same function the image node uses.
+// the app's own buttons use: generation is submitted, polled and cancelled
+// through the /api/generate routes (so the spend gate, provider routing and
+// library recording all apply unchanged), and folder references are compiled
+// by the same function the image and video nodes use.
 //
 // What is deliberately absent: anything that deletes, anything that changes
 // settings, anything that reads a key.
@@ -10,18 +10,20 @@
 import { NextRequest } from 'next/server'
 import { POST as submitGeneration } from '@/app/api/generate/submit/route'
 import { GET as generationStatus } from '@/app/api/generate/status/route'
+import { POST as cancelGeneration } from '@/app/api/generate/cancel/route'
 import { GET as foldersGet } from '@/app/api/folders/route'
 import { getDb } from '../db'
-import { getImageModels, getModelById, type ModelConfig } from '../fal-models'
+import { getImageModels, getVideoModels, getModelById, type ModelConfig } from '../fal-models'
 import { estimateGenerationCost } from '../fal-cost'
 import { compileMentionsForModel, pickRefStrategy, type FolderType } from '../mention-prompt'
+import { resolveRoute } from '../model-routing'
 import { isThumbnailable } from '../r2-upload'
 import { getOrCreateThumbnail, renderPreview } from '../thumbnails'
 import { getMcpHourlyLimitUsd } from './access'
 import {
   activeBrief, addDraft, claimJobForCheck, createJob, finishJob, getJobs, keepDrafts, listDrafts,
   mcpSpendLastHourUsd, releaseJob, returnToBrief, startBrief, takeFromBrief,
-  type Brief, type Draft, type Job,
+  type Brief, type Draft, type Job, type Kind,
 } from './store'
 
 // ---------------------------------------------------------------------------
@@ -78,6 +80,18 @@ function intList(args: Args, key: string, max: number): number[] {
   return out
 }
 
+function jobIdList(args: Args, required: boolean): string[] | undefined {
+  const v = args.job_ids
+  if (v === undefined || v === null) {
+    if (required) throw new ToolError('"job_ids" is required.')
+    return undefined
+  }
+  if (!Array.isArray(v) || v.length === 0 || v.length > 40 || v.some((j) => typeof j !== 'string')) {
+    throw new ToolError('"job_ids" must be a list of up to 40 job ids.')
+  }
+  return v as string[]
+}
+
 const usd = (n: number) => `$${n < 0.1 ? n.toFixed(3) : n.toFixed(2)}`
 
 // ---------------------------------------------------------------------------
@@ -111,7 +125,7 @@ async function projectFolders(projectId: string): Promise<Folder[]> {
   if (!res.ok || !Array.isArray(data)) throw new ToolError('Could not read this project’s folders. Try again.')
   return (data as Folder[]).map((f) => ({
     ...f,
-    // Image models take images; a folder's video or audio can't ride along.
+    // References are images; a folder's video or audio can't ride along.
     assets: (f.assets || []).filter((a) => a.type === 'image' && !!a.r2_url),
   }))
 }
@@ -138,32 +152,52 @@ async function imageOf(url: string, size: 'small' | 'large' = 'small'): Promise<
   return webp ? { type: 'image', data: webp.toString('base64'), mimeType: 'image/webp' } : null
 }
 
-function generatableModels(): ModelConfig[] {
-  // Prompt-driven image models. Upscalers take no prompt and are left out.
-  return getImageModels().filter((m) => m.inputTypes.includes('text') && !m.optionalPrompt)
+const allModels = (): ModelConfig[] => [...getImageModels(), ...getVideoModels()]
+
+const takesText = (m: ModelConfig) => m.inputTypes.includes('text')
+const takesImage = (m: ModelConfig) => m.inputTypes.includes('image')
+const takesVideo = (m: ModelConfig) => m.inputTypes.includes('video')
+const promptOptional = (m: ModelConfig) => !takesText(m) || !!m.optionalPrompt
+/** Models that can't run from text alone: they animate, rework or upscale an image. */
+const needsImage = (m: ModelConfig) =>
+  takesImage(m) && (!takesText(m) || takesVideo(m) || /image-to-video/.test(m.falModel))
+
+/** Whose price list applies: the maker's own API when Settings routes the model there, else fal. */
+async function pricingProvider(model: ModelConfig) {
+  const route = await resolveRoute(model.id)
+  return route.kind === 'direct' ? await route.provider.pricingId() : ('fal' as const)
 }
 
-function pricePerImage(model: ModelConfig, resolution?: string, quality?: string): number | null {
-  const e = estimateGenerationCost(model, { count: 1, resolution, quality })
+interface PriceOptions { resolution?: string; quality?: string; durationSeconds?: number; audio?: boolean; autoDuration?: boolean }
+
+/** Estimated price of ONE output at these settings. Null when SPITE has no price for the model. */
+async function priceOf(model: ModelConfig, o: PriceOptions = {}): Promise<number | null> {
+  const e = estimateGenerationCost(model, { count: 1, ...o, provider: await pricingProvider(model) })
   return e.isKnown ? e.perUnit : null
 }
 
 const briefView = (b: Brief) => ({
   summary: b.summary,
   images_left: Math.max(0, b.maxImages - b.usedImages),
-  of: b.maxImages,
+  videos_left: Math.max(0, b.maxVideos - b.usedVideos),
   models: b.models ?? 'any',
   max_price_per_image: b.maxPricePerImage === null ? 'none set' : usd(b.maxPricePerImage),
+  max_price_per_video: b.maxPricePerVideo === null ? 'none set' : usd(b.maxPricePerVideo),
   valid_until: b.expiresAt,
 })
 
 const draftView = (d: Draft) => ({
   draft: d.number,
+  kind: d.type,
   state: d.state,
   model: d.modelId,
   prompt: d.prompt,
   made: d.createdAt,
 })
+
+const VIDEO_NOTE = 'is a video. It can’t be previewed here; the user can watch it in the project’s library in SPITE.'
+
+const kindOf = (job: Job): Kind => (getModelById(job.modelId)?.category === 'video' ? 'video' : 'image')
 
 // ---------------------------------------------------------------------------
 // Tools
@@ -271,78 +305,66 @@ const TOOLS: ToolDef[] = [
 
   {
     name: 'list_models',
-    title: 'List image models',
+    title: 'List models',
     description:
-      'The image models this SPITE can generate with: their options, whether they can use reference images, and the price of ONE image at each setting. ' +
-      'Use it to propose a brief with real prices.',
-    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
-    annotations: readOnly,
-    run: async () => {
-      const refs: Record<string, string> = {
-        'citation-flat': 'several', 'citation-elements': 'several', multi: 'several', single: 'one', none: 'none',
-      }
-      return [text(generatableModels().map((m) => {
-        const tiers = m.resolutions?.length ? m.resolutions : [undefined]
-        const price = (q?: string) => Object.fromEntries(tiers.map((r) => {
-          const p = pricePerImage(m, r, q)
-          return [r ?? 'any size', p === null ? 'unknown' : usd(p)]
-        }))
-        return {
-          model: m.id,
-          name: m.name,
-          about: m.description,
-          aspect_ratios: m.aspectRatios.length ? m.aspectRatios : 'fixed',
-          ...(m.resolutions?.length ? { resolutions: m.resolutions, default_resolution: m.defaultResolution } : {}),
-          ...(m.qualities?.length ? { qualities: m.qualities, default_quality: m.defaultQuality } : {}),
-          reference_images: refs[pickRefStrategy(m)],
-          takes_input_image: m.inputTypes.includes('image'),
-          price_per_image: m.qualities?.length
-            ? Object.fromEntries(m.qualities.map((q) => [q, price(q)]))
-            : price(),
-        }
-      }))]
+      'The image and video models this SPITE can generate with: their options, what inputs they take, and what one output costs. ' +
+      'Use it to propose a brief with real prices. Video is priced per second unless it says per clip.',
+    inputSchema: {
+      type: 'object',
+      properties: { kind: { type: 'string', enum: ['image', 'video', 'all'], description: 'Default all.' } },
+      additionalProperties: false,
     },
+    annotations: readOnly,
+    run: listModels,
   },
 
   {
     name: 'agree_brief',
     title: 'Record the agreed brief',
     description:
-      'Records what the user has agreed you may do in a project: how many images, optionally with which models and up to what price per image. ' +
-      'SPITE enforces it; generate_images refuses anything outside it. ' +
-      'Call this ONLY after the user has explicitly approved this exact brief in the conversation. Propose it first, with per-image prices from list_models, and wait for a yes. ' +
-      'To go beyond a brief (more images, a pricier model or setting), ask the user and record a new one; a new brief replaces the old. A brief lasts 12 hours.',
+      'Records what the user has agreed you may do in a project: how many images and/or videos, optionally with which models and up to what price each. ' +
+      'SPITE enforces it; the generate tools refuse anything outside it. ' +
+      'Call this ONLY after the user has explicitly approved this exact brief in the conversation. Propose it first, with prices from list_models, and wait for a yes. ' +
+      'To go beyond a brief (more tries, a pricier model or setting, longer clips), ask the user and record a new one; a new brief replaces the old. A brief lasts 12 hours.',
     inputSchema: {
       type: 'object',
       properties: {
         project_id: projectIdProp,
-        summary: { type: 'string', description: 'The brief in the words the user agreed to, e.g. "Up to 8 tries at the rooftop shot, Nano Banana Pro, 2K".' },
-        max_images: { type: 'integer', minimum: 1, maximum: 200, description: 'Most images you may generate under this brief.' },
+        summary: { type: 'string', description: 'The brief in the words the user agreed to, e.g. "Up to 8 stills of the rooftop shot on Nano Banana Pro at 2K, then 2 five-second clips on Kling 4.0 Flash".' },
+        max_images: { type: 'integer', minimum: 0, maximum: 200, description: 'Most images you may generate under this brief. Default 0.' },
+        max_videos: { type: 'integer', minimum: 0, maximum: 50, description: 'Most videos you may generate under this brief. Default 0.' },
         models: { type: 'array', items: { type: 'string' }, description: 'Model ids allowed. Omit to allow any model.' },
         max_price_per_image: { type: 'number', minimum: 0, description: 'Highest price in USD for one image. Omit for no cap beyond SPITE’s own limits.' },
+        max_price_per_video: { type: 'number', minimum: 0, description: 'Highest price in USD for one whole clip (price per second times length). Omit for no cap beyond SPITE’s own limits.' },
       },
-      required: ['project_id', 'summary', 'max_images'],
+      required: ['project_id', 'summary'],
       additionalProperties: false,
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     run: async (args) => {
       const project = await requireProject(args)
       const summary = str(args, 'summary')!.slice(0, 600)
-      const maxImages = int(args, 'max_images', 1, 200)
+      const maxImages = int(args, 'max_images', 0, 200, 0)
+      const maxVideos = int(args, 'max_videos', 0, 50, 0)
+      if (maxImages + maxVideos === 0) throw new ToolError('A brief needs max_images or max_videos above 0.')
       let models: string[] | null = null
       if (args.models !== undefined && args.models !== null) {
         if (!Array.isArray(args.models) || args.models.some((m) => typeof m !== 'string')) throw new ToolError('"models" must be a list of model ids.')
-        const known = new Set(generatableModels().map((m) => m.id))
+        const known = new Set(allModels().map((m) => m.id))
         const unknown = (args.models as string[]).filter((m) => !known.has(m))
         if (unknown.length) throw new ToolError(`Unknown model id: ${unknown.join(', ')}. Call list_models.`)
         models = (args.models as string[]).length ? Array.from(new Set(args.models as string[])) : null
       }
-      let maxPrice: number | null = null
-      if (args.max_price_per_image !== undefined && args.max_price_per_image !== null) {
-        maxPrice = Number(args.max_price_per_image)
-        if (!Number.isFinite(maxPrice) || maxPrice < 0) throw new ToolError('"max_price_per_image" must be a price in USD.')
+      const cap = (key: string): number | null => {
+        if (args[key] === undefined || args[key] === null) return null
+        const n = Number(args[key])
+        if (!Number.isFinite(n) || n < 0) throw new ToolError(`"${key}" must be a price in USD.`)
+        return n
       }
-      const brief = await startBrief({ projectId: project.id, summary, maxImages, models, maxPricePerImage: maxPrice })
+      const brief = await startBrief({
+        projectId: project.id, summary, maxImages, maxVideos, models,
+        maxPricePerImage: cap('max_price_per_image'), maxPricePerVideo: cap('max_price_per_video'),
+      })
       return [text({ recorded: true, project: project.name, brief: briefView(brief) })]
     },
   },
@@ -354,34 +376,65 @@ const TOOLS: ToolDef[] = [
       'Starts image generations in a project, inside the agreed brief. Each image is its own job and costs money. ' +
       'Results are DRAFTS: they go to the project’s library, not onto the board. The user picks which to keep (keep_drafts). ' +
       'Write @Tag in the prompt to use a folder’s reference images (tags from get_project). ' +
-      'To make new versions of an earlier draft, pass based_on_draft and describe the change. ' +
+      'To make new versions of an earlier draft, or to upscale one, pass based_on_draft. ' +
       'Returns job ids at once; results come from check_jobs.',
     inputSchema: {
       type: 'object',
       properties: {
         project_id: projectIdProp,
-        prompt: { type: 'string', description: 'What to make. May include @Tag folder references.' },
-        model: { type: 'string', description: 'Model id from list_models.' },
-        count: { type: 'integer', minimum: 1, maximum: 8, description: 'How many separate tries of this prompt. Default 1.' },
+        prompt: { type: 'string', description: 'What to make. May include @Tag folder references. Not needed for upscalers.' },
+        model: { type: 'string', description: 'Image model id from list_models.' },
+        count: { type: 'integer', minimum: 1, maximum: 8, description: 'How many separate tries. Default 1.' },
         aspect_ratio: { type: 'string', description: 'One of the model’s aspect ratios. Default: the model’s own.' },
-        resolution: { type: 'string', description: 'One of the model’s resolutions. Default: the model’s own.' },
+        resolution: { type: 'string', description: 'One of the model’s resolutions (for upscalers: 2x or 4x). Default: the model’s own.' },
         quality: { type: 'string', description: 'One of the model’s qualities, for models that have them.' },
-        based_on_draft: { type: 'integer', minimum: 1, description: 'Draft number to use as the input image (iterate on it).' },
+        based_on_draft: { type: 'integer', minimum: 1, description: 'Image draft number to use as the input image.' },
       },
-      required: ['project_id', 'prompt', 'model'],
+      required: ['project_id', 'model'],
       additionalProperties: false,
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
-    run: generateImages,
+    run: (args) => generate('image', args),
+  },
+
+  {
+    name: 'generate_videos',
+    title: 'Generate videos',
+    description:
+      'Starts video generations in a project, inside the agreed brief. Each clip is its own job; video costs far more than images, so be exact about length and resolution. ' +
+      'Results are DRAFTS in the project’s library; the user picks which to keep (keep_drafts). You cannot watch video: tell the user to review clips in SPITE. ' +
+      'Inputs: a prompt (with @Tag folder references where the model supports them), an image draft as first_frame_draft and/or end_frame_draft to animate, ' +
+      'or a video draft as source_video_draft for upscalers and video-to-video models. list_models says what each model takes. ' +
+      'Returns job ids at once; clips take from under a minute to several minutes (check_jobs).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        project_id: projectIdProp,
+        prompt: { type: 'string', description: 'What happens in the shot. May include @Tag folder references.' },
+        model: { type: 'string', description: 'Video model id from list_models.' },
+        count: { type: 'integer', minimum: 1, maximum: 4, description: 'How many separate tries. Default 1.' },
+        duration: { type: 'string', description: 'One of the model’s durations, e.g. "5s" (or "auto" where offered). Default: the model’s own.' },
+        aspect_ratio: { type: 'string', description: 'One of the model’s aspect ratios. Default: the model’s own.' },
+        resolution: { type: 'string', description: 'One of the model’s resolutions. Default: the model’s own.' },
+        sound: { type: 'boolean', description: 'Generate sound, on models that can. Default false. May change the price.' },
+        first_frame_draft: { type: 'integer', minimum: 1, description: 'Image draft number to start the clip from.' },
+        end_frame_draft: { type: 'integer', minimum: 1, description: 'Image draft number to end the clip on.' },
+        source_video_draft: { type: 'integer', minimum: 1, description: 'Video draft number, for models that take a video.' },
+      },
+      required: ['project_id', 'model'],
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+    run: (args) => generate('video', args),
   },
 
   {
     name: 'check_jobs',
     title: 'Check jobs',
     description:
-      'Progress of generation jobs. Finished images are shown and get a draft number. ' +
+      'Progress of generation jobs. Finished results get a draft number, and finished images are shown. ' +
       'With no job_ids it covers everything still running in the project plus what finished in the last 15 minutes. ' +
-      'Images usually take 10–60 seconds; wait_seconds lets this call wait for results instead of you calling repeatedly.',
+      'Images usually take 10–60 seconds and video one to several minutes; wait_seconds lets this call wait for results instead of you calling repeatedly.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -397,11 +450,30 @@ const TOOLS: ToolDef[] = [
   },
 
   {
+    name: 'cancel_jobs',
+    title: 'Cancel jobs',
+    description:
+      'Asks to stop jobs that are still running, e.g. a clip started with the wrong settings. Usually only a job that has not begun rendering can be stopped. ' +
+      'A stopped job gives its try back to the brief. Finished results are never affected.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        project_id: projectIdProp,
+        job_ids: { type: 'array', items: { type: 'string' }, description: 'Jobs to stop.' },
+      },
+      required: ['project_id', 'job_ids'],
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    run: cancelJobs,
+  },
+
+  {
     name: 'list_drafts',
     title: 'List drafts',
     description:
-      'The images you have made in a project, by draft number. state "draft" = in the library only, "kept" = waiting to appear on the board, "on_board" = placed. ' +
-      'Set show_images to look at them again.',
+      'The images and videos you have made in a project, by draft number. state "draft" = in the library only, "kept" = waiting to appear on the board, "on_board" = placed. ' +
+      'Set show_images to look at the image drafts again.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -422,7 +494,7 @@ const TOOLS: ToolDef[] = [
       if (drafts.length === 0) return [text(state === 'all' ? 'No drafts in this project yet.' : `No drafts in state "${state}".`)]
       const out: Content[] = [text(drafts.map(draftView))]
       if (args.show_images === true) {
-        for (const d of drafts.slice(-12)) {
+        for (const d of drafts.filter((x) => x.type === 'image').slice(-12)) {
           const img = await imageOf(d.url)
           if (img) out.push(text(`Draft ${d.number}`), img)
         }
@@ -434,7 +506,7 @@ const TOOLS: ToolDef[] = [
   {
     name: 'view_draft',
     title: 'Look at a draft',
-    description: 'Shows one draft, small or large. Use large to judge detail before recommending what to keep.',
+    description: 'Shows one image draft, small or large. Use large to judge detail before recommending what to keep. Video drafts can’t be shown.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -452,6 +524,7 @@ const TOOLS: ToolDef[] = [
       const size = str(args, 'size', false) === 'small' ? 'small' : 'large'
       const [draft] = await listDrafts(project.id, { numbers: [number] })
       if (!draft) throw new ToolError(`There is no draft ${number} in this project (it may have been cleared from the library).`)
+      if (draft.type === 'video') return [text(draftView(draft)), text(`Draft ${draft.number} ${VIDEO_NOTE}`)]
       const img = await imageOf(draft.url, size)
       return img ? [text(draftView(draft)), img] : [text(draftView(draft)), text('This draft can’t be shown as an image here.')]
     },
@@ -494,18 +567,98 @@ const TOOLS: ToolDef[] = [
 ]
 
 // ---------------------------------------------------------------------------
-// generate_images
+// list_models
 // ---------------------------------------------------------------------------
 
-async function generateImages(args: Args): Promise<Content[]> {
-  const project = await requireProject(args)
-  const prompt = str(args, 'prompt')!
-  if (prompt.length > 8000) throw new ToolError('The prompt is too long (8000 characters at most).')
-  const modelId = str(args, 'model')!
-  const count = int(args, 'count', 1, 8, 1)
+async function listModels(args: Args): Promise<Content[]> {
+  const kind = str(args, 'kind', false) || 'all'
+  if (!['image', 'video', 'all'].includes(kind)) throw new ToolError('"kind" must be image, video or all.')
+  const refs: Record<string, string> = {
+    'citation-flat': 'several', 'citation-elements': 'several', multi: 'several', single: 'one', none: 'none',
+  }
+  const show = (p: number | null) => (p === null ? 'unknown' : usd(p))
+  const out: Record<string, unknown>[] = []
+  for (const m of allModels()) {
+    if (kind !== 'all' && m.category !== kind) continue
+    const tiers = m.resolutions?.length ? m.resolutions : [undefined]
+    const common = {
+      model: m.id,
+      name: m.name,
+      kind: m.category,
+      about: m.description,
+      ...(m.aspectRatios.length ? { aspect_ratios: m.aspectRatios } : {}),
+      ...(m.resolutions?.length ? { resolutions: m.resolutions, default_resolution: m.defaultResolution } : {}),
+      prompt: !takesText(m) ? 'not used' : m.optionalPrompt ? 'optional' : 'required',
+      folder_references: takesText(m) ? refs[pickRefStrategy(m)] : 'none',
+    }
+    if (m.category === 'image') {
+      const table = async (q?: string) => {
+        const row: Record<string, string> = {}
+        for (const r of tiers) row[r ?? 'any size'] = show(await priceOf(m, { resolution: r, quality: q }))
+        return row
+      }
+      let price: Record<string, unknown>
+      if (m.qualities?.length) {
+        price = {}
+        for (const q of m.qualities) price[q] = await table(q)
+      } else price = await table()
+      out.push({
+        ...common,
+        ...(m.qualities?.length ? { qualities: m.qualities, default_quality: m.defaultQuality } : {}),
+        input_image: !takesImage(m) ? 'no' : needsImage(m) ? 'required (based_on_draft)' : 'optional (based_on_draft)',
+        price_per_image: price,
+      })
+      continue
+    }
+    // Per second when the price moves with length, else per clip.
+    const perSecond = (await priceOf(m, { durationSeconds: 1 })) !== (await priceOf(m, { durationSeconds: 2 }))
+    const table = async (audio: boolean) => {
+      const row: Record<string, string> = {}
+      for (const r of tiers) row[r ?? 'any size'] = show(await priceOf(m, { resolution: r, durationSeconds: 1, audio }))
+      return row
+    }
+    const silent = await table(false)
+    const withSound = m.supportsAudio ? await table(true) : null
+    const provider = await pricingProvider(m)
+    const notes: string[] = []
+    if (m.referenceModel && !m.referenceTakesFrames) notes.push('Folder references and first/end frames are separate modes: use one or the other.')
+    if (m.referenceParam === 'elements' && !m.referenceModel) notes.push('Folder references need a first frame.')
+    out.push({
+      ...common,
+      ...(m.durations?.length ? { durations: m.durations, default_duration: m.defaultDuration } : {}),
+      sound: m.supportsAudio ? 'optional (sound: true)' : 'no setting',
+      first_frame: !takesImage(m) ? 'no' : needsImage(m) ? 'required' : 'optional',
+      end_frame: takesImage(m) && !takesVideo(m) ? 'optional' : 'no',
+      source_video: takesVideo(m) ? 'required' : 'no',
+      ...(notes.length ? { notes } : {}),
+      [perSecond ? 'price_per_second' : 'price_per_clip']:
+        withSound && JSON.stringify(withSound) !== JSON.stringify(silent) ? { without_sound: silent, with_sound: withSound } : silent,
+      ...(provider !== 'fal' ? { billed_by: 'the model maker’s own API (Settings → Model providers)' } : {}),
+    })
+  }
+  return [text(out)]
+}
 
-  const model = generatableModels().find((m) => m.id === modelId)
-  if (!model) throw new ToolError(`Unknown image model "${modelId}". Call list_models.`)
+// ---------------------------------------------------------------------------
+// generate_images / generate_videos
+// ---------------------------------------------------------------------------
+
+async function generate(kind: Kind, args: Args): Promise<Content[]> {
+  const project = await requireProject(args)
+  const noun = kind === 'video' ? 'video' : 'image'
+  const modelId = str(args, 'model')!
+  const count = int(args, 'count', 1, kind === 'video' ? 4 : 8, 1)
+
+  const model = allModels().find((m) => m.id === modelId)
+  if (!model) throw new ToolError(`Unknown model "${modelId}". Call list_models.`)
+  if (model.category !== kind) {
+    throw new ToolError(`${model.name} is ${model.category === 'video' ? 'a video' : 'an image'} model. Use generate_${model.category}s for it.`)
+  }
+
+  const prompt = str(args, 'prompt', false) || ''
+  if (prompt.length > 8000) throw new ToolError('The prompt is too long (8000 characters at most).')
+  if (!prompt && !promptOptional(model)) throw new ToolError(`${model.name} needs a prompt.`)
+  if (prompt && !takesText(model)) throw new ToolError(`${model.name} doesn’t take a prompt. Leave "prompt" out.`)
 
   const pick = (key: string, options: string[] | undefined, fallback: string | undefined, label: string) => {
     const v = str(args, key, false)
@@ -516,33 +669,46 @@ async function generateImages(args: Args): Promise<Content[]> {
   }
   const aspectRatio = pick('aspect_ratio', model.aspectRatios, model.defaultAspectRatio, 'aspect ratio')
   const resolution = pick('resolution', model.resolutions, model.defaultResolution, 'resolution')
-  const quality = pick('quality', model.qualities, model.defaultQuality, 'quality')
+  const quality = kind === 'image' ? pick('quality', model.qualities, model.defaultQuality, 'quality') : undefined
+  const duration = kind === 'video' ? pick('duration', model.durations, model.defaultDuration, 'duration') : undefined
+  let sound = false
+  if (kind === 'video' && args.sound !== undefined && args.sound !== null) {
+    if (typeof args.sound !== 'boolean') throw new ToolError('"sound" must be true or false.')
+    if (args.sound && !model.supportsAudio) throw new ToolError(`${model.name} has no sound setting. Leave "sound" out.`)
+    sound = args.sound
+  }
 
   // The brief is the user's standing yes. No brief, no generation.
   const brief = await activeBrief(project.id)
   if (!brief) {
     throw new ToolError(
       'No brief is agreed for this project (or the last one ran out after 12 hours). ' +
-      'Propose one to the user with per-image prices, and once they approve, call agree_brief.',
+      'Propose one to the user with prices, and once they approve, call agree_brief.',
     )
   }
   if (brief.models && !brief.models.includes(model.id)) {
     throw new ToolError(`The agreed brief allows only: ${brief.models.join(', ')}. Ask the user before using ${model.name}, then record a new brief.`)
   }
-  const price = pricePerImage(model, resolution, quality)
+  const price = await priceOf(model, {
+    resolution, quality,
+    durationSeconds: duration && duration !== 'auto' ? Number.parseInt(duration, 10) || undefined : undefined,
+    autoDuration: duration === 'auto',
+    audio: kind === 'video' ? sound : undefined,
+  })
   if (price === null) throw new ToolError(`SPITE has no price on record for ${model.name}, so it won’t run it.`)
-  if (brief.maxPricePerImage !== null && price > brief.maxPricePerImage + 1e-9) {
+  const cap = kind === 'video' ? brief.maxPricePerVideo : brief.maxPricePerImage
+  if (cap !== null && price > cap + 1e-9) {
     throw new ToolError(
-      `One image at these settings is about ${usd(price)}, over the ${usd(brief.maxPricePerImage)} per image in the agreed brief. ` +
+      `One ${noun} at these settings is about ${usd(price)}, over the ${usd(cap)} per ${noun} in the agreed brief. ` +
       'Pick a cheaper setting, or ask the user and record a new brief.',
     )
   }
-  const left = brief.maxImages - brief.usedImages
+  const left = kind === 'video' ? brief.maxVideos - brief.usedVideos : brief.maxImages - brief.usedImages
   if (count > left) {
     throw new ToolError(
       left > 0
-        ? `The agreed brief has ${left} image${left === 1 ? '' : 's'} left, and this asks for ${count}. Ask for fewer, or ask the user for more and record a new brief.`
-        : 'The agreed brief is used up. Ask the user whether to continue, then record a new brief.',
+        ? `The agreed brief has ${left} ${noun}${left === 1 ? '' : 's'} left, and this asks for ${count}. Ask for fewer, or ask the user for more and record a new brief.`
+        : `The agreed brief has no ${noun}s left. Ask the user whether to continue, then record a new brief.`,
     )
   }
   // The owner's own ceiling for this connection, from Settings. Stated as a
@@ -551,24 +717,35 @@ async function generateImages(args: Args): Promise<Content[]> {
   if ((await mcpSpendLastHourUsd()) + price * count > hourly + 1e-9) {
     throw new ToolError(
       'This would go over the hourly limit set for Claude in SPITE’s Settings. ' +
-      'Ask for fewer images or a cheaper setting, wait a while, or the user can raise it in Settings → Claude connection.',
+      `Ask for fewer or cheaper ${noun}s, wait a while, or the user can raise it in Settings → Claude connection.`,
     )
   }
 
-  // Input image for iterating on a draft.
-  let basedOnUrl: string | undefined
-  let basedOn: number | undefined
-  if (args.based_on_draft !== undefined && args.based_on_draft !== null) {
-    basedOn = int(args, 'based_on_draft', 1, 1_000_000)
-    if (!model.inputTypes.includes('image')) throw new ToolError(`${model.name} can’t take an input image. Choose a model with takes_input_image.`)
-    const [draft] = await listDrafts(project.id, { numbers: [basedOn] })
-    if (!draft) throw new ToolError(`There is no draft ${basedOn} in this project.`)
-    if (draft.type !== 'image') throw new ToolError(`Draft ${basedOn} isn’t an image.`)
-    basedOnUrl = draft.url
+  // Drafts used as inputs. What the model can take is checked before any
+  // draft is looked up, so the answer is about the model, not a draft number.
+  const given = (key: string) => args[key] !== undefined && args[key] !== null
+  const imageKey = kind === 'video' ? 'first_frame_draft' : 'based_on_draft'
+  if ((given(imageKey) || given('end_frame_draft')) && !takesImage(model)) throw new ToolError(`${model.name} can’t take an input image.`)
+  if (needsImage(model) && !given(imageKey)) throw new ToolError(`${model.name} works from an image: pass "${imageKey}".`)
+  if (kind === 'video') {
+    if (given('end_frame_draft') && takesVideo(model)) throw new ToolError(`${model.name} has no end frame. Leave "end_frame_draft" out.`)
+    if (given('source_video_draft') && !takesVideo(model)) throw new ToolError(`${model.name} doesn’t take a video. Leave "source_video_draft" out.`)
+    if (takesVideo(model) && !given('source_video_draft')) throw new ToolError(`${model.name} works from a video: pass "source_video_draft".`)
   }
+  const draftInput = async (key: string, wantType: 'image' | 'video'): Promise<{ number: number; url: string } | undefined> => {
+    if (args[key] === undefined || args[key] === null) return undefined
+    const number = int(args, key, 1, 1_000_000)
+    const [draft] = await listDrafts(project.id, { numbers: [number] })
+    if (!draft) throw new ToolError(`There is no draft ${number} in this project.`)
+    if (draft.type !== wantType) throw new ToolError(`Draft ${number} is ${draft.type === 'video' ? 'a video' : 'an image'}; "${key}" needs ${wantType === 'video' ? 'a video' : 'an image'} draft.`)
+    return { number, url: draft.url }
+  }
+  const first = await draftInput(imageKey, 'image')
+  const end = kind === 'video' ? await draftInput('end_frame_draft', 'image') : undefined
+  const sourceVideo = kind === 'video' ? await draftInput('source_video_draft', 'video') : undefined
 
-  // @Tag references, compiled exactly as the image node does it.
-  const folders = await projectFolders(project.id)
+  // @Tag references, compiled exactly as the nodes do it.
+  const folders = prompt ? await projectFolders(project.id) : []
   const tags = Array.from(prompt.matchAll(/@([\w-]+)/g), (m) => m[1])
   const byTag = new Map(folders.map((f) => [tagFromName(f.name).toLowerCase(), f]))
   const unknownTags = Array.from(new Set(tags.filter((t) => !byTag.has(t.toLowerCase()))))
@@ -580,30 +757,48 @@ async function generateImages(args: Args): Promise<Content[]> {
   }
   const emptyTags = Array.from(new Set(tags.filter((t) => byTag.get(t.toLowerCase())!.assets.length === 0)))
   if (emptyTags.length) throw new ToolError(`These folders have no images to reference: ${emptyTags.map((t) => `@${t}`).join(', ')}.`)
-  const compiled = compileMentionsForModel(prompt, [], folders, model, basedOnUrl ? 1 : 0)
+  // Image models put the input image in slot 1, ahead of folder references;
+  // on video the first frame is a separate input and takes no slot.
+  const compiled = compileMentionsForModel(prompt, [], folders, model, kind === 'image' && first ? 1 : 0)
+  const hasRefs = compiled.refGroups.length > 0
   const notes: string[] = []
   if (tags.length && compiled.strategy === 'none') {
     notes.push(`${model.name} can’t use reference images, so the folders were sent as plain names only.`)
   } else if (tags.length && compiled.strategy === 'single') {
     notes.push(`${model.name} takes one reference image, so only the first folder’s first image was sent.`)
   }
+  if (kind === 'video' && hasRefs) {
+    // The same two rules the video node enforces before it lets a job go.
+    if (model.referenceModel && !model.referenceTakesFrames && (first || end)) {
+      throw new ToolError(
+        `${model.name} can’t use a first/end frame and folder references in the same clip: they are separate modes. ` +
+        'Drop the @Tags to keep the exact frame, or drop the frame to use the references.',
+      )
+    }
+    if (model.referenceParam === 'elements' && !model.referenceModel && !first) {
+      throw new ToolError(`${model.name} needs a first frame to use folder references: pass "first_frame_draft".`)
+    }
+  }
 
-  if (!(await takeFromBrief(brief.id, count))) {
+  if (!(await takeFromBrief(brief.id, kind, count))) {
     throw new ToolError('The agreed brief no longer has room for this (it changed a moment ago). Call get_project to see what is left.')
   }
 
-  const settings = { aspectRatio, resolution, quality, numImages: 1 }
   const body = JSON.stringify({
     modelId: model.id,
     prompt: compiled.prompt,
-    referenceImageUrl: basedOnUrl,
-    referenceGroups: compiled.refGroups.length ? compiled.refGroups : undefined,
-    settings,
+    referenceImageUrl: first?.url,
+    endImageUrl: end?.url,
+    referenceGroups: hasRefs ? compiled.refGroups : undefined,
+    settings: kind === 'video'
+      ? { aspectRatio, duration, resolution, enableAudio: sound, enableLoop: false, videoUrl: sourceVideo?.url }
+      : { aspectRatio, resolution, quality, numImages: 1 },
   })
 
-  // One job per image, never overlapping — the same pacing the image node uses.
+  // One job per output, never overlapping — the same pacing the nodes use.
   const jobs: string[] = []
   let failure: string | null = null
+  let actualPrice = price
   for (let i = 0; i < count; i++) {
     if (i > 0) await new Promise((r) => setTimeout(r, 300))
     let data: Record<string, unknown> = {}
@@ -619,8 +814,13 @@ async function generateImages(args: Args): Promise<Content[]> {
     }
     if (!ok) {
       failure = typeof data.error === 'string' ? data.error.slice(0, 500) : 'SPITE could not start the job.'
-      await returnToBrief(brief.id, count - i) // this one and the rest never started
+      await returnToBrief(brief.id, kind, count - i) // this one and the rest never started
       break
+    }
+    if (typeof data.estimatedUsd === 'number') actualPrice = data.estimatedUsd
+    // Meant for the maker's own API but ran on fal (key missing, provider down).
+    if (typeof data.fallbackReason === 'string' && !notes.some((n) => n.startsWith('Ran on fal'))) {
+      notes.push(`Ran on fal instead of ${typeof data.fallbackFrom === 'string' ? data.fallbackFrom : 'the maker’s API'}: ${data.fallbackReason}. Price per ${noun} is about ${usd(actualPrice)}.`)
     }
     jobs.push(await createJob({
       projectId: project.id,
@@ -629,8 +829,14 @@ async function generateImages(args: Args): Promise<Content[]> {
       pollModel: String(data.model),
       modelId: model.id,
       prompt,
-      settings: { aspectRatio, resolution, quality, ...(basedOn ? { basedOnDraft: basedOn } : {}) },
-      estimatedUsd: typeof data.estimatedUsd === 'number' ? data.estimatedUsd : price,
+      settings: {
+        aspectRatio, resolution, quality, duration,
+        ...(kind === 'video' ? { enableAudio: sound } : {}),
+        ...(first ? { fromDraft: first.number } : {}),
+        ...(end ? { endDraft: end.number } : {}),
+        ...(sourceVideo ? { sourceVideoDraft: sourceVideo.number } : {}),
+      },
+      estimatedUsd: actualPrice,
     }))
   }
 
@@ -640,11 +846,13 @@ async function generateImages(args: Args): Promise<Content[]> {
     started: jobs.length,
     job_ids: jobs,
     model: model.name,
-    price_per_image: usd(price),
-    brief_images_left: after ? Math.max(0, after.maxImages - after.usedImages) : 0,
+    [`price_per_${noun}`]: usd(actualPrice),
+    brief_left: after
+      ? { images: Math.max(0, after.maxImages - after.usedImages), videos: Math.max(0, after.maxVideos - after.usedVideos) }
+      : { images: 0, videos: 0 },
     ...(failure ? { stopped_early: `Only ${jobs.length} of ${count} started. ${failure}` } : {}),
     ...(notes.length ? { notes } : {}),
-    next: 'Call check_jobs for the results.',
+    next: kind === 'video' ? 'Call check_jobs for the results; clips can take a few minutes.' : 'Call check_jobs for the results.',
   })]
 }
 
@@ -664,22 +872,23 @@ interface JobReport {
 async function checkOne(job: Job): Promise<{ report: JobReport; newDrafts: number[] } | null> {
   if (!(await claimJobForCheck(job.id))) return null
   try {
-    const q = new URLSearchParams({ request_id: job.requestId, model: job.pollModel, projectId: job.projectId, prompt: job.prompt })
+    const q = new URLSearchParams({ request_id: job.requestId, model: job.pollModel, projectId: job.projectId, prompt: job.prompt || 'Generated asset' })
     const res = await generationStatus(new NextRequest(`http://spite.internal/api/generate/status?${q.toString()}`))
     const data = ((await res.json().catch(() => ({}))) || {}) as {
-      status?: string; error?: string; output?: { images?: string[]; url?: string }
+      status?: string; error?: string; output?: { images?: string[]; videos?: string[]; url?: string }
     }
     if (data.status === 'FAILED') {
       const error = (typeof data.error === 'string' ? data.error : 'Generation failed').slice(0, 400)
       await finishJob(job.id, 'failed', error)
-      await returnToBrief(job.briefId, 1) // a failed try doesn't use up the brief
+      await returnToBrief(job.briefId, kindOf(job), 1) // a failed try doesn't use up the brief
       return { report: { job_id: job.id, state: 'failed', error }, newDrafts: [] }
     }
     if (data.status === 'COMPLETED') {
-      const urls = data.output?.images?.length ? data.output.images : data.output?.url ? [data.output.url] : []
+      const out = data.output
+      const urls = out?.images?.length ? out.images : out?.videos?.length ? out.videos : out?.url ? [out.url] : []
       const numbers: number[] = []
       for (const url of urls) {
-        // The status route has just recorded each image in the library; find
+        // The status route has just recorded each result in the library; find
         // the row it made so the draft points at a real asset.
         const rows = await getDb()`
           SELECT id FROM generation_history WHERE project_id = ${job.projectId} AND r2_url = ${url}
@@ -704,13 +913,7 @@ async function checkOne(job: Job): Promise<{ report: JobReport; newDrafts: numbe
 
 async function checkJobs(args: Args): Promise<Content[]> {
   const project = await requireProject(args)
-  let ids: string[] | undefined
-  if (args.job_ids !== undefined && args.job_ids !== null) {
-    if (!Array.isArray(args.job_ids) || args.job_ids.some((j) => typeof j !== 'string') || args.job_ids.length > 40) {
-      throw new ToolError('"job_ids" must be a list of up to 40 job ids.')
-    }
-    ids = args.job_ids as string[]
-  }
+  const ids = jobIdList(args, false)
   const wait = int(args, 'wait_seconds', 0, 40, 20)
   const deadline = Date.now() + wait * 1000
 
@@ -721,6 +924,7 @@ async function checkJobs(args: Args): Promise<Content[]> {
   const fresh: number[] = []
   for (const j of jobs) {
     if (j.state === 'failed') reports.set(j.id, { job_id: j.id, state: 'failed', error: j.error || 'Generation failed' })
+    if (j.state === 'cancelled') reports.set(j.id, { job_id: j.id, state: 'cancelled' })
   }
   const doneBefore = jobs.filter((j) => j.state === 'done')
   let pending = jobs.filter((j) => j.state === 'running')
@@ -760,6 +964,10 @@ async function checkJobs(args: Args): Promise<Content[]> {
   if (show.length) {
     const drafts = await listDrafts(project.id, { numbers: show.slice(0, 8) })
     for (const d of drafts) {
+      if (d.type === 'video') {
+        out.push(text(`Draft ${d.number} ${VIDEO_NOTE}`))
+        continue
+      }
       const img = await imageOf(d.url)
       if (img) out.push(text(`Draft ${d.number}`), img)
     }
@@ -769,17 +977,60 @@ async function checkJobs(args: Args): Promise<Content[]> {
 }
 
 // ---------------------------------------------------------------------------
+// cancel_jobs
+// ---------------------------------------------------------------------------
+
+async function cancelJobs(args: Args): Promise<Content[]> {
+  const project = await requireProject(args)
+  const ids = jobIdList(args, true)!
+  const jobs = await getJobs(project.id, ids)
+  if (jobs.length === 0) throw new ToolError('None of those jobs belong to this project.')
+  const reports: JobReport[] = []
+  for (const job of jobs) {
+    if (job.state !== 'running') {
+      reports.push({ job_id: job.id, state: job.state, note: 'Already finished; nothing to stop.' })
+      continue
+    }
+    // Hold the job like a status check does, so a check can't record a result
+    // for it at the same moment.
+    if (!(await claimJobForCheck(job.id))) {
+      reports.push({ job_id: job.id, state: 'running', note: 'It is being checked right now; try again in a moment.' })
+      continue
+    }
+    let stopped = false
+    try {
+      const res = await cancelGeneration(new NextRequest('http://spite.internal/api/generate/cancel', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ request_id: job.requestId, model: job.pollModel }),
+      }))
+      stopped = res.ok
+    } catch (err) {
+      console.error('[mcp] cancel threw:', err instanceof Error ? err.message : err)
+    }
+    if (stopped) {
+      await finishJob(job.id, 'cancelled')
+      await returnToBrief(job.briefId, kindOf(job), 1)
+      reports.push({ job_id: job.id, state: 'cancelled' })
+    } else {
+      await releaseJob(job.id)
+      reports.push({ job_id: job.id, state: 'running', note: 'Could not be stopped (it has probably started rendering). It will finish as normal.' })
+    }
+  }
+  return [text({ jobs: reports })]
+}
+
+// ---------------------------------------------------------------------------
 // Entry points for the endpoint
 // ---------------------------------------------------------------------------
 
 export const SERVER_INSTRUCTIONS =
-  'SPITE is a canvas app for AI filmmaking. Through these tools you work in the owner’s projects: look around, generate images, and put the ones they choose on the board.\n' +
+  'SPITE is a canvas app for AI filmmaking. Through these tools you work in the owner’s projects: look around, generate images and video, and put the results they choose on the board.\n' +
   'How to work:\n' +
   '1. Find the project (list_projects, get_project). Look inside folders you will reference (view_folder).\n' +
-  '2. Before generating anything, agree a brief with the user: what you will make, how many tries, which model and settings, and the price per image (list_models). Record it with agree_brief only after they say yes. Inside the brief, work freely; for anything beyond it, ask first.\n' +
-  '3. generate_images, then check_jobs. Results are drafts in the project’s library. Look at them and say what you think.\n' +
-  '4. The user decides what is kept. keep_drafts puts those on the board. To iterate, generate again with based_on_draft.\n' +
-  'Generation costs the user real money: quote prices per image, and never start more than was agreed. You cannot delete anything or change settings here.'
+  '2. Before generating anything, agree a brief with the user: what you will make, how many tries, which models and settings, and what each costs (list_models). Record it with agree_brief only after they say yes. Inside the brief, work freely; for anything beyond it, ask first.\n' +
+  '3. generate_images or generate_videos, then check_jobs. Results are drafts in the project’s library. Look at image drafts and say what you think. You cannot watch video: ask the user to review clips in SPITE.\n' +
+  '4. The user decides what is kept. keep_drafts puts those on the board. To iterate, generate again from a draft (based_on_draft, first_frame_draft).\n' +
+  'Generation costs the user real money, video most of all: quote prices per image and per clip, and never start more than was agreed. You cannot delete anything or change settings here.'
 
 export function listTools() {
   return TOOLS.map(({ name, title, description, inputSchema, annotations }) => ({ name, title, description, inputSchema, annotations }))

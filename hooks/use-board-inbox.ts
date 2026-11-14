@@ -23,6 +23,8 @@ interface InboxItem {
   aspectRatio?: string
   resolution?: string
   quality?: string
+  duration?: string
+  enableAudio?: boolean
 }
 
 const POLL_MS = 10_000
@@ -122,11 +124,32 @@ export function useBoardInbox(opts: {
             },
           }
         }
+        if (it.type === 'video') {
+          // Same idea for a clip: a video node holding its result and settings.
+          // The node captures its own poster frame once it has loaded the clip.
+          return {
+            id: `node-${stamp}-${i}-${Math.random().toString(36).slice(2, 7)}`,
+            type: 'videoGen',
+            position,
+            data: {
+              ...base,
+              label,
+              thumbnail: undefined,
+              prompt: it.prompt,
+              modelId: it.modelId || undefined,
+              aspectRatio: it.aspectRatio,
+              resolution: it.resolution,
+              duration: it.duration,
+              enableAudio: it.enableAudio ?? false,
+              outputUrl: it.url,
+            },
+          }
+        }
         return {
           id: `ref-${stamp}-${i}`,
           type: 'reference',
           position,
-          data: { ...base, label, thumbnail: it.url, mediaType: it.type === 'video' ? 'video' : it.type === 'audio' ? 'audio' : 'image' },
+          data: { ...base, label, thumbnail: it.url, mediaType: it.type === 'audio' ? 'audio' : 'image' },
         }
       })
       setNodes((ns) => [...ns, ...newNodes])

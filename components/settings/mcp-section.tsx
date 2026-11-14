@@ -329,7 +329,7 @@ export function McpSection() {
             <p className="text-xs text-foreground">Claude can</p>
             <ul className="text-xs text-muted-foreground leading-relaxed list-disc pl-4">
               <li>See your projects, folders and models</li>
-              <li>Generate images into a project</li>
+              <li>Generate images and video into a project</li>
               <li>Put shots you keep onto the board</li>
             </ul>
           </div>

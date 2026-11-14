@@ -292,8 +292,8 @@ Set a positive number to opt in (e.g. `ASSET_RETENTION_DAYS=30`,
 ## Claude connection (MCP)
 
 SPITE has a built-in [MCP](https://modelcontextprotocol.io) endpoint, so your
-own Claude can work in your projects: look around, generate images, and put the
-shots you choose on the board. It is **off by default**.
+own Claude can work in your projects: look around, generate images and video,
+and put the shots you choose on the board. It is **off by default**.
 
 1. In SPITE, open **Settings → Claude connection** and turn it on. You get an
    access token, shown once.
@@ -303,8 +303,8 @@ shots you choose on the board. It is **off by default**.
 How it behaves:
 
 - **A brief first.** Claude can't generate until it has recorded a brief you
-  agreed to (how many images, which models, a price ceiling per image). SPITE
-  enforces it; going beyond it needs a new brief.
+  agreed to (how many images and videos, which models, a price ceiling for
+  each). SPITE enforces it; going beyond it needs a new brief.
 - **Drafts, then keeps.** What Claude makes lands in the project's library as
   numbered drafts. Only the ones you tell it to keep go on the board, the next
   time that canvas is open.
@@ -313,7 +313,8 @@ How it behaves:
 - **No destructive tools.** The endpoint can't delete anything, change
   settings, or read keys. Turning the connection off revokes the token at once.
 
-Images only for now; video generation comes next.
+Claude can look at the images it makes and at your reference folders. It can't
+watch video, so clips are yours to review in the library.
 
 ## Updating
 

@@ -27,6 +27,8 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
       aspectRatio: typeof d.settings.aspectRatio === 'string' ? d.settings.aspectRatio : undefined,
       resolution: typeof d.settings.resolution === 'string' ? d.settings.resolution : undefined,
       quality: typeof d.settings.quality === 'string' ? d.settings.quality : undefined,
+      duration: typeof d.settings.duration === 'string' ? d.settings.duration : undefined,
+      enableAudio: typeof d.settings.enableAudio === 'boolean' ? d.settings.enableAudio : undefined,
     }))
     return NextResponse.json({ enabled: true, items }, { headers: { 'Cache-Control': 'no-store' } })
   } catch (err) {
