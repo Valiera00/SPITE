@@ -689,8 +689,8 @@ const TOOLS: ToolDef[] = [
       properties: {
         project_id: projectIdProp,
         summary: { type: 'string', description: 'The brief in the words the user agreed to, e.g. "Up to 8 stills of the rooftop shot on Nano Banana Pro at 2K, then 2 five-second clips on Kling 4.0 Flash".' },
-        max_images: { type: 'integer', minimum: 0, maximum: 200, description: 'Most images you may generate under this brief. Default 0.' },
-        max_videos: { type: 'integer', minimum: 0, maximum: 50, description: 'Most videos you may generate under this brief. Default 0.' },
+        max_images: { type: 'integer', minimum: 0, maximum: 2000, description: 'Most images you may generate under this brief. Default 0.' },
+        max_videos: { type: 'integer', minimum: 0, maximum: 500, description: 'Most videos you may generate under this brief. Default 0.' },
         models: { type: 'array', items: { type: 'string' }, description: 'Model ids allowed. Omit to allow any model.' },
         max_price_per_image: { type: 'number', minimum: 0, description: 'Highest price in USD for one image. Omit for no cap beyond SPITE’s own limits.' },
         max_price_per_video: { type: 'number', minimum: 0, description: 'Highest price in USD for one whole clip (price per second times length). Omit for no cap beyond SPITE’s own limits.' },
@@ -702,8 +702,8 @@ const TOOLS: ToolDef[] = [
     run: async (args) => {
       const project = await requireProject(args)
       const summary = str(args, 'summary')!.slice(0, 600)
-      const maxImages = int(args, 'max_images', 0, 200, 0)
-      const maxVideos = int(args, 'max_videos', 0, 50, 0)
+      const maxImages = int(args, 'max_images', 0, 2000, 0)
+      const maxVideos = int(args, 'max_videos', 0, 500, 0)
       if (maxImages + maxVideos === 0) throw new ToolError('A brief needs max_images or max_videos above 0.')
       let models: string[] | null = null
       if (args.models !== undefined && args.models !== null) {
@@ -742,7 +742,7 @@ const TOOLS: ToolDef[] = [
         project_id: projectIdProp,
         prompt: { type: 'string', description: 'What to make. May include @Tag folder references. Not needed for upscalers.' },
         model: { type: 'string', description: 'Image model id from list_models.' },
-        count: { type: 'integer', minimum: 1, maximum: 8, description: 'How many separate tries. Default 1.' },
+        count: { type: 'integer', minimum: 1, maximum: 20, description: 'How many separate tries in this call. Default 1. For more, call again.' },
         aspect_ratio: { type: 'string', description: 'One of the model’s aspect ratios. Default: the model’s own.' },
         resolution: { type: 'string', description: 'One of the model’s resolutions (for upscalers: 2x or 4x). Default: the model’s own.' },
         quality: { type: 'string', description: 'One of the model’s qualities, for models that have them.' },
@@ -772,7 +772,7 @@ const TOOLS: ToolDef[] = [
         project_id: projectIdProp,
         prompt: { type: 'string', description: 'What happens in the shot. May include @Tag folder references.' },
         model: { type: 'string', description: 'Video model id from list_models.' },
-        count: { type: 'integer', minimum: 1, maximum: 4, description: 'How many separate tries. Default 1.' },
+        count: { type: 'integer', minimum: 1, maximum: 10, description: 'How many separate tries in this call. Default 1. For more, call again.' },
         duration: { type: 'string', description: 'One of the model’s durations, e.g. "5s" (or "auto" where offered). Default: the model’s own.' },
         aspect_ratio: { type: 'string', description: 'One of the model’s aspect ratios. Default: the model’s own.' },
         resolution: { type: 'string', description: 'One of the model’s resolutions. Default: the model’s own.' },
@@ -1097,7 +1097,7 @@ async function generate(kind: Kind, args: Args): Promise<Content[]> {
   const project = await requireProject(args)
   const noun = kind === 'video' ? 'video' : 'image'
   const modelId = str(args, 'model')!
-  const count = int(args, 'count', 1, kind === 'video' ? 4 : 8, 1)
+  const count = int(args, 'count', 1, kind === 'video' ? 10 : 20, 1)
 
   const model = allModels().find((m) => m.id === modelId)
   if (!model) throw new ToolError(`Unknown model "${modelId}". Call list_models.`)
