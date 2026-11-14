@@ -14,6 +14,10 @@ export interface ModelConfig {
   referenceParam?: 'image_urls' | 'elements' | 'input_image_urls' | 'subject_reference_image_url' | 'reference_image_urls'
   referenceModel?: string       // separate endpoint for references (omit if refs ride the editModel, e.g. Kling v3 elements)
   referenceCite?: '@Image' | '@Element'  // prompt citation token the model needs (auto-appended)
+  // The referenceModel endpoint also takes the first/last frame, so a wired
+  // frame and @-folder references can go in the same job (Kling 4.0). Without
+  // it the two are separate modes and the video node asks the user to pick.
+  referenceTakesFrames?: boolean
   // Models that take AUDIO as a real input (a file fal fetches), as opposed to
   // `supportsAudio`, which only says the model can GENERATE sound. Naming the
   // field here is what makes the video node draw an audio handle at all.
@@ -419,6 +423,55 @@ export const FAL_MODELS: ModelConfig[] = [
     defaultDuration: '5s',
     defaultResolution: '4K',
     description: 'Native 4K resolution, top-tier quality'
+  },
+
+  // Kling 4.0 (Oct 2026) lives under its own fal namespace (kling/v4/...), not
+  // fal-ai/kling-video. Endpoint IDs and inputs checked against fal's OpenAPI
+  // (Nov 2026). Text, image and reference modes; references go to
+  // reference-to-video as elements (up to 7, cited @Element1...), and that
+  // endpoint also accepts the first/last frame. The schema has no sound
+  // switch, so there's no audio toggle. 4.0 runs 3-30s at 720p/1080p; Flash is
+  // the cheaper 720p version, 3-20s.
+  {
+    id: 'kling-4.0',
+    name: 'Kling 4.0',
+    falModel: 'kling/v4/text-to-video',
+    editModel: 'kling/v4/image-to-video',
+    referenceModel: 'kling/v4/reference-to-video',
+    referenceTakesFrames: true,
+    imageParam: 'start_image_url',
+    referenceParam: 'elements',
+    referenceCite: '@Element',
+    category: 'video',
+    inputTypes: ['text', 'image'],
+    aspectRatios: ['16:9', '9:16', '1:1', '21:9'],
+    durations: ['3s', '4s', '5s', '6s', '7s', '8s', '9s', '10s', '11s', '12s', '13s', '14s', '15s', '20s', '25s', '30s'],
+    resolutions: ['720p', '1080p'],
+    defaultAspectRatio: '16:9',
+    defaultDuration: '5s',
+    defaultResolution: '1080p',
+    description: "Kling's newest model: up to 30s at 1080p, multi-shot, up to 7 characters"
+  },
+
+  {
+    id: 'kling-4.0-flash',
+    name: 'Kling 4.0 Flash',
+    falModel: 'kling/v4/flash/text-to-video',
+    editModel: 'kling/v4/flash/image-to-video',
+    referenceModel: 'kling/v4/flash/reference-to-video',
+    referenceTakesFrames: true,
+    imageParam: 'start_image_url',
+    referenceParam: 'elements',
+    referenceCite: '@Element',
+    category: 'video',
+    inputTypes: ['text', 'image'],
+    aspectRatios: ['16:9', '9:16', '1:1', '21:9'],
+    durations: ['3s', '4s', '5s', '6s', '7s', '8s', '9s', '10s', '11s', '12s', '13s', '14s', '15s', '20s'],
+    resolutions: ['720p'],
+    defaultAspectRatio: '16:9',
+    defaultDuration: '5s',
+    defaultResolution: '720p',
+    description: 'Faster, cheaper Kling 4.0 at 720p, up to 20s'
   },
 
   // Kling o1 — FIRST-FRAME-LAST-FRAME video model. There's no
@@ -904,8 +957,11 @@ export function buildModelInput(
       const groups = options.referenceGroups && options.referenceGroups.length
         ? options.referenceGroups
         : [{ urls: folderRefsFlat }]
+      // Kling 4.0 takes at most 7 elements with 1-3 extra views each.
+      const isKling4 = model.id === 'kling-4.0' || model.id === 'kling-4.0-flash'
       const elements = groups
         .filter((g) => g.urls.length > 0)
+        .slice(0, isKling4 ? 7 : undefined)
         .map((g) => ({
           frontal_image_url: g.urls[0],
           // Kling v3's schema demands reference_image_urls be a non-empty
@@ -914,7 +970,7 @@ export function buildModelInput(
           // gets one image's worth of info, which is the same as having
           // a single reference anyway.
           reference_image_urls:
-            g.urls.length > 1 ? g.urls.slice(1) : [g.urls[0]],
+            g.urls.length > 1 ? g.urls.slice(1, isKling4 ? 4 : undefined) : [g.urls[0]],
         }))
       if (elements.length > 0) input.elements = elements
     } else if (model.referenceParam === 'subject_reference_image_url') {
@@ -1109,6 +1165,23 @@ export function buildModelInput(
     if (prompt && prompt.trim()) input.prompt = prompt
     input.character_orientation = 'image'
     input.keep_original_sound = false
+    return input
+  }
+
+  // KLING 4.0 / 4.0 Flash — integer seconds, resolution, aspect ratio. The
+  // image-to-video mode takes its shape from the first frame and ignores
+  // aspect_ratio. No audio field in the schema, so none is sent.
+  if (model.id === 'kling-4.0' || model.id === 'kling-4.0-flash') {
+    input.prompt = prompt
+    input.aspect_ratio = options.aspectRatio && model.aspectRatios.includes(options.aspectRatio)
+      ? options.aspectRatio
+      : model.defaultAspectRatio
+    input.duration = parseInt(
+      options.duration && model.durations?.includes(options.duration) ? options.duration : model.defaultDuration || '5s',
+    )
+    input.resolution = options.resolution && model.resolutions?.includes(options.resolution)
+      ? options.resolution
+      : model.defaultResolution
     return input
   }
 

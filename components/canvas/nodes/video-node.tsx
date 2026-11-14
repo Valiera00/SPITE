@@ -753,7 +753,7 @@ function VideoNodeImpl({ id, data, selected }: NodeProps) {
     // the reference endpoint and DROP the wired frame, which reads as "my first
     // frame got treated as a reference." Catch it here and make the user choose
     // instead of burning a generation on the wrong inputs.
-    if (currentModel.referenceModel && (connectedImageUrl || connectedEndImageUrl) && referenceGroups.length > 0) {
+    if (currentModel.referenceModel && !currentModel.referenceTakesFrames && (connectedImageUrl || connectedEndImageUrl) && referenceGroups.length > 0) {
       setError(
         `${currentModel.name} can't use a first/end frame and reference images at the same time — they're separate modes. ` +
         `Remove the @mention / wired references to keep your exact first frame, or remove the first frame to use the references.`,

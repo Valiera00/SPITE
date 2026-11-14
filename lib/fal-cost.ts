@@ -146,6 +146,12 @@ const COST_TABLE: Record<string, CostEntry> = {
                            byTier: { default: 0.084 }, byTierAudio: { default: 0.126 } },
   'kling-3.0-pro':       { unit: 'sec',   price: 0.168,
                            byTier: { default: 0.112 }, byTierAudio: { default: 0.168 } },
+  // Kling 4.0 (fal, Nov 2026): $0.157/s at 720p, $0.235/s at 1080p. Video
+  // references would bill less, but SPITE only sends images. Flash: $0.094/s.
+  'kling-4.0':           { unit: 'sec',   price: 0.235,
+                           byTier: { '720p': 0.157, '1080p': 0.235 } },
+  'kling-4.0-flash':     { unit: 'sec',   price: 0.094,
+                           byTier: { '720p': 0.094 } },
   // 4K: fal publishes no price; Kling lists $0.42/s. Kept high until a bill confirms.
   'kling-3.0-4k':        { unit: 'sec',   price: 0.50 },
   'minimax-hailuo':      { unit: 'video', price: 0.50 },
