@@ -55,6 +55,10 @@ const COST_TABLE: Record<string, CostEntry> = {
   // than the larger 1920x1080, because OpenAI bills output image tokens), so
   // each tier takes the CEILING of the published sizes it spans rather than an
   // interpolation. 4K is exact: 3840x2160 high = $0.401.
+  // Seedream 5.5 (fal, Nov 2026): $0.03 per image up to 2.61 MP (SPITE's 1K),
+  // $0.0405 above (2K). Editing adds $0.012 per input image, not counted here.
+  'seedream-5.5':        { unit: 'image', price: 0.0405,
+                           byTier: { '1K': 0.03, '2K': 0.0405 } },
   'gpt-image-2':         { unit: 'image', price: 0.41,
                            byTier: { '1K': 0.21, '2K': 0.25, '4K': 0.41 },
                            // Same ceiling method per quality, from fal's

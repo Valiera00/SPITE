@@ -200,6 +200,24 @@ export const FAL_MODELS: ModelConfig[] = [
     description: 'OpenAI\'s top image model — extreme detail, fine typography. Up to 4K.'
   },
 
+  // Seedream 5.5 (ByteDance, Nov 2026). Endpoint IDs and inputs checked against
+  // fal's OpenAPI. Output size is exact pixels (see buildModelInput); wired
+  // images and @-folder refs go to /edit as image_urls (fal keeps the last 10).
+  {
+    id: 'seedream-5.5',
+    name: 'Seedream 5.5',
+    falModel: 'bytedance/seedream/v5.5/text-to-image',
+    editModel: 'bytedance/seedream/v5.5/edit',
+    imageParam: 'image_urls',
+    category: 'image',
+    inputTypes: ['text', 'image'],
+    aspectRatios: ['21:9', '16:9', '4:3', '1:1', '3:4', '9:16'],
+    resolutions: ['1K', '2K'],
+    defaultAspectRatio: '1:1',
+    defaultResolution: '2K',
+    description: 'ByteDance’s newest image model — strong text and realism, steady over many rounds of edits'
+  },
+
   {
     id: 'flux-2-pro',
     name: 'FLUX.2 [pro]',
@@ -1021,6 +1039,25 @@ export function buildModelInput(
       input.image_size = sizeMap[aspectRatio] || { width: 1024, height: 1024 }
     }
     if (options.seed !== undefined) input.seed = options.seed
+    return input
+  }
+
+  // SEEDREAM 5.5 — image_size takes exact {width, height}. fal requires
+  // 921,600 to 4,624,220 total pixels; every size below is a multiple of 16
+  // inside that window. 1K stays under fal's 2.61 MP price step, 2K is above it.
+  if (model.id === 'seedream-5.5') {
+    input.prompt = prompt
+    const ratio = options.aspectRatio && model.aspectRatios.includes(options.aspectRatio) ? options.aspectRatio : model.defaultAspectRatio
+    const tier = options.resolution && model.resolutions?.includes(options.resolution) ? options.resolution : model.defaultResolution || '2K'
+    const SEEDREAM_SIZES: Record<string, { width: number; height: number }> = {
+      '21:9-1K': { width: 1536, height: 656 },  '21:9-2K': { width: 3024, height: 1296 },
+      '16:9-1K': { width: 1360, height: 768 },  '16:9-2K': { width: 2560, height: 1440 },
+      '4:3-1K':  { width: 1152, height: 864 },  '4:3-2K':  { width: 2304, height: 1728 },
+      '1:1-1K':  { width: 1024, height: 1024 }, '1:1-2K':  { width: 2048, height: 2048 },
+      '3:4-1K':  { width: 864,  height: 1152 }, '3:4-2K':  { width: 1728, height: 2304 },
+      '9:16-1K': { width: 768,  height: 1360 }, '9:16-2K': { width: 1440, height: 2560 },
+    }
+    input.image_size = SEEDREAM_SIZES[`${ratio}-${tier}`] || SEEDREAM_SIZES['1:1-2K']
     return input
   }
 
